@@ -1,13 +1,16 @@
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import type { Item, CreateItemPayload, UpdateItemPayload } from '@/types';
 import { itemsApi } from '@/lib/api';
 import { useItemsStore } from '@/stores/items-store';
 
 export function useItems() {
-  const { items, setItems, setLoading, setError, isLoading, error } = useItemsStore();
+  const items = useItemsStore((state) => state.items);
+  const isLoading = useItemsStore((state) => state.isLoading);
+  const error = useItemsStore((state) => state.error);
   const hasFetched = useRef(false);
 
-  const fetchItems = useCallback(async () => {
+  const fetchItems = async () => {
+    const { setLoading, setItems, setError } = useItemsStore.getState();
     setLoading(true);
     const result = await itemsApi.getAll();
     
@@ -18,7 +21,7 @@ export function useItems() {
     }
     
     setLoading(false);
-  }, [setItems, setLoading, setError]);
+  };
 
   // Initial fetch - only once
   useEffect(() => {
@@ -26,13 +29,13 @@ export function useItems() {
       hasFetched.current = true;
       fetchItems();
     }
-  }, [fetchItems]);
+  }, []);
 
   // Polling for real-time updates (every 30 seconds)
   useEffect(() => {
     const interval = setInterval(fetchItems, 30000);
     return () => clearInterval(interval);
-  }, [fetchItems]);
+  }, []);
 
   const createItem = async (payload: CreateItemPayload): Promise<Item | null> => {
     const result = await itemsApi.create(payload);
