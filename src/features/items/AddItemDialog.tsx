@@ -41,13 +41,29 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
   const activeCategory = useItemsStore((state) => state.activeCategory);
   const session = useAuthStore((state) => state.session);
   
-  const currentCategory = categories.find((c) => c.id === activeCategory);
+  // Filter out 'all' category and get real categories for adding
+  const addableCategories = categories.filter((c) => c.id !== 'all');
+  
+  // If "all" is selected, default to first real category (films)
+  const defaultCategoryId = activeCategory === 'all' ? 'films' : activeCategory;
+  const [selectedCategory, setSelectedCategory] = useState(defaultCategoryId);
+  
+  const currentCategory = categories.find((c) => c.id === selectedCategory) || addableCategories[0];
   
   const [isLoading, setIsLoading] = useState(false);
   const [title, setTitle] = useState('');
   const [status, setStatus] = useState<ItemStatus>(currentCategory?.defaultStatus || 'Plan to Watch');
   const [tags, setTags] = useState('');
   const [properties, setProperties] = useState<Record<string, string>>({});
+
+  // Update category selection when active changes
+  const handleCategoryChange = (categoryId: string) => {
+    setSelectedCategory(categoryId);
+    const cat = categories.find((c) => c.id === categoryId);
+    if (cat) {
+      setStatus(cat.defaultStatus);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,14 +111,31 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-serif text-xl">
-            Add to {currentCategory?.name}
+            Add New Item
           </DialogTitle>
         </DialogHeader>
         
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Category selector - always show when in "all" view */}
+          <div className="space-y-2">
+            <Label htmlFor="category">Category</Label>
+            <Select value={selectedCategory} onValueChange={handleCategoryChange}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {addableCategories.map((cat) => (
+                  <SelectItem key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="title">Title</Label>
             <Input

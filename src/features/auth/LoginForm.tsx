@@ -5,6 +5,8 @@ import { Label } from '@/components/ui/label';
 import { useAuthStore } from '@/stores/auth-store';
 import { authApi } from '@/lib/api';
 
+const isDev = import.meta.env.DEV;
+
 export function LoginForm() {
   const [nickname, setNickname] = useState('');
   const [password, setPassword] = useState('');
@@ -16,6 +18,16 @@ export function LoginForm() {
     e.preventDefault();
     setError('');
     setIsLoading(true);
+
+    // In dev mode, accept any password
+    if (isDev) {
+      setSession({
+        nickname: nickname || 'Dev User',
+        isAuthenticated: true,
+      });
+      setIsLoading(false);
+      return;
+    }
 
     const result = await authApi.login(nickname, password);
 

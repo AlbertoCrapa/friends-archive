@@ -4,6 +4,19 @@ import type { Item, CategoryConfig, ItemFilters, SortConfig, ColumnDefinition } 
 // Default category configurations
 const defaultCategories: CategoryConfig[] = [
   {
+    id: 'all',
+    name: 'All',
+    defaultStatus: 'Plan to Watch',
+    columns: [
+      { id: 'title', key: 'title', label: 'Title', type: 'text', isProperty: false, visible: true, width: 250 },
+      { id: 'category', key: 'category', label: 'Category', type: 'text', isProperty: false, visible: true, width: 100 },
+      { id: 'status', key: 'status', label: 'Status', type: 'status', isProperty: false, visible: true, width: 120 },
+      { id: 'tags', key: 'tags', label: 'Tags', type: 'tags', isProperty: false, visible: true, width: 180 },
+      { id: 'addedBy', key: 'addedBy', label: 'Added By', type: 'text', isProperty: false, visible: true, width: 100 },
+      { id: 'consumedBy', key: 'consumedBy', label: 'Consumed By', type: 'users', isProperty: false, visible: true, width: 140 },
+    ],
+  },
+  {
     id: 'films',
     name: 'Films',
     defaultStatus: 'Plan to Watch',
@@ -49,6 +62,7 @@ const defaultCategories: CategoryConfig[] = [
       { id: 'rating', key: 'rating', label: 'Rating', type: 'number', isProperty: true, visible: true, width: 80 },
       { id: 'tags', key: 'tags', label: 'Tags', type: 'tags', isProperty: false, visible: true, width: 200 },
       { id: 'addedBy', key: 'addedBy', label: 'Added By', type: 'text', isProperty: false, visible: true, width: 120 },
+      { id: 'readBy', key: 'readBy', label: 'Read By', type: 'users', isProperty: false, visible: true, width: 150 },
     ],
   },
 ];
@@ -80,9 +94,9 @@ interface ItemsState {
 export const useItemsStore = create<ItemsState>((set) => ({
   items: [],
   categories: defaultCategories,
-  activeCategory: 'films',
+  activeCategory: 'all',
   filters: {},
-  sort: { field: 'dateAdded', direction: 'asc' },
+  sort: { field: 'dateAdded', direction: 'desc' },
   isLoading: false,
   error: null,
   

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { cn, getStatusColor } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,69 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import type { Item, ColumnDefinition, ItemStatus, PropertyValue } from '@/types';
+
+// Custom hook for long press detection
+function useLongPress(onLongPress: () => void, onClick: () => void, delay = 500) {
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isLongPressRef = useRef(false);
+
+  const start = useCallback(() => {
+    isLongPressRef.current = false;
+    timeoutRef.current = setTimeout(() => {
+      isLongPressRef.current = true;
+      onLongPress();
+    }, delay);
+  }, [onLongPress, delay]);
+
+  const cancel = useCallback(() => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  }, []);
+
+  const handleClick = useCallback(() => {
+    cancel();
+    if (!isLongPressRef.current) {
+      onClick();
+    }
+    isLongPressRef.current = false;
+  }, [cancel, onClick]);
+
+  return {
+    onMouseDown: start,
+    onMouseUp: handleClick,
+    onMouseLeave: cancel,
+    onTouchStart: start,
+    onTouchEnd: handleClick,
+  };
+}
+
+// Component for tags with long-press support
+interface LongPressTagProps {
+  tag: string;
+  tagIndex: number;
+  onTagClick?: (tag: string) => void;
+  onEditTag: (tagIndex: number) => void;
+}
+
+function LongPressTag({ tag, tagIndex, onTagClick, onEditTag }: LongPressTagProps) {
+  const longPressHandlers = useLongPress(
+    () => onEditTag(tagIndex), // Long press = edit this specific tag
+    () => onTagClick?.(tag), // Click = filter by tag
+    500
+  );
+
+  return (
+    <Badge
+      variant="tag"
+      className="text-[10px] cursor-pointer select-none"
+      {...longPressHandlers}
+    >
+      {tag}
+    </Badge>
+  );
+}
 
 interface EditableCellProps {
   item: Item;
@@ -39,6 +102,7 @@ export function EditableCell({
 }: EditableCellProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
+  const [editingTagIndex, setEditingTagIndex] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Get the value from item or properties
@@ -61,11 +125,20 @@ export function EditableCell({
   const handleStartEdit = () => {
     if (column.type === 'status' || column.type === 'users') return;
     setIsEditing(true);
+    setEditingTagIndex(null);
     if (Array.isArray(value)) {
       setEditValue(value.join(', '));
     } else {
       setEditValue(String(value ?? ''));
     }
+  };
+
+  const handleStartEditTag = (tagIndex: number) => {
+    if (column.type !== 'tags') return;
+    const tags = (Array.isArray(value) ? value : []) as string[];
+    setIsEditing(true);
+    setEditingTagIndex(tagIndex);
+    setEditValue(tags[tagIndex] || '');
   };
 
   const handleSave = () => {
@@ -78,8 +151,25 @@ export function EditableCell({
       const num = parseFloat(editValue);
       newValue = isNaN(num) ? null : num;
     } else if (column.type === 'tags') {
-      newValue = editValue.split(',').map((s) => s.trim()).filter(Boolean);
+      if (editingTagIndex !== null) {
+        // Editing a single tag
+        const currentTags = (Array.isArray(value) ? [...value] : []) as string[];
+        const trimmedValue = editValue.trim();
+        if (trimmedValue === '') {
+          // Remove the tag if empty
+          currentTags.splice(editingTagIndex, 1);
+        } else {
+          // Update the tag
+          currentTags[editingTagIndex] = trimmedValue;
+        }
+        newValue = currentTags;
+      } else {
+        // Editing all tags (comma separated)
+        newValue = editValue.split(',').map((s) => s.trim()).filter(Boolean);
+      }
     }
+    
+    setEditingTagIndex(null);
     
     if (column.isProperty) {
       onUpdate(item.id, {
@@ -97,6 +187,7 @@ export function EditableCell({
       handleSave();
     } else if (e.key === 'Escape') {
       setIsEditing(false);
+      setEditingTagIndex(null);
     }
   };
 
@@ -153,25 +244,23 @@ export function EditableCell({
   if (column.type === 'tags' && !isEditing) {
     const tags = (Array.isArray(value) ? value : []) as string[];
     return (
-      <div
-        className="flex flex-wrap gap-1 min-h-[24px] cursor-pointer"
-        onClick={handleStartEdit}
-      >
-        {tags.map((tag) => (
-          <Badge
-            key={tag}
-            variant="tag"
-            onClick={(e) => {
-              e.stopPropagation();
-              onTagClick?.(tag);
-            }}
-            className="text-[10px]"
-          >
-            {tag}
-          </Badge>
+      <div className="flex flex-wrap gap-1 min-h-[24px]">
+        {tags.map((tag, index) => (
+          <LongPressTag
+            key={`${tag}-${index}`}
+            tag={tag}
+            tagIndex={index}
+            onTagClick={onTagClick}
+            onEditTag={handleStartEditTag}
+          />
         ))}
         {tags.length === 0 && (
-          <span className="text-stone-600 text-xs">—</span>
+          <span 
+            className="text-stone-600 text-xs cursor-pointer" 
+            onClick={handleStartEdit}
+          >
+            + Add tags
+          </span>
         )}
       </div>
     );

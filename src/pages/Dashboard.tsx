@@ -1,22 +1,33 @@
 import { useState } from 'react';
 import { Header } from '@/components/layout';
 import { CategoryTabs, ItemsTable, FilterBar, AddItemDialog } from '@/features/items';
+import { RestorePrompt } from '@/components/ui/restore-prompt';
+import { SyncPrompt } from '@/components/ui/sync-prompt';
 import { useItems } from '@/hooks/useItems';
 import { useItemsStore } from '@/stores/items-store';
 
 export function Dashboard() {
-  useItems(); // Initialize items fetching
+  const { 
+    showRestorePrompt, 
+    restoreFromBackup, 
+    dismissRestorePrompt, 
+    localBackupCount,
+    showSyncPrompt,
+    syncDifferences,
+    syncToServer,
+    dismissSyncPrompt,
+  } = useItems();
   
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
   const setFilters = useItemsStore((state) => state.setFilters);
+  const setActiveCategory = useItemsStore((state) => state.setActiveCategory);
 
   const handleTagClick = (tag: string) => {
     // When clicking a tag, show all items with that tag across ALL categories
     setActiveTagFilter(tag);
     setFilters({ tags: [tag] });
-    // Reset to first category to show cross-category results
-    // (In a real implementation, you might want a special "All" view)
+    setActiveCategory('all'); // Switch to All category to show cross-category results
   };
 
   const handleClearTagFilter = () => {
@@ -48,8 +59,8 @@ export function Dashboard() {
             onClearTagFilter={handleClearTagFilter}
           />
           
-          {/* Items table */}
-          <div className="p-4">
+          {/* Items table/cards */}
+          <div className="p-2 md:p-4">
             <ItemsTable onTagClick={handleTagClick} />
           </div>
         </main>
@@ -59,6 +70,24 @@ export function Dashboard() {
           open={isAddDialogOpen}
           onOpenChange={setIsAddDialogOpen}
         />
+
+        {/* Restore backup prompt */}
+        {showRestorePrompt && (
+          <RestorePrompt
+            itemCount={localBackupCount}
+            onRestore={restoreFromBackup}
+            onDismiss={dismissRestorePrompt}
+          />
+        )}
+
+        {/* Sync prompt */}
+        {showSyncPrompt && syncDifferences && (
+          <SyncPrompt
+            differences={syncDifferences}
+            onSync={syncToServer}
+            onDismiss={dismissSyncPrompt}
+          />
+        )}
       </div>
     </div>
   );
