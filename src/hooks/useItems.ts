@@ -135,6 +135,7 @@ export function useItems() {
   const isLoading = useItemsStore((state) => state.isLoading);
   const error = useItemsStore((state) => state.error);
   const hasFetched = useRef(false);
+  const hasCheckedSync = useRef(false);
   const [showRestorePrompt, setShowRestorePrompt] = useState(false);
   const [showSyncPrompt, setShowSyncPrompt] = useState(false);
   const [localBackup, setLocalBackup] = useState<Item[] | null>(null);
@@ -144,7 +145,7 @@ export function useItems() {
     modified: Item[];
   } | null>(null);
 
-  const fetchItems = async () => {
+  const fetchItems = async (checkSync = false) => {
     const { setLoading, setItems, setError } = useItemsStore.getState();
     setLoading(true);
     
@@ -167,8 +168,9 @@ export function useItems() {
           setLocalBackup(backup);
           setShowRestorePrompt(true);
         }
-      } else {
-        // Check for differences with local full database
+      } else if (checkSync && !hasCheckedSync.current) {
+        // Only check for differences on initial load
+        hasCheckedSync.current = true;
         const localDb = loadFullDatabase();
         if (localDb && localDb.items.length > 0) {
           const differences = findDifferences(localDb.items, serverItems);
@@ -181,6 +183,9 @@ export function useItems() {
         }
         
         // Save successful fetch to localStorage as backup
+        saveToLocalStorage(serverItems);
+      } else {
+        // Save successful fetch to localStorage as backup (polling updates)
         saveToLocalStorage(serverItems);
       }
       setItems(serverItems);
@@ -246,7 +251,7 @@ export function useItems() {
       }
       
       // Refresh after sync
-      await fetchItems();
+      await fetchItems(false);
       setShowSyncPrompt(false);
       setSyncDifferences(null);
     } catch (err) {
@@ -256,18 +261,18 @@ export function useItems() {
     }
   };
 
-  // Initial fetch - only once
+  // Initial fetch - only once, with sync check
   useEffect(() => {
     if (!hasFetched.current) {
       hasFetched.current = true;
-      fetchItems();
+      fetchItems(true); // Check sync on initial load
     }
   }, []);
 
   // Polling for real-time updates (every 30 seconds) - only in production
   useEffect(() => {
     if (isDev) return; // No polling in dev mode
-    const interval = setInterval(fetchItems, 30000);
+    const interval = setInterval(() => fetchItems(false), 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -281,14 +286,17 @@ export function useItems() {
         plannedBy: [],
       };
       devItems = [...devItems, newItem];
-      await fetchItems();
+      await fetchItems(false);
       return newItem;
     }
     
     const result = await itemsApi.create(payload);
     
     if (result.success && result.data) {
-      await fetchItems(); // Refresh the list
+      await fetchItems(false); // Refresh the list
+      // Save to full database after successful create
+      const currentItems = useItemsStore.getState().items;
+      saveFullDatabase(currentItems);
       return result.data;
     }
     
@@ -300,14 +308,17 @@ export function useItems() {
       devItems = devItems.map((item) => 
         item.id === id ? { ...item, ...payload } : item
       );
-      await fetchItems();
+      await fetchItems(false);
       return devItems.find((item) => item.id === id) || null;
     }
     
     const result = await itemsApi.update(id, payload);
     
     if (result.success && result.data) {
-      await fetchItems(); // Refresh the list
+      await fetchItems(false); // Refresh the list
+      // Save to full database after successful update
+      const currentItems = useItemsStore.getState().items;
+      saveFullDatabase(currentItems);
       return result.data;
     }
     
@@ -317,14 +328,17 @@ export function useItems() {
   const deleteItem = async (id: string): Promise<boolean> => {
     if (isDev) {
       devItems = devItems.filter((item) => item.id !== id);
-      await fetchItems();
+      await fetchItems(false);
       return true;
     }
     
     const result = await itemsApi.delete(id);
     
     if (result.success) {
-      await fetchItems(); // Refresh the list
+      await fetchItems(false); // Refresh the list
+      // Save to full database after successful delete
+      const currentItems = useItemsStore.getState().items;
+      saveFullDatabase(currentItems);
       return true;
     }
     
@@ -346,13 +360,16 @@ export function useItems() {
           [field]: hasUser ? users.filter((u) => u !== nickname) : [...users, nickname],
         };
       });
-      await fetchItems();
+      await fetchItems(false);
       return devItems.find((item) => item.id === id) || null;
     }
     const result = await itemsApi.toggleUserStatus(id, field, nickname);
     
     if (result.success && result.data) {
-      await fetchItems(); // Refresh the list
+      await fetchItems(false); // Refresh the list
+      // Save to full database after successful toggle
+      const currentItems = useItemsStore.getState().items;
+      saveFullDatabase(currentItems);
       return result.data;
     }
     
@@ -360,10 +377,10 @@ export function useItems() {
   };
 
   // Save to localStorage whenever items change (after initial fetch)
+  // Only save to backup key, not the full database key (that's for tracking local changes)
   useEffect(() => {
-    if (items.length > 0 && !isDev) {
+    if (items.length > 0 && !isDev && hasFetched.current) {
       saveToLocalStorage(items);
-      saveFullDatabase(items);
     }
   }, [items]);
 
@@ -371,7 +388,7 @@ export function useItems() {
     items,
     isLoading,
     error,
-    fetchItems,
+    fetchItems: () => fetchItems(false),
     createItem,
     updateItem,
     deleteItem,
