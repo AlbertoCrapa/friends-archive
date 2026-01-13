@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import type { Item, CreateItemPayload, UpdateItemPayload } from '@/types';
 import { itemsApi } from '@/lib/api';
 import { useItemsStore } from '@/stores/items-store';
 
 export function useItems() {
   const { items, setItems, setLoading, setError, isLoading, error } = useItemsStore();
-  const [lastFetch, setLastFetch] = useState<number>(0);
+  const hasFetched = useRef(false);
 
   const fetchItems = useCallback(async () => {
     setLoading(true);
@@ -13,7 +13,6 @@ export function useItems() {
     
     if (result.success && result.data) {
       setItems(result.data);
-      setLastFetch(Date.now());
     } else {
       setError(result.error || 'Failed to fetch items');
     }
@@ -21,16 +20,17 @@ export function useItems() {
     setLoading(false);
   }, [setItems, setLoading, setError]);
 
-  // Initial fetch
+  // Initial fetch - only once
   useEffect(() => {
-    if (items.length === 0 || Date.now() - lastFetch > 30000) {
+    if (!hasFetched.current) {
+      hasFetched.current = true;
       fetchItems();
     }
-  }, [fetchItems, items.length, lastFetch]);
+  }, [fetchItems]);
 
-  // Polling for real-time updates (every 10 seconds)
+  // Polling for real-time updates (every 30 seconds)
   useEffect(() => {
-    const interval = setInterval(fetchItems, 10000);
+    const interval = setInterval(fetchItems, 30000);
     return () => clearInterval(interval);
   }, [fetchItems]);
 
