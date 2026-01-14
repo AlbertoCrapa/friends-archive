@@ -1,10 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// ============================================
-// THE ARCHIVE - Unified API Handler
-// ============================================
-
-// Types
 interface Item {
   id: string;
   title: string;
@@ -18,10 +13,10 @@ interface Item {
   plannedBy: string[];
 }
 
-// In-memory store (will reset on cold starts - use Vercel KV for persistence)
+// In-memory store (will reset on cold starts )!!!!!!!!!!!!
 const items: Map<string, Item> = new Map();
 
-// Seed demo data
+
 const demoItems: Item[] = [
   {
     id: '1',

@@ -48,7 +48,7 @@ export function Header({ children }: HeaderProps) {
       try {
         const data = JSON.parse(event.target?.result as string);
         if (data.items && Array.isArray(data.items)) {
-          // Merge items, avoiding duplicates by title
+          // Merge items
           const existingTitles = new Set(items.map((item) => item.title.toLowerCase()));
           const newItems = data.items.filter(
             (item: { title: string }) => !existingTitles.has(item.title.toLowerCase())
@@ -67,7 +67,7 @@ export function Header({ children }: HeaderProps) {
     };
     reader.readAsText(file);
     
-    // Reset the input so the same file can be selected again
+    // Reset the input so the same file can be ReSelected 
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -76,7 +76,7 @@ export function Header({ children }: HeaderProps) {
   return (
     <header className="h-14 md:h-16 border-b border-stone-800 bg-stone-950/80 backdrop-blur-sm sticky top-0 z-40">
       <div className="h-full max-w-[1800px] mx-auto px-3 md:px-6 flex items-center justify-between">
-        {/* Logo */}
+        {/* Logoo */}
         <div className="flex items-center gap-2 md:gap-3">
           <div className="w-8 h-8 md:w-10 md:h-10 border border-amber-600/50 flex items-center justify-center bg-gradient-to-br from-stone-900 to-stone-950">
             <Archive className="w-4 h-4 md:w-5 md:h-5 text-amber-500" />
