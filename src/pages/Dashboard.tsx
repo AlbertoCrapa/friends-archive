@@ -7,17 +7,17 @@ import { useItems } from '@/hooks/useItems';
 import { useItemsStore } from '@/stores/items-store';
 
 export function Dashboard() {
-  const { 
-    showRestorePrompt, 
-    restoreFromBackup, 
-    dismissRestorePrompt, 
+  const {
+    showRestorePrompt,
+    restoreFromBackup,
+    dismissRestorePrompt,
     localBackupCount,
     showSyncPrompt,
     syncDifferences,
     syncToServer,
     dismissSyncPrompt,
   } = useItems();
-  
+
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
   const setFilters = useItemsStore((state) => state.setFilters);
@@ -48,23 +48,23 @@ export function Dashboard() {
 
       <div className="relative">
         <Header />
-        
+
         <main className="max-w-[1800px] mx-auto">
           {/* Category tabs */}
           <CategoryTabs onAddItem={() => setIsAddDialogOpen(true)} />
-          
+
           {/* Filter bar */}
           <FilterBar
             activeTagFilter={activeTagFilter}
             onClearTagFilter={handleClearTagFilter}
           />
-          
+
           {/* Items table/cards */}
           <div className="p-2 md:p-4">
             <ItemsTable onTagClick={handleTagClick} />
           </div>
         </main>
-        
+
         {/* Add item dialog */}
         <AddItemDialog
           open={isAddDialogOpen}

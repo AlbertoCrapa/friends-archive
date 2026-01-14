@@ -14,7 +14,7 @@ const getCategoryIcon = (categoryId: string) => {
     case 'tv-series': return <Tv className="w-4 h-4" />;
     case 'books': return <BookOpen className="w-4 h-4" />;
     default: return null;
-  }
+   }
 };
 
 export function CategoryTabs({ onAddItem }: CategoryTabsProps) {

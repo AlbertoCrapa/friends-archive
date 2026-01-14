@@ -95,7 +95,7 @@ export function FilterBar({ activeTagFilter, onClearTagFilter }: FilterBarProps)
               setFilters({ ...filters, status: v === 'all' ? undefined : (v as ItemStatus) })
             }
           >
-            <SelectTrigger className="w-28 md:w-40 h-9 shrink-0">
+            <SelectTrigger className="w-40  md:w-40 h-9 shrink-0">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
@@ -115,7 +115,7 @@ export function FilterBar({ activeTagFilter, onClearTagFilter }: FilterBarProps)
               setFilters({ ...filters, addedBy: v === 'all' ? undefined : v })
             }
           >
-            <SelectTrigger className="w-24 md:w-32 h-9 shrink-0">
+            <SelectTrigger className="w-24 md:w-32 h-9 shrink-0 hidden lg:flex">
               <SelectValue placeholder="User" />
             </SelectTrigger>
             <SelectContent>

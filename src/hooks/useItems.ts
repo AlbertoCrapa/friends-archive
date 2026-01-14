@@ -98,18 +98,18 @@ const loadFullDatabase = (): { items: Item[]; timestamp: number } | null => {
 };
 
 // Find differences between local and server items
-const findDifferences = (localItems: Item[], serverItems: Item[]): { 
-  localOnly: Item[]; 
+const findDifferences = (localItems: Item[], serverItems: Item[]): {
+  localOnly: Item[];
   serverOnly: Item[];
   modified: Item[];
 } => {
   const localMap = new Map(localItems.map(item => [item.id, item]));
   const serverMap = new Map(serverItems.map(item => [item.id, item]));
-  
+
   const localOnly: Item[] = [];
   const serverOnly: Item[] = [];
   const modified: Item[] = [];
-  
+
   // Find items only in local or modified
   for (const [id, localItem] of localMap) {
     const serverItem = serverMap.get(id);
@@ -119,14 +119,14 @@ const findDifferences = (localItems: Item[], serverItems: Item[]): {
       modified.push(localItem);
     }
   }
-  
+
   // Find items only in server
   for (const [id, serverItem] of serverMap) {
     if (!localMap.has(id)) {
       serverOnly.push(serverItem);
     }
   }
-  
+
   return { localOnly, serverOnly, modified };
 };
 
@@ -148,19 +148,19 @@ export function useItems() {
   const fetchItems = async (checkSync = false) => {
     const { setLoading, setItems, setError } = useItemsStore.getState();
     setLoading(true);
-    
+
     if (isDev) {
       // Use mock data in development
       setItems(devItems);
       setLoading(false);
       return;
     }
-    
+
     const result = await itemsApi.getAll();
-    
+
     if (result.success && result.data) {
       const serverItems = result.data;
-      
+
       // Check if server returned empty but we have a local backup
       if (serverItems.length === 0) {
         const backup = loadFromLocalStorage();
@@ -175,13 +175,13 @@ export function useItems() {
         if (localDb && localDb.items.length > 0) {
           const differences = findDifferences(localDb.items, serverItems);
           const hasLocalChanges = differences.localOnly.length > 0 || differences.modified.length > 0;
-          
+
           if (hasLocalChanges) {
             setSyncDifferences(differences);
             setShowSyncPrompt(true);
           }
         }
-        
+
         // Save successful fetch to localStorage as backup
         saveToLocalStorage(serverItems);
       } else {
@@ -192,7 +192,7 @@ export function useItems() {
     } else {
       setError(result.error || 'Failed to fetch items');
     }
-    
+
     setLoading(false);
   };
 
@@ -220,10 +220,10 @@ export function useItems() {
 
   const syncToServer = async () => {
     if (!syncDifferences) return;
-    
+
     const { setLoading } = useItemsStore.getState();
     setLoading(true);
-    
+
     try {
       // Add local-only items to server
       for (const item of syncDifferences.localOnly) {
@@ -236,7 +236,7 @@ export function useItems() {
           addedBy: item.addedBy,
         });
       }
-      
+
       // Update modified items on server
       for (const item of syncDifferences.modified) {
         await itemsApi.update(item.id, {
@@ -249,7 +249,7 @@ export function useItems() {
           plannedBy: item.plannedBy,
         });
       }
-      
+
       // Refresh after sync
       await fetchItems(false);
       setShowSyncPrompt(false);
@@ -289,9 +289,9 @@ export function useItems() {
       await fetchItems(false);
       return newItem;
     }
-    
+
     const result = await itemsApi.create(payload);
-    
+
     if (result.success && result.data) {
       await fetchItems(false); // Refresh the list
       // Save to full database after successful create
@@ -299,21 +299,21 @@ export function useItems() {
       saveFullDatabase(currentItems);
       return result.data;
     }
-    
+
     return null;
   };
 
   const updateItem = async (id: string, payload: UpdateItemPayload): Promise<Item | null> => {
     if (isDev) {
-      devItems = devItems.map((item) => 
+      devItems = devItems.map((item) =>
         item.id === id ? { ...item, ...payload } : item
       );
       await fetchItems(false);
       return devItems.find((item) => item.id === id) || null;
     }
-    
+
     const result = await itemsApi.update(id, payload);
-    
+
     if (result.success && result.data) {
       await fetchItems(false); // Refresh the list
       // Save to full database after successful update
@@ -321,7 +321,7 @@ export function useItems() {
       saveFullDatabase(currentItems);
       return result.data;
     }
-    
+
     return null;
   };
 
@@ -331,9 +331,9 @@ export function useItems() {
       await fetchItems(false);
       return true;
     }
-    
+
     const result = await itemsApi.delete(id);
-    
+
     if (result.success) {
       await fetchItems(false); // Refresh the list
       // Save to full database after successful delete
@@ -341,7 +341,7 @@ export function useItems() {
       saveFullDatabase(currentItems);
       return true;
     }
-    
+
     return false;
   };
 
@@ -364,7 +364,7 @@ export function useItems() {
       return devItems.find((item) => item.id === id) || null;
     }
     const result = await itemsApi.toggleUserStatus(id, field, nickname);
-    
+
     if (result.success && result.data) {
       await fetchItems(false); // Refresh the list
       // Save to full database after successful toggle
@@ -372,7 +372,7 @@ export function useItems() {
       saveFullDatabase(currentItems);
       return result.data;
     }
-    
+
     return null;
   };
 

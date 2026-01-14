@@ -105,9 +105,9 @@ if (items.size === 0) {
 // Database operations
 const db = {
   getAll: (): Item[] => Array.from(items.values()),
-  
+
   getById: (id: string): Item | undefined => items.get(id),
-  
+
   getFiltered: (filters: { category?: string; status?: string; tags?: string[]; addedBy?: string; search?: string }): Item[] => {
     let result = Array.from(items.values());
     if (filters.category) result = result.filter((item) => item.category === filters.category);
@@ -120,13 +120,13 @@ const db = {
     }
     return result.sort((a, b) => new Date(a.dateAdded).getTime() - new Date(b.dateAdded).getTime());
   },
-  
+
   create: (item: Omit<Item, 'id' | 'dateAdded' | 'watchedBy' | 'plannedBy'>): Item => {
     const newItem: Item = { ...item, id: crypto.randomUUID(), dateAdded: new Date().toISOString(), watchedBy: [], plannedBy: [] };
     items.set(newItem.id, newItem);
     return newItem;
   },
-  
+
   update: (id: string, updates: Partial<Item>): Item | null => {
     const existing = items.get(id);
     if (!existing) return null;
@@ -134,9 +134,9 @@ const db = {
     items.set(id, updated);
     return updated;
   },
-  
+
   delete: (id: string): boolean => items.delete(id),
-  
+
   toggleUser: (id: string, field: 'watchedBy' | 'plannedBy', nickname: string): Item | null => {
     const item = items.get(id);
     if (!item) return null;
@@ -147,7 +147,7 @@ const db = {
     items.set(id, updated);
     return updated;
   },
-  
+
   getAllTags: (): string[] => {
     const tags = new Set<string>();
     items.forEach((item) => item.tags.forEach((t) => tags.add(t)));
@@ -170,14 +170,14 @@ const setCors = (res: VercelResponse) => {
 // Main handler
 export default function handler(req: VercelRequest, res: VercelResponse) {
   setCors(res);
-  
+
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
   const url = req.url || '';
   const path = url.split('?')[0].replace(/^\/api/, '');
-  
+
   // Route: POST /api/auth/login
   if (path === '/auth/login' && req.method === 'POST') {
     const { nickname, password } = req.body || {};
@@ -186,7 +186,7 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
     if (!validatePassword(password)) return res.status(401).json({ error: 'Invalid password' });
     return res.status(200).json({ nickname: nickname.trim(), message: 'Login successful' });
   }
-  
+
   // Route: GET /api/items
   if (path === '/items' && req.method === 'GET') {
     const { category, status, tags, addedBy, search } = req.query;
@@ -199,7 +199,7 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
     };
     return res.status(200).json(db.getFiltered(filters));
   }
-  
+
   // Route: POST /api/items
   if (path === '/items' && req.method === 'POST') {
     const { title, category, addedBy, status, tags, properties } = req.body || {};
@@ -209,30 +209,30 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
     const newItem = db.create({ title, category, addedBy, status, tags: tags || [], properties: properties || {} });
     return res.status(201).json(newItem);
   }
-  
+
   // Route: GET/PUT/DELETE /api/items/:id
   const itemMatch = path.match(/^\/items\/([^/]+)$/);
   if (itemMatch) {
     const id = itemMatch[1];
-    
+
     if (req.method === 'GET') {
       const item = db.getById(id);
       if (!item) return res.status(404).json({ error: 'Item not found' });
       return res.status(200).json(item);
     }
-    
+
     if (req.method === 'PUT') {
       const updated = db.update(id, req.body || {});
       if (!updated) return res.status(404).json({ error: 'Item not found' });
       return res.status(200).json(updated);
     }
-    
+
     if (req.method === 'DELETE') {
       if (!db.delete(id)) return res.status(404).json({ error: 'Item not found' });
       return res.status(200).json({ success: true });
     }
   }
-  
+
   // Route: POST /api/items/:id/toggle
   const toggleMatch = path.match(/^\/items\/([^/]+)\/toggle$/);
   if (toggleMatch && req.method === 'POST') {
@@ -246,12 +246,12 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
     if (!updated) return res.status(404).json({ error: 'Item not found' });
     return res.status(200).json(updated);
   }
-  
+
   // Route: GET /api/tags
   if (path === '/tags' && req.method === 'GET') {
     return res.status(200).json(db.getAllTags());
   }
-  
+
   // 404 for unmatched routes
   return res.status(404).json({ error: 'Not found', path });
 }
