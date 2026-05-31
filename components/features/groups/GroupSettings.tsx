@@ -4,9 +4,11 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { FormBanner } from '@/components/ui/form-banner';
 import {
   Select,
   SelectContent,
@@ -64,7 +66,7 @@ export function GroupSettings({ group, members, currentUserId }: Props) {
       .eq('id', group.id);
 
     if (updateError) {
-      setError(updateError.message);
+      setError('We could not save your changes. Please try again.');
     } else {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -133,14 +135,19 @@ export function GroupSettings({ group, members, currentUserId }: Props) {
             </Select>
           </div>
 
-          {error && (
-            <p className="text-red-400 text-sm font-mono border border-red-900/50 bg-red-950/30 px-3 py-2">
-              {error}
-            </p>
-          )}
+          {error && <FormBanner message={error} variant="error" />}
 
           <Button type="submit" disabled={saving}>
-            {saved ? 'Saved!' : saving ? 'Saving…' : 'Save changes'}
+            {saved ? (
+              'Saved!'
+            ) : saving ? (
+              <span className="inline-flex items-center gap-2">
+                <Spinner />
+                Saving...
+              </span>
+            ) : (
+              'Save changes'
+            )}
           </Button>
         </form>
       </section>
@@ -163,7 +170,7 @@ export function GroupSettings({ group, members, currentUserId }: Props) {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7 text-stone-600 hover:text-red-400"
+                  className="h-11 w-11 text-stone-500 hover:text-red-400"
                   disabled={removingMember === m.user_id}
                   onClick={() => removeMember(m.user_id)}
                   title="Remove member"
@@ -190,7 +197,14 @@ export function GroupSettings({ group, members, currentUserId }: Props) {
           className="gap-2"
         >
           <Trash2 className="h-4 w-4" />
-          {deletingGroup ? 'Deleting…' : 'Delete group'}
+          {deletingGroup ? (
+            <span className="inline-flex items-center gap-2">
+              <Spinner />
+              Deleting...
+            </span>
+          ) : (
+            'Delete group'
+          )}
         </Button>
       </section>
     </div>

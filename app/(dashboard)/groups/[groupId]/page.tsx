@@ -129,6 +129,11 @@ export default async function GroupDetailPage({ params, searchParams }: Props) {
       {/* Group header */}
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-2 min-w-0">
+          <Link href={isMember ? '/dashboard' : '/discover'} className="inline-flex">
+            <Button variant="ghost" size="sm" className="mb-1">
+              {isMember ? 'Back to dashboard' : 'Back to discover'}
+            </Button>
+          </Link>
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="font-serif text-3xl text-stone-100">{group.name}</h1>
             {group.visibility === 'public' ? (

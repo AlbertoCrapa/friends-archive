@@ -109,7 +109,7 @@ If you have never used the Supabase SQL Editor before, here is exactly what to d
 -- The word 'film' or 'films' must never appear here or anywhere in the codebase.
 CREATE TYPE media_type AS ENUM ('movie', 'tv_series', 'book', 'video_game');
 
--- Item status: a group's collective progress on a media item.
+-- Item status: per-user progress selection used by the UI.
 CREATE TYPE item_status AS ENUM ('plan_to_consume', 'consuming', 'completed');
 
 -- Group visibility: determines discoverability.
@@ -283,6 +283,13 @@ COMMENT ON TABLE public.consumption_records IS
 COMMENT ON COLUMN public.consumption_records.note IS
   'Optional personal note (max 500 chars). Private to the user who wrote it until displayed in group context.';
 ```
+
+Application behavior note:
+
+- The UI auto-syncs personal consumption from status changes:
+  - `completed` => create/keep current user's `consumption_records` row.
+  - `plan_to_consume` or `consuming` => remove current user's row.
+- `Consumed By` in the table is display-only and derived from `consumption_records`.
 
 **Expected result:** `Success. No rows returned` — `consumption_records` table appears in **Database → Tables**.
 
@@ -563,7 +570,7 @@ REVOKE EXECUTE ON FUNCTION public.handle_new_group()         FROM authenticated;
 
 ### Step 5 — Row Level Security
 
-> **Important — RLS recursion:** The `groups` SELECT policy needs to check `group_members` to see if the current user is a member, and the `group_members` SELECT policy needs to check `groups` to see if a group is public. This creates a circular reference that PostgreSQL will reject with *"infinite recursion detected in policy"*. The fix is two `SECURITY DEFINER` helper functions that bypass RLS for those inner lookups. Run these **before** enabling RLS.
+> **Important — RLS recursion:** The `groups` SELECT policy needs to check `group_members` to see if the current user is a member, and the `group_members` SELECT policy needs to check `groups` to see if a group is public. This creates a circular reference that PostgreSQL will reject with _"infinite recursion detected in policy"_. The fix is two `SECURITY DEFINER` helper functions that bypass RLS for those inner lookups. Run these **before** enabling RLS.
 
 #### 5-pre — Anti-recursion helpers
 

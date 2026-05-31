@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { FormBanner } from '@/components/ui/form-banner';
 import {
   Dialog,
   DialogContent,
@@ -111,9 +113,18 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
       .single();
 
     if (insertError) {
-      setError(insertError.message);
+      setError('Could not add this item right now. Please try again.');
       setLoading(false);
       return;
+    }
+
+    if (insertedItem && status === 'completed') {
+      await supabase
+        .from('consumption_records')
+        .upsert(
+          { user_id: userId, media_item_id: insertedItem.id },
+          { onConflict: 'media_item_id,user_id' }
+        );
     }
 
     setTitle('');
@@ -198,35 +209,35 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
 
           {/* Type-specific metadata */}
           {type === 'movie' && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label htmlFor="director">Director</Label>
                 <Input id="director" value={director} onChange={(e) => setDirector(e.target.value)} placeholder="optional" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="year">Year</Label>
-                <Input id="year" type="number" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} placeholder="2024" min="1888" max="2099" />
+                <Input id="year" type="number" inputMode="numeric" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} placeholder="2024" min="1888" max="2099" />
               </div>
               <div className="space-y-2 col-span-2">
                 <Label htmlFor="duration">Duration (min)</Label>
-                <Input id="duration" type="number" value={durationMinutes} onChange={(e) => setDurationMinutes(e.target.value)} placeholder="optional" min="1" />
+                <Input id="duration" type="number" inputMode="numeric" value={durationMinutes} onChange={(e) => setDurationMinutes(e.target.value)} placeholder="optional" min="1" />
               </div>
             </div>
           )}
 
           {type === 'tv_series' && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label htmlFor="creator">Creator</Label>
                 <Input id="creator" value={creator} onChange={(e) => setCreator(e.target.value)} placeholder="optional" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="year">Year</Label>
-                <Input id="year" type="number" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} placeholder="2024" min="1900" max="2099" />
+                <Input id="year" type="number" inputMode="numeric" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} placeholder="2024" min="1900" max="2099" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="seasons">Seasons</Label>
-                <Input id="seasons" type="number" value={seasons} onChange={(e) => setSeasons(e.target.value)} placeholder="optional" min="1" />
+                <Input id="seasons" type="number" inputMode="numeric" value={seasons} onChange={(e) => setSeasons(e.target.value)} placeholder="optional" min="1" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="platform">Platform</Label>
@@ -236,40 +247,43 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
           )}
 
           {type === 'book' && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2 col-span-2">
                 <Label htmlFor="author">Author</Label>
                 <Input id="author" value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="optional" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="year">Year</Label>
-                <Input id="year" type="number" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} placeholder="optional" min="1000" max="2099" />
+                <Input id="year" type="number" inputMode="numeric" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} placeholder="optional" min="1000" max="2099" />
               </div>
             </div>
           )}
 
           {type === 'video_game' && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label htmlFor="developer">Developer</Label>
                 <Input id="developer" value={developer} onChange={(e) => setDeveloper(e.target.value)} placeholder="optional" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="year">Year</Label>
-                <Input id="year" type="number" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} placeholder="optional" min="1950" max="2099" />
+                <Input id="year" type="number" inputMode="numeric" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} placeholder="optional" min="1950" max="2099" />
               </div>
             </div>
           )}
 
-          {error && (
-            <p className="text-red-400 text-sm font-mono border border-red-900/50 bg-red-950/30 px-3 py-2">
-              {error}
-            </p>
-          )}
+          {error && <FormBanner message={error} variant="error" />}
 
           <DialogFooter>
             <Button type="submit" disabled={loading}>
-              {loading ? 'Adding…' : 'Add item'}
+              {loading ? (
+                <span className="inline-flex items-center gap-2">
+                  <Spinner />
+                  Adding...
+                </span>
+              ) : (
+                'Add item'
+              )}
             </Button>
           </DialogFooter>
         </form>

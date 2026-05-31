@@ -81,8 +81,8 @@ export default async function DashboardPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {groups.map((group) => (
-            <Link key={group.id} href={`/groups/${group.id}`} className="group">
-              <div className="border border-stone-800/50 p-5 hover:border-amber-800/50 hover:bg-stone-900/30 transition-all duration-200 space-y-3">
+            <Link key={group.id} href={`/groups/${group.id}`} className="group cursor-pointer">
+              <div className="border border-stone-800/50 p-5 hover:border-amber-800/50 hover:bg-stone-900/30 hover:shadow-[var(--shadow-2)] hover:-translate-y-0.5 transition-all duration-[var(--duration-standard)] ease-[var(--ease-standard)] space-y-3">
                 <div className="flex items-start justify-between gap-2">
                   <h2 className="font-serif text-lg text-stone-100 group-hover:text-amber-400 transition-colors line-clamp-1">
                     {group.name}

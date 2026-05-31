@@ -1,6 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Globe, Lock } from 'lucide-react';
 import Link from 'next/link';
 import { formatDate } from '@/lib/utils';
@@ -48,6 +49,11 @@ export default async function ProfilePage({ params }: Props) {
   return (
     <div className="max-w-2xl space-y-8">
       <div className="space-y-2">
+        <Link href="/dashboard" className="inline-flex">
+          <Button variant="ghost" size="sm" className="mb-3 gap-2">
+            Back to dashboard
+          </Button>
+        </Link>
         <h1 className="font-serif text-3xl text-stone-100">{profile.nickname}</h1>
         <p className="text-stone-600 text-xs font-mono">
           Member since {formatDate(profile.created_at)}
@@ -68,7 +74,7 @@ export default async function ProfilePage({ params }: Props) {
               <Link
                 key={g.id as string}
                 href={`/groups/${g.id}`}
-                className="group block border border-stone-800/50 p-4 hover:border-amber-800/50 hover:bg-stone-900/30 transition-all"
+                className="group block cursor-pointer border border-stone-800/50 p-4 hover:border-amber-800/50 hover:bg-stone-900/30 hover:shadow-[var(--shadow-2)] hover:-translate-y-0.5 transition-all duration-[var(--duration-standard)] ease-[var(--ease-standard)]"
               >
                 <div className="flex items-center gap-3">
                   <span className="font-serif text-stone-100 group-hover:text-amber-400 transition-colors">

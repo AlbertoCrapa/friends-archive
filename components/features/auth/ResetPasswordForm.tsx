@@ -3,8 +3,10 @@
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { FormBanner } from '@/components/ui/form-banner';
 
 export function ResetPasswordForm() {
   const [email, setEmail] = useState('');
@@ -23,7 +25,7 @@ export function ResetPasswordForm() {
     });
 
     if (authError) {
-      setError(authError.message);
+      setError('We could not send the reset link. Please check your email and try again.');
       setLoading(false);
       return;
     }
@@ -34,12 +36,11 @@ export function ResetPasswordForm() {
 
   if (sent) {
     return (
-      <div className="border border-emerald-800/50 bg-emerald-950/30 px-4 py-5 text-sm font-mono text-emerald-300 space-y-1">
-        <p className="font-semibold uppercase tracking-wider">Check your email</p>
-        <p className="text-emerald-500 text-xs">
-          A reset link was sent to <span className="text-emerald-300">{email}</span>.
-        </p>
-      </div>
+      <FormBanner
+        variant="success"
+        message={`Check your email. We sent a reset link to ${email}.`}
+        className="px-4 py-4 text-sm"
+      />
     );
   }
 
@@ -58,14 +59,17 @@ export function ResetPasswordForm() {
         />
       </div>
 
-      {error && (
-        <p className="text-red-400 text-sm font-mono border border-red-900/50 bg-red-950/30 px-3 py-2">
-          {error}
-        </p>
-      )}
+      {error && <FormBanner message={error} variant="error" />}
 
       <Button type="submit" className="w-full" disabled={loading}>
-        {loading ? 'Sending…' : 'Send reset link'}
+        {loading ? (
+          <span className="inline-flex items-center gap-2">
+            <Spinner />
+            Sending...
+          </span>
+        ) : (
+          'Send reset link'
+        )}
       </Button>
     </form>
   );

@@ -86,7 +86,7 @@ CREATE TYPE media_type AS ENUM ('movie', 'tv_series', 'book', 'video_game');
 
 ### `item_status`
 
-The group's collective progress relationship to a media item.
+The per-user progress selector used by the UI for each media item.
 
 ```sql
 CREATE TYPE item_status AS ENUM ('plan_to_consume', 'consuming', 'completed');
@@ -99,6 +99,12 @@ CREATE TYPE item_status AS ENUM ('plan_to_consume', 'consuming', 'completed');
 | `completed`       | Watched           | Read          | Played        |
 
 The UI maps these three database values to context-sensitive labels based on the item's `type`. The database stores only the three enum values.
+
+UI behavior rule:
+
+- When the current user sets status to `completed`, the app automatically creates/keeps their `consumption_records` row for that item.
+- When the current user sets status to `plan_to_consume` or `consuming`, the app removes their `consumption_records` row for that item.
+- The `Consumed By` text is derived from `consumption_records` (with the current user's status reflected immediately in UI) and is not manually edited in the table row.
 
 ---
 
@@ -446,6 +452,10 @@ Rejected because:
 - Adding a per-user note to an array entry is not possible without denormalising further.
 - Querying "has user X consumed item Y?" with an array requires `= ANY(consumed_by)`, which is harder to index and optimize than a simple indexed lookup on a junction table row.
 - The `consumption_records` table can be extended in future (e.g. adding a rating, a watched-on date precision) without touching the items table.
+
+Current UI linkage:
+
+- Status and consumption are intentionally linked for the current user. Setting status to `completed` marks consumed; setting status away from `completed` removes consumed.
 
 ---
 

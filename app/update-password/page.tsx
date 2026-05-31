@@ -4,8 +4,10 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { FormBanner } from '@/components/ui/form-banner';
 
 /**
  * This page is the landing point after a user clicks the password-reset link
@@ -50,7 +52,7 @@ export default function UpdatePasswordPage() {
     const { error: updateError } = await supabase.auth.updateUser({ password });
 
     if (updateError) {
-      setError(updateError.message);
+      setError('We could not update your password right now. Please try again.');
       setLoading(false);
       return;
     }
@@ -62,7 +64,10 @@ export default function UpdatePasswordPage() {
     return (
       <main className="min-h-screen flex items-center justify-center bg-stone-950 px-6">
         <div className="text-center space-y-3">
-          <p className="font-mono text-stone-500 text-sm">Verifying reset link…</p>
+          <p className="font-mono text-stone-400 text-sm inline-flex items-center gap-2">
+            <Spinner />
+            Verifying reset link...
+          </p>
           <p className="font-mono text-stone-700 text-xs">
             If this takes more than a few seconds, your link may have expired.{' '}
             <a href="/reset-password" className="text-amber-500 hover:text-amber-400">
@@ -108,14 +113,17 @@ export default function UpdatePasswordPage() {
             />
           </div>
 
-          {error && (
-            <p className="text-red-400 text-sm font-mono border border-red-900/50 bg-red-950/30 px-3 py-2">
-              {error}
-            </p>
-          )}
+          {error && <FormBanner message={error} variant="error" />}
 
           <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? 'Updating…' : 'Update password'}
+            {loading ? (
+              <span className="inline-flex items-center gap-2">
+                <Spinner />
+                Updating...
+              </span>
+            ) : (
+              'Update password'
+            )}
           </Button>
         </form>
       </div>

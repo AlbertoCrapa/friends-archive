@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { LogOut, User, Settings } from 'lucide-react';
+import { Compass, LogOut, User, Settings } from 'lucide-react';
 
 async function signOut() {
   'use server';
@@ -35,22 +35,27 @@ export async function Header() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-stone-800/50 bg-stone-950/80 backdrop-blur-sm">
-      <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">
-        <Link href="/dashboard" className="font-serif text-lg tracking-widest text-stone-100 uppercase hover:text-amber-500 transition-colors">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
+        <Link href="/dashboard" className="font-serif text-base sm:text-lg tracking-[0.18em] text-stone-100 uppercase hover:text-amber-500 transition-colors whitespace-nowrap leading-none">
           The Friend Archive
         </Link>
 
-        <nav className="flex items-center gap-2">
-          <Link href="/discover">
+        <nav className="flex items-center gap-1 sm:gap-2">
+          <Link href="/discover" className="hidden sm:inline-flex">
             <Button variant="ghost" size="sm">Discover</Button>
+          </Link>
+          <Link href="/discover" className="sm:hidden inline-flex">
+            <Button variant="ghost" size="icon" className="h-11 w-11" aria-label="Discover">
+              <Compass className="h-4 w-4" />
+            </Button>
           </Link>
 
           {user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-2">
+                <Button variant="outline" size="sm" className="gap-2 min-h-11">
                   <User className="h-3 w-3" />
-                  {nickname ?? 'Account'}
+                  <span className="hidden sm:inline">{nickname ?? 'Account'}</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">

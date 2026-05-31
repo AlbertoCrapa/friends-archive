@@ -104,7 +104,7 @@ export function GroupMediaSection({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
+      <div className="sticky top-14 z-20 bg-stone-950/95 backdrop-blur-sm border-b border-stone-900 pb-3 -mx-1 px-1 flex items-center justify-between gap-3">
         <div className="border-b border-stone-800 flex gap-0 overflow-x-auto overflow-y-hidden">
           {mediaTypes.map(({ value, label }) => {
             const isActive = activeType === value;
@@ -113,7 +113,7 @@ export function GroupMediaSection({
                 key={value}
                 type="button"
                 onClick={() => switchType(value)}
-                className={`px-4 py-2 text-sm font-mono uppercase tracking-wider transition-colors border-b-2 -mb-px whitespace-nowrap
+                className={`cursor-pointer min-h-11 px-4 py-2 text-sm font-mono uppercase tracking-wider transition-colors border-b-2 -mb-px whitespace-nowrap
                   ${isActive
                     ? 'text-amber-500 border-amber-500'
                     : 'text-stone-500 border-transparent hover:text-stone-300'
@@ -163,7 +163,7 @@ export function GroupMediaSection({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              className="h-8 px-3 text-xs font-mono uppercase tracking-wider border border-stone-700 text-stone-400 hover:text-stone-200 disabled:opacity-40"
+              className="min-h-11 px-4 text-xs font-mono uppercase tracking-wider border border-stone-700 text-stone-300 hover:text-stone-100 disabled:opacity-40 disabled:cursor-not-allowed"
               disabled={currentPage <= 1}
               onClick={() => goToPage(currentPage - 1)}
             >
@@ -174,7 +174,7 @@ export function GroupMediaSection({
             </span>
             <button
               type="button"
-              className="h-8 px-3 text-xs font-mono uppercase tracking-wider border border-stone-700 text-stone-400 hover:text-stone-200 disabled:opacity-40"
+              className="min-h-11 px-4 text-xs font-mono uppercase tracking-wider border border-stone-700 text-stone-300 hover:text-stone-100 disabled:opacity-40 disabled:cursor-not-allowed"
               disabled={currentPage >= totalPages}
               onClick={() => goToPage(currentPage + 1)}
             >

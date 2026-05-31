@@ -214,6 +214,13 @@ UI display mapping (used in all labels, never stored in the database):
 | `consuming`       | Watching             | Reading          | Playing          |
 | `completed`       | Watched              | Read             | Played           |
 
+UI behavior rule:
+
+- Status is treated as personal progress in the table UI.
+- Setting status to `completed` automatically marks the current user as consumed (creates/keeps `consumption_records` row).
+- Setting status away from `completed` removes the current user's consumption row.
+- The `Consumed By` table text is derived from `consumption_records` and is not manually edited inline.
+
 ---
 
 ## 10. Group System
@@ -238,6 +245,11 @@ Consumption is tracked in the `consumption_records` table — **not** on the med
 - The `note` field is limited to **500 characters**, enforced by both a PostgreSQL `CHECK` constraint and a visible character counter in the UI.
 - Notes belong to the **consumption record**, not the item — each member has their own note about the same item.
 - To check if the current user has consumed an item: query `consumption_records` where `user_id = auth.uid()` and `media_item_id = <item id>`.
+
+Status linkage:
+
+- The table status selector is the source of truth for current-user consumed/not-consumed state in the app UI.
+- A manual consumed toggle is intentionally not shown in the item row.
 
 ---
 
@@ -369,8 +381,64 @@ After updating, document the change at the bottom of this file with a date and a
 
 ---
 
+## 21. Frontend Quality System (Mandatory)
+
+The Friend Archive frontend must follow the design and interaction rules below.
+
+### 21.1 Design Tokens (single source of truth)
+
+- All visual values must come from the token system in `app/globals.css`.
+- Use semantic token names for colors (`background`, `surface`, `surface-elevated`, `border`, `text-primary`, `text-secondary`, `text-muted`, `accent`, `accent-hover`, `destructive`, `success`, `warning`).
+- Do not add ad-hoc hex values in component files.
+- Reuse standardized radius, shadow, spacing, duration, easing, and z-index tokens.
+
+### 21.2 Button Variant System
+
+- All buttons must use shared `Button` variants only.
+- Allowed variants: `primary` (or legacy `default`), `secondary`, `ghost`, `destructive`, `link`, plus `outline` for bordered secondary CTAs.
+- No page-specific one-off button styles.
+- Loading buttons must show inline spinner + disabled state.
+
+### 21.3 Motion Philosophy
+
+- Use Framer Motion for route/list/state transitions where motion adds spatial clarity.
+- Motion should be subtle and fast (active phase <= 350ms).
+- Animate user-triggered and state-change transitions; do not animate passive static copy blocks.
+- Keep list cascades short (full sequence <= 400ms).
+
+### 21.4 Loading State Pattern
+
+- Server/data-loading surfaces must use skeletons that resemble real layout shapes.
+- Inline async actions must use in-button spinner + disabled controls.
+- Avoid blank content flashes while loading.
+
+### 21.5 Error and Empty State Pattern
+
+- Field validation errors should appear close to their fields.
+- Form-level server/network errors should use a consistent banner pattern (friendly language, no raw internal error messages).
+- Page-level fetch failures need clear recovery actions (retry/back/navigation).
+- Empty states should include a concise explanation and a clear CTA.
+
+### 21.6 Mobile-First Interaction Rules
+
+- Minimum tap target: 44x44 for all interactive controls.
+- Forms and dialogs must remain usable at 390px width without pinch zoom.
+- Dense data views (especially media lists) must provide a mobile layout (not desktop table squeeze).
+- Any modal on mobile should use full-screen or near-full-screen behavior with clear close control.
+
+### 21.7 Cursor and Interactivity Rules
+
+- Clickable elements: `cursor-pointer`.
+- Text inputs/textareas: `cursor-text`.
+- Disabled controls: `cursor-not-allowed` and muted visuals.
+- Icon-only actions still need obvious interaction affordance and accessible labels.
+
+---
+
 ## Changelog
 
-| Date       | Change                                                                            |
-| ---------- | --------------------------------------------------------------------------------- |
-| 2026-05-31 | Initial instructions written during migration from Vite SPA to Next.js + Supabase |
+| Date       | Change                                                                              |
+| ---------- | ----------------------------------------------------------------------------------- |
+| 2026-05-31 | Initial instructions written during migration from Vite SPA to Next.js + Supabase   |
+| 2026-06-01 | Documented status-to-consumption auto-sync behavior and consumed-by display rules   |
+| 2026-06-01 | Added mandatory frontend design tokens, motion, loading/error, and button standards |

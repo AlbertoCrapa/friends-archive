@@ -3,8 +3,10 @@
 import { useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { FormBanner } from '@/components/ui/form-banner';
 import {
   Dialog,
   DialogContent,
@@ -25,11 +27,12 @@ import { getStatusOptions } from '@/types';
 
 interface Props {
   item: MediaItemWithDetails;
+  userId: string;
   onUpdated: (item: MediaItemWithDetails) => void;
   children: React.ReactNode;
 }
 
-export function EditMediaItemDialog({ item, onUpdated, children }: Props) {
+export function EditMediaItemDialog({ item, userId, onUpdated, children }: Props) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState(item.title);
   const [status, setStatus] = useState<ItemStatus>(item.status);
@@ -103,9 +106,24 @@ export function EditMediaItemDialog({ item, onUpdated, children }: Props) {
       .single();
 
     if (updateError) {
-      setError(updateError.message);
+      setError('Could not save this item right now. Please try again.');
       setLoading(false);
       return;
+    }
+
+    if (status === 'completed') {
+      await supabase
+        .from('consumption_records')
+        .upsert(
+          { user_id: userId, media_item_id: item.id },
+          { onConflict: 'media_item_id,user_id' }
+        );
+    } else {
+      await supabase
+        .from('consumption_records')
+        .delete()
+        .eq('user_id', userId)
+        .eq('media_item_id', item.id);
     }
 
     const merged: MediaItemWithDetails = {
@@ -138,7 +156,7 @@ export function EditMediaItemDialog({ item, onUpdated, children }: Props) {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label htmlFor={`status-${item.id}`}>Status</Label>
               <Select value={status} onValueChange={(v) => setStatus(v as ItemStatus)}>
@@ -165,35 +183,35 @@ export function EditMediaItemDialog({ item, onUpdated, children }: Props) {
           </div>
 
           {item.type === 'movie' && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label htmlFor={`director-${item.id}`}>Director</Label>
                 <Input id={`director-${item.id}`} value={director} onChange={(e) => setDirector(e.target.value)} placeholder="optional" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor={`year-${item.id}`}>Year</Label>
-                <Input id={`year-${item.id}`} type="number" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} min="1888" max="2099" placeholder="optional" />
+                <Input id={`year-${item.id}`} type="number" inputMode="numeric" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} min="1888" max="2099" placeholder="optional" />
               </div>
               <div className="space-y-2 col-span-2">
                 <Label htmlFor={`duration-${item.id}`}>Duration (min)</Label>
-                <Input id={`duration-${item.id}`} type="number" value={durationMinutes} onChange={(e) => setDurationMinutes(e.target.value)} min="1" placeholder="optional" />
+                <Input id={`duration-${item.id}`} type="number" inputMode="numeric" value={durationMinutes} onChange={(e) => setDurationMinutes(e.target.value)} min="1" placeholder="optional" />
               </div>
             </div>
           )}
 
           {item.type === 'tv_series' && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label htmlFor={`creator-${item.id}`}>Creator</Label>
                 <Input id={`creator-${item.id}`} value={creator} onChange={(e) => setCreator(e.target.value)} placeholder="optional" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor={`year-${item.id}`}>Year</Label>
-                <Input id={`year-${item.id}`} type="number" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} min="1900" max="2099" placeholder="optional" />
+                <Input id={`year-${item.id}`} type="number" inputMode="numeric" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} min="1900" max="2099" placeholder="optional" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor={`seasons-${item.id}`}>Seasons</Label>
-                <Input id={`seasons-${item.id}`} type="number" value={seasons} onChange={(e) => setSeasons(e.target.value)} min="1" placeholder="optional" />
+                <Input id={`seasons-${item.id}`} type="number" inputMode="numeric" value={seasons} onChange={(e) => setSeasons(e.target.value)} min="1" placeholder="optional" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor={`platform-${item.id}`}>Platform</Label>
@@ -203,40 +221,43 @@ export function EditMediaItemDialog({ item, onUpdated, children }: Props) {
           )}
 
           {item.type === 'book' && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2 col-span-2">
                 <Label htmlFor={`author-${item.id}`}>Author</Label>
                 <Input id={`author-${item.id}`} value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="optional" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor={`year-${item.id}`}>Publication Year</Label>
-                <Input id={`year-${item.id}`} type="number" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} min="1000" max="2099" placeholder="optional" />
+                <Input id={`year-${item.id}`} type="number" inputMode="numeric" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} min="1000" max="2099" placeholder="optional" />
               </div>
             </div>
           )}
 
           {item.type === 'video_game' && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label htmlFor={`developer-${item.id}`}>Developer</Label>
                 <Input id={`developer-${item.id}`} value={developer} onChange={(e) => setDeveloper(e.target.value)} placeholder="optional" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor={`year-${item.id}`}>Year</Label>
-                <Input id={`year-${item.id}`} type="number" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} min="1950" max="2099" placeholder="optional" />
+                <Input id={`year-${item.id}`} type="number" inputMode="numeric" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} min="1950" max="2099" placeholder="optional" />
               </div>
             </div>
           )}
 
-          {error && (
-            <p className="text-red-400 text-sm font-mono border border-red-900/50 bg-red-950/30 px-3 py-2">
-              {error}
-            </p>
-          )}
+          {error && <FormBanner message={error} variant="error" />}
 
           <DialogFooter>
             <Button type="submit" disabled={loading}>
-              {loading ? 'Saving…' : 'Save changes'}
+              {loading ? (
+                <span className="inline-flex items-center gap-2">
+                  <Spinner />
+                  Saving...
+                </span>
+              ) : (
+                'Save changes'
+              )}
             </Button>
           </DialogFooter>
         </form>

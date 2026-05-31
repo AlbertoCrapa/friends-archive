@@ -4,8 +4,10 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { FormBanner } from '@/components/ui/form-banner';
 
 export function RegisterForm() {
   const router = useRouter();
@@ -58,7 +60,7 @@ export function RegisterForm() {
     });
 
     if (authError) {
-      setError(authError.message);
+      setError(mapRegisterError(authError.message));
       setLoading(false);
       return;
     }
@@ -121,15 +123,29 @@ export function RegisterForm() {
         />
       </div>
 
-      {error && (
-        <p className="text-red-400 text-sm font-mono border border-red-900/50 bg-red-950/30 px-3 py-2">
-          {error}
-        </p>
-      )}
+      {error && <FormBanner message={error} variant="error" />}
 
       <Button type="submit" className="w-full" disabled={loading}>
-        {loading ? 'Creating account…' : 'Create account'}
+        {loading ? (
+          <span className="inline-flex items-center gap-2">
+            <Spinner />
+            Creating account...
+          </span>
+        ) : (
+          'Create account'
+        )}
       </Button>
     </form>
   );
+}
+
+function mapRegisterError(message: string): string {
+  const normalized = message.toLowerCase();
+  if (normalized.includes('already registered')) {
+    return 'An account with this email already exists. Try signing in instead.';
+  }
+  if (normalized.includes('password')) {
+    return 'Please choose a stronger password and try again.';
+  }
+  return 'We could not create your account right now. Please try again.';
 }

@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
+import { motion } from 'framer-motion';
 import {
   Select,
   SelectContent,
@@ -47,61 +48,85 @@ export function MediaTable({
   const [optimisticConsumed, setOptimisticConsumed] = useState<Set<string>>(
     new Set(consumedSet)
   );
-
-  async function toggleConsumed(itemId: string) {
-    const supabase = createClient();
-    const previous = new Set(optimisticConsumed);
-    const isConsumed = optimisticConsumed.has(itemId);
-
-    // Optimistic update
-    const next = new Set(optimisticConsumed);
-    if (isConsumed) {
-      next.delete(itemId);
-    } else {
-      next.add(itemId);
-    }
-    setOptimisticConsumed(next);
-
-    const { error } = isConsumed
-      ? await supabase
-        .from('consumption_records')
-        .delete()
-        .eq('user_id', userId)
-        .eq('media_item_id', itemId)
-      : await supabase
-        .from('consumption_records')
-        .insert({ user_id: userId, media_item_id: itemId });
-
-    if (error) {
-      // Roll back optimistic state on failure.
-      setOptimisticConsumed(previous);
-    }
-  }
+  const [optimisticStatus, setOptimisticStatus] = useState<Record<string, ItemStatus>>({});
+  const [pendingStatusId, setPendingStatusId] = useState<string | null>(null);
+  const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
 
   async function deleteItem(itemId: string) {
+    setDeletingItemId(itemId);
     const supabase = createClient();
     const { error } = await supabase.from('media_items').delete().eq('id', itemId);
     if (!error) {
       onDeleted?.(itemId);
     }
+    setDeletingItemId(null);
   }
 
   async function updateStatus(item: MediaItemWithDetails, nextStatus: ItemStatus) {
+    const previousStatus = item.status;
+    const wasConsumed = optimisticConsumed.has(item.id);
+    const willBeConsumed = nextStatus === 'completed';
+
+    setOptimisticStatus((prev) => ({ ...prev, [item.id]: nextStatus }));
+    setOptimisticConsumed((prev) => {
+      const next = new Set(prev);
+      if (willBeConsumed) {
+        next.add(item.id);
+      } else {
+        next.delete(item.id);
+      }
+      return next;
+    });
+
+    setPendingStatusId(item.id);
     const supabase = createClient();
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('media_items')
       .update({ status: nextStatus })
-      .eq('id', item.id)
-      .select('id, group_id, title, type, status, genre, metadata, added_by, created_at, updated_at')
-      .single();
+      .eq('id', item.id);
 
-    if (!error && data) {
-      onUpdated?.({
-        ...(data as MediaItemWithDetails),
-        added_by_profile: item.added_by_profile,
-        consumption_records: item.consumption_records,
-      });
+    if (!error) {
+      if (willBeConsumed) {
+        await supabase
+          .from('consumption_records')
+          .upsert(
+            { user_id: userId, media_item_id: item.id },
+            { onConflict: 'media_item_id,user_id' }
+          );
+      } else {
+        await supabase
+          .from('consumption_records')
+          .delete()
+          .eq('user_id', userId)
+          .eq('media_item_id', item.id);
+      }
     }
+
+    if (!error) {
+      onUpdated?.({
+        ...item,
+        status: nextStatus,
+      });
+      setOptimisticStatus((prev) => {
+        const { [item.id]: _unused, ...rest } = prev;
+        return rest;
+      });
+      setPendingStatusId(null);
+      return;
+    }
+
+    // Roll back visual status if update fails.
+    setOptimisticStatus((prev) => ({ ...prev, [item.id]: previousStatus }));
+    setOptimisticConsumed((prev) => {
+      const next = new Set(prev);
+      if (wasConsumed) {
+        next.add(item.id);
+      } else {
+        next.delete(item.id);
+      }
+      return next;
+    });
+    setPendingStatusId(null);
   }
 
   if (items.length === 0) {
@@ -120,63 +145,52 @@ export function MediaTable({
   }
 
   return (
-    <div className="space-y-0 border border-stone-800/50 divide-y divide-stone-800/50">
-      {items.map((item) => {
-        const consumed = optimisticConsumed.has(item.id);
-        const statusLabel = getStatusLabel(item.status, item.type);
-        const statusClasses = getStatusColor(item.status);
+    <div className="space-y-0 border border-stone-800/50">
+      <div className="hidden md:grid md:grid-cols-[2.2fr_1fr_1fr_1.6fr_1fr_1.4fr_76px] gap-4 px-4 py-4 border-b border-stone-800/60 text-xs font-mono uppercase tracking-wider text-stone-500">
+        <span>Title</span>
+        <span>Category</span>
+        <span>Status</span>
+        <span>Tags</span>
+        <span>Added By</span>
+        <span>Consumed By</span>
+        <span className="text-right">View</span>
+      </div>
+
+      {items.map((item, index) => {
+        const effectiveStatus = optimisticStatus[item.id] ?? item.status;
+        const consumed = optimisticConsumed.has(item.id) || effectiveStatus === 'completed';
+        const statusLabel = getStatusLabel(effectiveStatus, item.type);
+        const statusClasses = getStatusColor(effectiveStatus);
+        const consumedUsers = getConsumedUsers(item, currentUserNickname, consumed, userId);
+        const isCurrentUserConsumed = currentUserNickname
+          ? consumedUsers.includes(currentUserNickname)
+          : consumed;
+        const tagChips = getTagChips(item);
 
         return (
-          <div
-            key={item.id}
-            className={cn(
-              'flex items-start gap-4 px-4 py-3 group hover:bg-stone-900/30 transition-colors',
-              consumed && 'opacity-60'
-            )}
-          >
-            {/* Consumed checkbox */}
-            {isMember && (
-              <div className="pt-0.5 shrink-0">
-                <Checkbox
-                  checked={consumed}
-                  onCheckedChange={() => toggleConsumed(item.id)}
-                  aria-label={`Mark ${item.title} as consumed`}
-                />
-              </div>
-            )}
-
-            {/* Title + metadata */}
-            <div className="flex-1 min-w-0 space-y-1">
-              <p className={cn(
-                'text-stone-100 font-light leading-snug',
-                consumed && 'line-through text-stone-500'
-              )}>
-                {item.title}
-              </p>
+          <Fragment key={item.id}>
+            <motion.div
+              className="hidden md:grid md:grid-cols-[2.2fr_1fr_1fr_1.6fr_1fr_1.4fr_76px] gap-4 px-4 py-4 border-b border-stone-800/50 items-start hover:bg-stone-900/20 transition-colors"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2, delay: Math.min(0.012 * index, 0.2) }}
+            >
+            <div className="space-y-1 min-w-0">
+              <p className="text-stone-100 font-light leading-snug truncate">{item.title}</p>
               {item.metadata && (
-                <p className="text-xs font-mono text-stone-600">
-                  {getMetaSummary(item)}
-                </p>
+                <p className="text-[11px] font-mono text-stone-600 truncate">{getMetaSummary(item)}</p>
               )}
-
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <Badge variant="secondary" className="text-[10px]">
-                  Added by {item.added_by_profile?.nickname ?? 'Unknown'}
-                </Badge>
-                <span className="text-[10px] font-mono text-stone-600">
-                  {getConsumedLabel(item.type)}: {getConsumedUsers(item, currentUserNickname, consumed, userId).join(', ') || 'Nobody yet'}
-                </span>
-              </div>
             </div>
 
-            {/* Status badge */}
-            <div className="shrink-0 w-40">
+            <div className="text-stone-300 text-sm font-light pt-0.5">{getTypeLabel(item.type)}</div>
+
+            <div className="shrink-0">
               {isMember ? (
                 <Select
-                  value={item.status}
+                  value={effectiveStatus}
                   onValueChange={(value) => updateStatus(item, value as ItemStatus)}
                 >
-                  <SelectTrigger className={cn('h-7 border text-xs', statusClasses)}>
+                  <SelectTrigger className={cn('h-10 border text-base', statusClasses)} disabled={pendingStatusId === item.id}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -188,28 +202,50 @@ export function MediaTable({
                   </SelectContent>
                 </Select>
               ) : (
-                <Badge
-                  className={cn('shrink-0 border text-xs', statusClasses)}
-                  variant={undefined}
-                >
+                <Badge className={cn('shrink-0 border text-xs', statusClasses)} variant={undefined}>
                   {statusLabel}
                 </Badge>
               )}
             </div>
 
-            {/* Who else consumed + actions */}
-            <div className="flex items-center gap-2 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-              <ConsumedByDialog itemId={item.id} itemTitle={item.title} />
+            <div className="flex flex-wrap gap-1.5 pt-0.5">
+              {tagChips.length === 0 ? (
+                <span className="text-xs font-mono text-stone-700">-</span>
+              ) : (
+                tagChips.map((tag) => (
+                  <Badge key={`${item.id}-${tag}`} variant="tag" className="text-[10px] uppercase">
+                    {tag}
+                  </Badge>
+                ))
+              )}
+            </div>
 
+            <div className="text-stone-200 text-sm font-mono pt-2 truncate">
+              {item.added_by_profile?.nickname ?? 'Unknown'}
+            </div>
+
+            <div className="flex items-center gap-2 pt-0.5 min-w-0">
+              <span className="text-xs font-mono text-stone-500 truncate">
+                {consumedUsers.join(', ') || 'Nobody'}
+              </span>
+              {isCurrentUserConsumed && (
+                <Badge variant="secondary" className="text-[10px] shrink-0">
+                  You consumed this
+                </Badge>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-1">
+              <ConsumedByDialog itemId={item.id} itemTitle={item.title} />
               {isMember && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-7 w-7">
-                      <MoreHorizontal className="h-3.5 w-3.5" />
+                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                      <MoreHorizontal className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <EditMediaItemDialog item={item} onUpdated={(updated) => onUpdated?.(updated)}>
+                    <EditMediaItemDialog item={item} userId={userId} onUpdated={(updated) => onUpdated?.(updated)}>
                       <DropdownMenuItem onSelect={(event) => event.preventDefault()}>
                         <Pencil className="h-3 w-3 mr-2" />
                         Edit
@@ -218,20 +254,137 @@ export function MediaTable({
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       className="text-red-400 focus:text-red-300"
+                      disabled={deletingItemId === item.id}
                       onClick={() => deleteItem(item.id)}
                     >
-                      <Trash2 className="h-3 w-3 mr-2" />
-                      Delete
+                      {deletingItemId === item.id ? (
+                        <Spinner className="mr-2 h-3 w-3" />
+                      ) : (
+                        <Trash2 className="h-3 w-3 mr-2" />
+                      )}
+                      {deletingItemId === item.id ? 'Deleting...' : 'Delete'}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
             </div>
-          </div>
+            </motion.div>
+
+            <motion.div
+              className="md:hidden border-b border-stone-800/50 p-4 space-y-3"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2, delay: Math.min(0.012 * index, 0.2) }}
+            >
+            <div className="space-y-1">
+              <p className="text-base text-stone-100 leading-snug break-words">{item.title}</p>
+              <p className="text-xs font-mono text-stone-500">{getTypeLabel(item.type)}</p>
+              {item.metadata && <p className="text-xs font-mono text-stone-600">{getMetaSummary(item)}</p>}
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              {tagChips.length === 0 ? (
+                <span className="text-xs font-mono text-stone-700">No tags</span>
+              ) : (
+                tagChips.map((tag) => (
+                  <Badge key={`${item.id}-mobile-${tag}`} variant="tag" className="text-[10px] uppercase">
+                    {tag}
+                  </Badge>
+                ))
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-xs font-mono text-stone-500">Status</p>
+              {isMember ? (
+                <Select value={effectiveStatus} onValueChange={(value) => updateStatus(item, value as ItemStatus)}>
+                  <SelectTrigger className={cn('h-11 border text-sm', statusClasses)} disabled={pendingStatusId === item.id}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {getStatusOptions(item.type).map((statusOption) => (
+                      <SelectItem key={`${item.id}-mobile-${statusOption.value}`} value={statusOption.value}>
+                        {statusOption.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Badge className={cn('border text-xs', statusClasses)} variant={undefined}>
+                  {statusLabel}
+                </Badge>
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-xs font-mono text-stone-500">Consumed by</p>
+              <p className="text-sm text-stone-300 break-words">{consumedUsers.join(', ') || 'Nobody yet'}</p>
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <ConsumedByDialog itemId={item.id} itemTitle={item.title} />
+              {isMember && (
+                <EditMediaItemDialog item={item} userId={userId} onUpdated={(updated) => onUpdated?.(updated)}>
+                  <Button variant="outline" size="sm" className="min-w-24">
+                    Edit
+                  </Button>
+                </EditMediaItemDialog>
+              )}
+              {isMember && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="min-w-24"
+                  onClick={() => deleteItem(item.id)}
+                  disabled={deletingItemId === item.id}
+                >
+                  {deletingItemId === item.id ? (
+                    <span className="inline-flex items-center gap-2">
+                      <Spinner className="h-3 w-3" />
+                      Deleting...
+                    </span>
+                  ) : (
+                    'Delete'
+                  )}
+                </Button>
+              )}
+            </div>
+            </motion.div>
+          </Fragment>
         );
       })}
     </div>
   );
+}
+
+function getTagChips(item: MediaItemWithDetails): string[] {
+  const tags = new Set<string>();
+
+  if (item.genre) {
+    for (const part of item.genre.split(',')) {
+      const cleaned = part.trim();
+      if (cleaned) tags.add(cleaned.toUpperCase());
+    }
+  }
+
+  const metadata = item.metadata as Record<string, unknown>;
+  const candidates = [
+    metadata.platform,
+    metadata.publisher,
+    metadata.director,
+    metadata.creator,
+    metadata.author,
+    metadata.developer,
+  ]
+    .map((value) => (typeof value === 'string' ? value.trim() : ''))
+    .filter(Boolean);
+
+  for (const value of candidates) {
+    if (tags.size >= 4) break;
+    tags.add(value.toUpperCase());
+  }
+
+  return Array.from(tags).slice(0, 4);
 }
 
 function getMetaSummary(item: MediaItem): string {
@@ -259,12 +412,6 @@ function getTypeLabel(type: MediaType): string {
     case 'video_game':
       return 'Game';
   }
-}
-
-function getConsumedLabel(type: MediaType): string {
-  if (type === 'book') return 'Read by';
-  if (type === 'video_game') return 'Played by';
-  return 'Watched by';
 }
 
 function getConsumedUsers(

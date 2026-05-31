@@ -1,6 +1,9 @@
 import { notFound, redirect } from 'next/navigation';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { GroupSettings } from '@/components/features/groups/GroupSettings';
+import { Button } from '@/components/ui/button';
+import { ArrowLeft } from 'lucide-react';
 import type { Member } from '@/components/features/groups/GroupSettings';
 
 interface Props {
@@ -34,6 +37,12 @@ export default async function GroupSettingsPage({ params }: Props) {
   return (
     <div className="max-w-2xl space-y-8">
       <div>
+        <Link href={`/groups/${groupId}`} className="inline-flex mb-4">
+          <Button variant="ghost" size="sm" className="gap-2">
+            <ArrowLeft className="h-4 w-4" />
+            Back to group
+          </Button>
+        </Link>
         <h1 className="font-serif text-3xl text-stone-100">Group settings</h1>
         <p className="text-stone-500 text-sm font-mono mt-1">{group.name}</p>
       </div>

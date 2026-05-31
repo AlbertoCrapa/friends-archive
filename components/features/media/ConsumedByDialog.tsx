@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import {
   Dialog,
   DialogContent,
@@ -62,7 +63,7 @@ export function ConsumedByDialog({ itemId, itemTitle }: Props) {
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-7 w-7" title="Who has seen this?">
+        <Button variant="ghost" size="icon" className="h-11 w-11" title="Who has seen this?">
           <Users className="h-3.5 w-3.5" />
         </Button>
       </DialogTrigger>
@@ -72,7 +73,10 @@ export function ConsumedByDialog({ itemId, itemTitle }: Props) {
         </DialogHeader>
         <div className="space-y-3 max-h-72 overflow-y-auto">
           {loading && (
-            <p className="text-stone-600 text-sm font-mono py-4 text-center">Loading…</p>
+            <p className="text-stone-500 text-sm font-mono py-4 text-center inline-flex items-center gap-2 justify-center w-full">
+              <Spinner />
+              Loading...
+            </p>
           )}
           {!loading && records?.length === 0 && (
             <p className="text-stone-600 text-sm font-mono py-4 text-center">

@@ -4,9 +4,11 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { FormBanner } from '@/components/ui/form-banner';
 import {
   Select,
   SelectContent,
@@ -52,7 +54,7 @@ export function CreateGroupForm() {
       if (insertError.message.includes('group_limit')) {
         setError('You have reached your group limit. Upgrade your plan to create more groups.');
       } else {
-        setError(insertError.message);
+        setError('We could not create this group right now. Please try again.');
       }
       setLoading(false);
       return;
@@ -100,15 +102,18 @@ export function CreateGroupForm() {
         </Select>
       </div>
 
-      {error && (
-        <p className="text-red-400 text-sm font-mono border border-red-900/50 bg-red-950/30 px-3 py-2">
-          {error}
-        </p>
-      )}
+      {error && <FormBanner message={error} variant="error" />}
 
       <div className="flex gap-3 pt-2">
         <Button type="submit" disabled={loading}>
-          {loading ? 'Creating…' : 'Create group'}
+          {loading ? (
+            <span className="inline-flex items-center gap-2">
+              <Spinner />
+              Creating...
+            </span>
+          ) : (
+            'Create group'
+          )}
         </Button>
         <Button type="button" variant="ghost" onClick={() => router.back()}>
           Cancel
