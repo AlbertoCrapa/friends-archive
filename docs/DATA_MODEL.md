@@ -1,0 +1,715 @@
+# Data Model — The Friend Archive
+
+This document is the authoritative reference for the database schema of The Friend Archive. It describes every table, every column, every constraint, every relationship, every index, and every Row Level Security policy. It also explains the reasoning behind design decisions that may not be obvious.
+
+---
+
+## Table of Contents
+
+1. [Entity Overview](#1-entity-overview)
+2. [Enum Types](#2-enum-types)
+3. [Table Definitions](#3-table-definitions)
+   - [profiles](#31-profiles)
+   - [subscriptions](#32-subscriptions)
+   - [groups](#33-groups)
+   - [group_members](#34-group_members)
+   - [media_items](#35-media_items)
+   - [consumption_records](#36-consumption_records)
+4. [Relationships and Foreign Keys](#4-relationships-and-foreign-keys)
+5. [Indexes](#5-indexes)
+6. [Design Rationale](#6-design-rationale)
+   - [Why JSONB for metadata](#61-why-jsonb-for-metadata)
+   - [Why a separate consumption_records table](#62-why-a-separate-consumption_records-table)
+   - [Why profiles is separate from auth.users](#63-why-profiles-is-separate-from-authusers)
+   - [Why item_status is three values not six](#64-why-item_status-is-three-values-not-six)
+   - [Why added_by is immutable](#65-why-added_by-is-immutable)
+7. [Row Level Security Matrix](#7-row-level-security-matrix)
+8. [Metadata Field Reference](#8-metadata-field-reference)
+
+---
+
+## 1. Entity Overview
+
+```
+auth.users (Supabase managed)
+    │
+    │ 1:1
+    ▼
+profiles ──────────────────────────────────────────────┐
+    │                                                   │
+    │ 1:1                           1:many              │
+    ▼                               (owner)             │
+subscriptions                                           │
+                                    groups ◄────────────┘
+                                       │
+                              ┌────────┼────────┐
+                              │                 │
+                           1:many            1:many
+                              │                 │
+                              ▼                 ▼
+                         group_members      media_items
+                                                │
+                                             1:many
+                                                │
+                                                ▼
+                                      consumption_records
+```
+
+The six tables form three logical layers:
+
+1. **Identity layer** — `profiles`, `subscriptions`
+2. **Organisation layer** — `groups`, `group_members`
+3. **Content layer** — `media_items`, `consumption_records`
+
+---
+
+## 2. Enum Types
+
+### `media_type`
+
+The four media categories supported by the application.
+
+```sql
+CREATE TYPE media_type AS ENUM ('movie', 'tv_series', 'book', 'video_game');
+```
+
+| Value        | UI label  |
+| ------------ | --------- |
+| `movie`      | Movies    |
+| `tv_series`  | TV Series |
+| `book`       | Books     |
+| `video_game` | Games     |
+
+> **Critical:** The value `movie` is the only acceptable identifier for cinema content in the entire codebase. The word "film" or "films" must not appear anywhere.
+
+---
+
+### `item_status`
+
+The group's collective progress relationship to a media item.
+
+```sql
+CREATE TYPE item_status AS ENUM ('plan_to_consume', 'consuming', 'completed');
+```
+
+| Value             | Movies/TV display | Books display | Games display |
+| ----------------- | ----------------- | ------------- | ------------- |
+| `plan_to_consume` | Plan to Watch     | Plan to Read  | Plan to Play  |
+| `consuming`       | Watching          | Reading       | Playing       |
+| `completed`       | Watched           | Read          | Played        |
+
+The UI maps these three database values to context-sensitive labels based on the item's `type`. The database stores only the three enum values.
+
+---
+
+### `group_visibility`
+
+```sql
+CREATE TYPE group_visibility AS ENUM ('public', 'private');
+```
+
+| Value     | Behaviour                                                                                     |
+| --------- | --------------------------------------------------------------------------------------------- |
+| `public`  | Discoverable and readable by any authenticated user. Non-members see items in read-only mode. |
+| `private` | Invisible to users who are not members.                                                       |
+
+---
+
+### `group_role`
+
+```sql
+CREATE TYPE group_role AS ENUM ('owner', 'member');
+```
+
+| Value    | Permissions                                                 |
+| -------- | ----------------------------------------------------------- |
+| `owner`  | Full control: change settings, remove members, delete group |
+| `member` | Add/edit items, mark consumption, write personal notes      |
+
+There are exactly two roles. There is no moderator, admin, or co-owner role.
+
+---
+
+### `subscription_plan`
+
+```sql
+CREATE TYPE subscription_plan AS ENUM ('free', 'premium', 'enterprise');
+```
+
+| Value        | Max groups owned | Max total memberships |
+| ------------ | ---------------- | --------------------- |
+| `free`       | 2                | 5                     |
+| `premium`    | 10               | Unlimited             |
+| `enterprise` | Unlimited        | Unlimited             |
+
+---
+
+### `subscription_status`
+
+```sql
+CREATE TYPE subscription_status AS ENUM ('active', 'cancelled', 'expired', 'trialing');
+```
+
+| Value       | Meaning                                                  |
+| ----------- | -------------------------------------------------------- |
+| `active`    | Plan limits are in full effect                           |
+| `cancelled` | User cancelled; plan may still be active until `ends_at` |
+| `expired`   | Plan period ended; user is effectively on free behaviour |
+| `trialing`  | Future use — not currently assigned                      |
+
+---
+
+## 3. Table Definitions
+
+### 3.1 `profiles`
+
+Public user profile. One row per registered user, created automatically by the `handle_new_user` trigger when a new `auth.users` row is inserted.
+
+| Column       | Type          | Nullable | Default | Description                                                |
+| ------------ | ------------- | -------- | ------- | ---------------------------------------------------------- |
+| `id`         | `UUID`        | NOT NULL | —       | Primary key. Equals `auth.users.id`.                       |
+| `nickname`   | `TEXT`        | NOT NULL | —       | Unique public display name. 2–30 chars, `[a-zA-Z0-9_\-]+`. |
+| `created_at` | `TIMESTAMPTZ` | NOT NULL | `NOW()` | Row creation time.                                         |
+| `updated_at` | `TIMESTAMPTZ` | NOT NULL | `NOW()` | Last updated. Maintained by trigger.                       |
+
+**Constraints:**
+
+| Name                    | Type        | Expression                               |
+| ----------------------- | ----------- | ---------------------------------------- |
+| `profiles_pkey`         | PRIMARY KEY | `id`                                     |
+| `profiles_nickname_key` | UNIQUE      | `nickname`                               |
+| `nickname_length`       | CHECK       | `char_length(nickname) BETWEEN 2 AND 30` |
+| `nickname_format`       | CHECK       | `nickname ~ '^[a-zA-Z0-9_\-]+$'`         |
+
+**Foreign keys:**
+
+| Column | References                         |
+| ------ | ---------------------------------- |
+| `id`   | `auth.users(id) ON DELETE CASCADE` |
+
+---
+
+### 3.2 `subscriptions`
+
+One row per user. Tracks which plan they are on and the lifecycle status of that subscription. Created automatically by the `handle_new_user` trigger (plan = `free`, status = `active`).
+
+| Column       | Type                  | Nullable | Default             | Description                                              |
+| ------------ | --------------------- | -------- | ------------------- | -------------------------------------------------------- |
+| `id`         | `UUID`                | NOT NULL | `gen_random_uuid()` | Primary key.                                             |
+| `user_id`    | `UUID`                | NOT NULL | —                   | FK to `profiles.id`. Unique — one subscription per user. |
+| `plan`       | `subscription_plan`   | NOT NULL | `'free'`            | Current plan.                                            |
+| `status`     | `subscription_status` | NOT NULL | `'active'`          | Lifecycle status.                                        |
+| `started_at` | `TIMESTAMPTZ`         | NOT NULL | `NOW()`             | When this plan period started.                           |
+| `ends_at`    | `TIMESTAMPTZ`         | NULL     | `NULL`              | When the plan period ends. NULL = no expiry.             |
+| `created_at` | `TIMESTAMPTZ`         | NOT NULL | `NOW()`             | Row creation time.                                       |
+| `updated_at` | `TIMESTAMPTZ`         | NOT NULL | `NOW()`             | Last updated.                                            |
+
+**Constraints:**
+
+| Name                        | Type        | Expression |
+| --------------------------- | ----------- | ---------- |
+| `subscriptions_pkey`        | PRIMARY KEY | `id`       |
+| `subscriptions_user_id_key` | UNIQUE      | `user_id`  |
+
+**Foreign keys:**
+
+| Column    | References                       |
+| --------- | -------------------------------- |
+| `user_id` | `profiles(id) ON DELETE CASCADE` |
+
+---
+
+### 3.3 `groups`
+
+A collaborative media-tracking group. Has exactly one owner. The owner is also recorded in `group_members` with role = `owner` (inserted by trigger on group creation).
+
+| Column        | Type               | Nullable | Default             | Description                                       |
+| ------------- | ------------------ | -------- | ------------------- | ------------------------------------------------- |
+| `id`          | `UUID`             | NOT NULL | `gen_random_uuid()` | Primary key.                                      |
+| `name`        | `TEXT`             | NOT NULL | —                   | Group display name. 1–100 chars.                  |
+| `description` | `TEXT`             | NULL     | `NULL`              | Optional description. Max 500 chars.              |
+| `visibility`  | `group_visibility` | NOT NULL | `'private'`         | Discoverability setting.                          |
+| `owner_id`    | `UUID`             | NOT NULL | —                   | FK to `profiles.id`. The user who owns the group. |
+| `created_at`  | `TIMESTAMPTZ`      | NOT NULL | `NOW()`             | Row creation time.                                |
+| `updated_at`  | `TIMESTAMPTZ`      | NOT NULL | `NOW()`             | Last updated.                                     |
+
+**Constraints:**
+
+| Name                       | Type        | Expression                                               |
+| -------------------------- | ----------- | -------------------------------------------------------- |
+| `groups_pkey`              | PRIMARY KEY | `id`                                                     |
+| `group_name_length`        | CHECK       | `char_length(name) BETWEEN 1 AND 100`                    |
+| `group_description_length` | CHECK       | `description IS NULL OR char_length(description) <= 500` |
+
+**Foreign keys:**
+
+| Column     | References                        |
+| ---------- | --------------------------------- |
+| `owner_id` | `profiles(id) ON DELETE RESTRICT` |
+
+> `ON DELETE RESTRICT` on `owner_id` prevents deleting a profile that still owns a group. The owner must delete their groups or transfer ownership first.
+
+---
+
+### 3.4 `group_members`
+
+Junction table. One row per (group, user) pair. Records the user's role and when they joined. The group owner is inserted here automatically by the `handle_new_group` trigger when the group is created.
+
+| Column      | Type          | Nullable | Default             | Description                    |
+| ----------- | ------------- | -------- | ------------------- | ------------------------------ |
+| `id`        | `UUID`        | NOT NULL | `gen_random_uuid()` | Primary key.                   |
+| `group_id`  | `UUID`        | NOT NULL | —                   | FK to `groups.id`.             |
+| `user_id`   | `UUID`        | NOT NULL | —                   | FK to `profiles.id`.           |
+| `role`      | `group_role`  | NOT NULL | `'member'`          | The user's role in this group. |
+| `joined_at` | `TIMESTAMPTZ` | NOT NULL | `NOW()`             | When the user joined.          |
+
+**Constraints:**
+
+| Name                  | Type        | Expression            |
+| --------------------- | ----------- | --------------------- |
+| `group_members_pkey`  | PRIMARY KEY | `id`                  |
+| `unique_group_member` | UNIQUE      | `(group_id, user_id)` |
+
+**Foreign keys:**
+
+| Column     | References                       |
+| ---------- | -------------------------------- |
+| `group_id` | `groups(id) ON DELETE CASCADE`   |
+| `user_id`  | `profiles(id) ON DELETE CASCADE` |
+
+---
+
+### 3.5 `media_items`
+
+A single media item within a group. The `type` field determines which keys are meaningful in the `metadata` JSONB column. See § 8 for the per-type metadata specification.
+
+| Column       | Type          | Nullable | Default             | Description                                                   |
+| ------------ | ------------- | -------- | ------------------- | ------------------------------------------------------------- |
+| `id`         | `UUID`        | NOT NULL | `gen_random_uuid()` | Primary key.                                                  |
+| `group_id`   | `UUID`        | NOT NULL | —                   | FK to `groups.id`. The group this item belongs to.            |
+| `title`      | `TEXT`        | NOT NULL | —                   | Display title. 1–500 chars.                                   |
+| `type`       | `media_type`  | NOT NULL | —                   | One of: `movie`, `tv_series`, `book`, `video_game`.           |
+| `status`     | `item_status` | NOT NULL | `'plan_to_consume'` | The group's progress status.                                  |
+| `genre`      | `TEXT`        | NULL     | `NULL`              | Optional genre or category tag. Max 100 chars.                |
+| `added_by`   | `UUID`        | NOT NULL | —                   | FK to `profiles.id`. Set server-side; immutable after insert. |
+| `metadata`   | `JSONB`       | NOT NULL | `'{}'`              | Type-specific fields. Schema varies by `type`.                |
+| `created_at` | `TIMESTAMPTZ` | NOT NULL | `NOW()`             | Row creation time.                                            |
+| `updated_at` | `TIMESTAMPTZ` | NOT NULL | `NOW()`             | Last updated.                                                 |
+
+**Constraints:**
+
+| Name               | Type        | Expression                                   |
+| ------------------ | ----------- | -------------------------------------------- |
+| `media_items_pkey` | PRIMARY KEY | `id`                                         |
+| `title_length`     | CHECK       | `char_length(title) BETWEEN 1 AND 500`       |
+| `genre_length`     | CHECK       | `genre IS NULL OR char_length(genre) <= 100` |
+
+**Foreign keys:**
+
+| Column     | References                        |
+| ---------- | --------------------------------- |
+| `group_id` | `groups(id) ON DELETE CASCADE`    |
+| `added_by` | `profiles(id) ON DELETE RESTRICT` |
+
+> `ON DELETE RESTRICT` on `added_by` prevents deleting a profile that has added items. Items must be deleted first (or ownership transferred in a future feature).
+
+---
+
+### 3.6 `consumption_records`
+
+Tracks per-user consumption of a specific item. One row per (user, item) pair. Allows each member to independently mark any item as consumed and optionally attach a personal note.
+
+| Column          | Type          | Nullable | Default             | Description                                         |
+| --------------- | ------------- | -------- | ------------------- | --------------------------------------------------- |
+| `id`            | `UUID`        | NOT NULL | `gen_random_uuid()` | Primary key.                                        |
+| `media_item_id` | `UUID`        | NOT NULL | —                   | FK to `media_items.id`.                             |
+| `user_id`       | `UUID`        | NOT NULL | —                   | FK to `profiles.id`.                                |
+| `consumed_at`   | `TIMESTAMPTZ` | NOT NULL | `NOW()`             | When the user marked this as consumed.              |
+| `note`          | `TEXT`        | NULL     | `NULL`              | Personal note. Max 500 chars. Per-user, not shared. |
+| `created_at`    | `TIMESTAMPTZ` | NOT NULL | `NOW()`             | Row creation time.                                  |
+| `updated_at`    | `TIMESTAMPTZ` | NOT NULL | `NOW()`             | Last updated.                                       |
+
+**Constraints:**
+
+| Name                       | Type        | Expression                                 |
+| -------------------------- | ----------- | ------------------------------------------ |
+| `consumption_records_pkey` | PRIMARY KEY | `id`                                       |
+| `unique_consumption`       | UNIQUE      | `(media_item_id, user_id)`                 |
+| `note_length`              | CHECK       | `note IS NULL OR char_length(note) <= 500` |
+
+**Foreign keys:**
+
+| Column          | References                          |
+| --------------- | ----------------------------------- |
+| `media_item_id` | `media_items(id) ON DELETE CASCADE` |
+| `user_id`       | `profiles(id) ON DELETE CASCADE`    |
+
+---
+
+## 4. Relationships and Foreign Keys
+
+```
+auth.users
+└── profiles (id → auth.users.id, CASCADE)
+    ├── subscriptions (user_id → profiles.id, CASCADE)
+    ├── groups (owner_id → profiles.id, RESTRICT)
+    │   └── group_members (group_id → groups.id, CASCADE)
+    │       └── [profiles.id → group_members.user_id, CASCADE]
+    ├── group_members (user_id → profiles.id, CASCADE)
+    ├── media_items (added_by → profiles.id, RESTRICT)
+    │   └── consumption_records (media_item_id → media_items.id, CASCADE)
+    └── consumption_records (user_id → profiles.id, CASCADE)
+```
+
+### Deletion Cascade Summary
+
+| If you delete...  | Effect on...                                                                                                                        |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `auth.users` row  | Cascade deletes `profiles` row                                                                                                      |
+| `profiles` row    | Cascade deletes `subscriptions`, `group_members`, `consumption_records`. Blocked (RESTRICT) if user owns groups or has added items. |
+| `groups` row      | Cascade deletes `group_members`, `media_items`                                                                                      |
+| `media_items` row | Cascade deletes `consumption_records`                                                                                               |
+
+---
+
+## 5. Indexes
+
+| Index name                              | Table                 | Columns         | Purpose                               |
+| --------------------------------------- | --------------------- | --------------- | ------------------------------------- |
+| `idx_profiles_nickname`                 | `profiles`            | `nickname`      | Profile page lookup by nickname       |
+| `idx_subscriptions_user_id`             | `subscriptions`       | `user_id`       | Subscription lookup by user           |
+| `idx_groups_owner_id`                   | `groups`              | `owner_id`      | Dashboard: "my groups" query          |
+| `idx_groups_visibility`                 | `groups`              | `visibility`    | Discover page: public groups filter   |
+| `idx_group_members_user_id`             | `group_members`       | `user_id`       | "Which groups does user X belong to?" |
+| `idx_group_members_group_id`            | `group_members`       | `group_id`      | "Who are the members of group X?"     |
+| `idx_media_items_group_id`              | `media_items`         | `group_id`      | Group detail page: all items in group |
+| `idx_media_items_type`                  | `media_items`         | `type`          | Type tab filtering                    |
+| `idx_media_items_status`                | `media_items`         | `status`        | Status filter                         |
+| `idx_media_items_added_by`              | `media_items`         | `added_by`      | "Added by" filter                     |
+| `idx_consumption_records_user_id`       | `consumption_records` | `user_id`       | "What has user X consumed?"           |
+| `idx_consumption_records_media_item_id` | `consumption_records` | `media_item_id` | "Who has consumed item X?"            |
+
+No full-text search indexes are in scope for the initial version. If title search performance becomes an issue, add a GIN index with `to_tsvector` on `media_items.title`.
+
+---
+
+## 6. Design Rationale
+
+### 6.1 Why JSONB for metadata
+
+**The decision:** Type-specific fields for movies, TV series, books, and video games are stored in a single `JSONB` column called `metadata` on `media_items`, rather than in separate nullable columns or in separate joined tables.
+
+**The alternatives considered:**
+
+_Option A — Nullable columns:_  
+Add individual columns like `director TEXT`, `author TEXT`, `developer TEXT`, `release_year INT`, etc. directly on `media_items`. Every row has most of these columns set to NULL.
+
+Rejected because:
+
+- Creates a wide table with many NULLs — wasteful and semantically noisy.
+- Adding new type-specific fields requires a schema migration.
+- More columns = larger row header overhead on Supabase's free-tier PostgreSQL.
+
+_Option B — Separate type-specific tables:_  
+Create `movie_details`, `tv_series_details`, `book_details`, `video_game_details` tables, each with a FK to `media_items`.
+
+Rejected because:
+
+- Every query for an item requires a JOIN to retrieve its metadata.
+- N+1 queries become very likely on list pages.
+- More tables = more RLS policies = more maintenance.
+
+_Option C — JSONB column (chosen):_  
+One `metadata JSONB` column stores the type-specific fields for each item. The application layer enforces the per-type schema.
+
+Chosen because:
+
+- No NULL sprawl. Each row contains only the fields relevant to its type.
+- No JOIN required to fetch metadata — it is part of the same row.
+- New fields can be added to a type without a database migration.
+- Supabase's free tier has no penalty for JSONB that wouldn't also apply to nullable columns.
+- Querying specific JSONB fields (e.g. `metadata->>'director'`) is efficient for the column selectivity of our queries.
+
+**Trade-off accepted:** The database does not enforce the shape of `metadata`. The TypeScript types and application layer are responsible for ensuring the correct keys are set. This is acceptable because the four media types are well-defined and static.
+
+---
+
+### 6.2 Why a separate `consumption_records` table
+
+**The decision:** Tracking which users have consumed an item uses a dedicated `consumption_records` table rather than an array column on `media_items`.
+
+**The alternative:** Store `consumed_by UUID[]` on `media_items` as an array of user IDs.
+
+Rejected because:
+
+- Arrays on PostgreSQL do not support foreign key constraints — referential integrity cannot be enforced.
+- Adding a per-user note to an array entry is not possible without denormalising further.
+- Querying "has user X consumed item Y?" with an array requires `= ANY(consumed_by)`, which is harder to index and optimize than a simple indexed lookup on a junction table row.
+- The `consumption_records` table can be extended in future (e.g. adding a rating, a watched-on date precision) without touching the items table.
+
+---
+
+### 6.3 Why `profiles` is separate from `auth.users`
+
+**The decision:** User profile data (specifically the `nickname`) is stored in a public `profiles` table, not directly on `auth.users`.
+
+**Why:** `auth.users` is managed by Supabase internally and exists in the `auth` schema, which is not directly accessible via PostgREST (the Supabase API layer). Storing public profile data in a public schema table allows:
+
+- Other authenticated users to read nicknames for display purposes.
+- RLS policies to control read access without touching Supabase internals.
+- Profile data to be queried with Supabase's `.from('profiles')` syntax like any other table.
+
+The `profiles.id` column is a foreign key to `auth.users.id`, maintaining a strict 1:1 relationship.
+
+---
+
+### 6.4 Why `item_status` is three values, not six
+
+**The original system** used six string values: `Plan to Watch`, `Watching`, `Watched`, `Plan to Read`, `Reading`, `Read`.
+
+**The problem:** These six values encode both the progress state and the media type in the same field. "Plan to Watch" and "Plan to Read" are semantically identical — the verb changes only because of the media type. This coupling makes filtering and querying awkward.
+
+**The new design:** Three enum values (`plan_to_consume`, `consuming`, `completed`) represent the pure progress state. The UI derives the appropriate label by combining the status with the item's `type`:
+
+```typescript
+function getStatusLabel(status: ItemStatus, type: MediaType): string {
+  if (status === "plan_to_consume") {
+    return type === "book"
+      ? "Plan to Read"
+      : type === "video_game"
+        ? "Plan to Play"
+        : "Plan to Watch";
+  }
+  // ...
+}
+```
+
+This makes filtering by status work correctly across all types with a single condition.
+
+---
+
+### 6.5 Why `added_by` is immutable
+
+**The decision:** The `added_by` column on `media_items` is set once on insert (to `auth.uid()`) and is protected by an RLS `WITH CHECK` condition that prevents any `UPDATE` from changing it.
+
+**Why this matters:** Without this protection, a malicious or buggy client could claim ownership of an item they did not add, or strip attribution from items added by someone else. Immutability at the database level means this protection holds even if:
+
+- A client calls the PostgREST API directly with a crafted `PATCH` request.
+- A future developer forgets to exclude the `added_by` field from an edit form.
+- A Supabase dashboard operator runs a manual UPDATE query as the authenticated user.
+
+The exact RLS `WITH CHECK` clause is:
+
+```sql
+WITH CHECK (
+  added_by = (SELECT added_by FROM public.media_items WHERE id = media_items.id)
+  AND EXISTS ( ... member check ... )
+)
+```
+
+This compares the proposed `added_by` value against the existing value in the database — they must be equal for the update to succeed. Service role operations can bypass this if truly needed for administrative purposes.
+
+---
+
+## 7. Row Level Security Matrix
+
+For each table and operation, this matrix shows what is permitted for each actor type.
+
+**Actor types:**
+
+- **Anon** — Unauthenticated request (no session)
+- **Auth / Non-member** — Authenticated user, not a member of the relevant group
+- **Member** — Authenticated user who is a member of the group
+- **Owner** — Authenticated user who owns the group (also a member in `group_members`)
+- **Item creator** — Authenticated user who created the specific `media_items` row
+- **Record owner** — Authenticated user who created the specific `consumption_records` row
+- **Service role** — Server-side admin operation using `SUPABASE_SERVICE_ROLE_KEY`
+
+### `profiles`
+
+| Operation | Anon | Auth / Non-member          | Member        | Owner         | Service role |
+| --------- | ---- | -------------------------- | ------------- | ------------- | ------------ |
+| SELECT    | ✗    | ✅ (any profile)           | ✅            | ✅            | ✅           |
+| INSERT    | ✗    | ✅ (own only, via trigger) | ✅            | ✅            | ✅           |
+| UPDATE    | ✗    | ✅ (own only)              | ✅ (own only) | ✅ (own only) | ✅           |
+| DELETE    | ✗    | ✗                          | ✗             | ✗             | ✅           |
+
+### `subscriptions`
+
+| Operation | Anon | Auth             | Service role |
+| --------- | ---- | ---------------- | ------------ |
+| SELECT    | ✗    | ✅ (own only)    | ✅           |
+| INSERT    | ✗    | ✗ (trigger only) | ✅           |
+| UPDATE    | ✗    | ✗                | ✅           |
+| DELETE    | ✗    | ✗                | ✅           |
+
+### `groups`
+
+| Operation | Anon | Auth / Non-member       | Member                 | Owner                  | Service role |
+| --------- | ---- | ----------------------- | ---------------------- | ---------------------- | ------------ |
+| SELECT    | ✗    | ✅ (public groups only) | ✅ (own + public)      | ✅ (own + public)      | ✅           |
+| INSERT    | ✗    | ✅ (within plan limit)  | ✅ (within plan limit) | ✅ (within plan limit) | ✅           |
+| UPDATE    | ✗    | ✗                       | ✗                      | ✅                     | ✅           |
+| DELETE    | ✗    | ✗                       | ✗                      | ✅                     | ✅           |
+
+### `group_members`
+
+| Operation                 | Anon | Auth / Non-member      | Member       | Owner        | Service role |
+| ------------------------- | ---- | ---------------------- | ------------ | ------------ | ------------ |
+| SELECT (public group)     | ✗    | ✅                     | ✅           | ✅           | ✅           |
+| SELECT (private group)    | ✗    | ✗                      | ✅           | ✅           | ✅           |
+| INSERT (self-join public) | ✗    | ✅ (within plan limit) | —            | —            | ✅           |
+| UPDATE (roles)            | ✗    | ✗                      | ✗            | ✅           | ✅           |
+| DELETE (self-leave)       | ✗    | —                      | ✅ (own row) | ✅ (own row) | ✅           |
+| DELETE (remove member)    | ✗    | ✗                      | ✗            | ✅           | ✅           |
+
+### `media_items`
+
+| Operation               | Anon | Auth / Non-member | Member | Owner | Item creator | Service role |
+| ----------------------- | ---- | ----------------- | ------ | ----- | ------------ | ------------ |
+| SELECT (public group)   | ✗    | ✅ (read-only)    | ✅     | ✅    | ✅           | ✅           |
+| SELECT (private group)  | ✗    | ✗                 | ✅     | ✅    | ✅           | ✅           |
+| INSERT                  | ✗    | ✗                 | ✅     | ✅    | ✅           | ✅           |
+| UPDATE (excl. added_by) | ✗    | ✗                 | ✅     | ✅    | ✅           | ✅           |
+| UPDATE (added_by)       | ✗    | ✗                 | ✗      | ✗     | ✗            | ✅           |
+| DELETE                  | ✗    | ✗                 | ✗      | ✅    | ✅           | ✅           |
+
+### `consumption_records`
+
+| Operation              | Anon | Auth / Non-member | Member        | Owner         | Record owner | Service role |
+| ---------------------- | ---- | ----------------- | ------------- | ------------- | ------------ | ------------ |
+| SELECT (public group)  | ✗    | ✅                | ✅            | ✅            | ✅           | ✅           |
+| SELECT (private group) | ✗    | ✗                 | ✅            | ✅            | ✅           | ✅           |
+| INSERT (own record)    | ✗    | ✗                 | ✅            | ✅            | —            | ✅           |
+| UPDATE (own record)    | ✗    | ✗                 | ✅ (own only) | ✅ (own only) | ✅           | ✅           |
+| DELETE (own record)    | ✗    | ✗                 | ✅ (own only) | ✅ (own only) | ✅           | ✅           |
+
+---
+
+## 8. Metadata Field Reference
+
+The `metadata` JSONB column on `media_items` stores different fields depending on `type`. All fields are optional — the UI shows fields as empty when not provided, and the database stores `{}` as the default.
+
+### `movie`
+
+```typescript
+interface MovieMetadata {
+  director?: string; // e.g. "Denis Villeneuve"
+  release_year?: number; // e.g. 2021 (integer)
+  duration_minutes?: number; // e.g. 155 (integer)
+}
+```
+
+Example:
+
+```json
+{
+  "director": "Denis Villeneuve",
+  "release_year": 2021,
+  "duration_minutes": 155
+}
+```
+
+### `tv_series`
+
+```typescript
+interface TvSeriesMetadata {
+  creator?: string; // e.g. "Christopher Storer"
+  release_year?: number; // e.g. 2022 (integer, year of first episode)
+  seasons?: number; // e.g. 3 (integer)
+  platform?: string; // e.g. "Hulu", "Netflix", "Apple TV+"
+}
+```
+
+Example:
+
+```json
+{
+  "creator": "Christopher Storer",
+  "release_year": 2022,
+  "seasons": 3,
+  "platform": "Hulu"
+}
+```
+
+### `book`
+
+```typescript
+interface BookMetadata {
+  author?: string; // e.g. "Andy Weir"
+  publication_year?: number; // e.g. 2021 (integer)
+  publisher?: string; // e.g. "Ballantine Books"
+}
+```
+
+Example:
+
+```json
+{
+  "author": "Andy Weir",
+  "publication_year": 2021,
+  "publisher": "Ballantine Books"
+}
+```
+
+### `video_game`
+
+```typescript
+interface VideoGameMetadata {
+  developer?: string; // e.g. "FromSoftware"
+  publisher?: string; // e.g. "Bandai Namco"
+  release_year?: number; // e.g. 2022 (integer)
+  platforms?: string[]; // e.g. ["PC", "PS5", "Xbox Series X"]
+}
+```
+
+Example:
+
+```json
+{
+  "developer": "FromSoftware",
+  "publisher": "Bandai Namco",
+  "release_year": 2022,
+  "platforms": ["PC", "PS5", "Xbox Series X"]
+}
+```
+
+### TypeScript Union
+
+In `types/index.ts`, the metadata types are expressed as a discriminated union:
+
+```typescript
+export type MovieMetadata = {
+  director?: string;
+  release_year?: number;
+  duration_minutes?: number;
+};
+
+export type TvSeriesMetadata = {
+  creator?: string;
+  release_year?: number;
+  seasons?: number;
+  platform?: string;
+};
+
+export type BookMetadata = {
+  author?: string;
+  publication_year?: number;
+  publisher?: string;
+};
+
+export type VideoGameMetadata = {
+  developer?: string;
+  publisher?: string;
+  release_year?: number;
+  platforms?: string[];
+};
+
+export type MediaMetadata =
+  | MovieMetadata
+  | TvSeriesMetadata
+  | BookMetadata
+  | VideoGameMetadata;
+```
+
+When reading `metadata` from Supabase, cast it to the appropriate type based on the item's `type` field.
