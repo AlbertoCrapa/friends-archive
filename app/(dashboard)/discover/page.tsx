@@ -1,6 +1,6 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
-import { DiscoverGrid } from '@/components/features/groups/DiscoverGrid';
+import { DiscoverList } from '@/components/features/groups/DiscoverList';
 
 export default async function DiscoverPage() {
   const supabase = await createClient();
@@ -13,33 +13,43 @@ export default async function DiscoverPage() {
     .eq('visibility', 'public')
     .order('created_at', { ascending: false });
 
-  // User's memberships
-  const { data: myMemberships } = user
-    ? await supabase.from('group_members').select('group_id').eq('user_id', user.id)
-    : { data: [] };
+  const groupIds = (groups ?? []).map((g) => g.id);
+  const ownerIds = [...new Set((groups ?? []).map((g) => g.owner_id))];
+
+  // Parallel: memberships + member counts + item counts + owner profiles
+  const [
+    { data: myMemberships },
+    { data: memberRows },
+    { data: itemRows },
+    { data: ownerProfiles },
+  ] = await Promise.all([
+    user
+      ? supabase.from('group_members').select('group_id').eq('user_id', user.id)
+      : Promise.resolve({ data: [] as Array<{ group_id: string }> }),
+    groupIds.length
+      ? supabase.from('group_members').select('group_id').in('group_id', groupIds)
+      : Promise.resolve({ data: [] as Array<{ group_id: string }> }),
+    groupIds.length
+      ? supabase.from('media_items').select('group_id').in('group_id', groupIds)
+      : Promise.resolve({ data: [] as Array<{ group_id: string }> }),
+    ownerIds.length
+      ? supabase.from('profiles').select('id, nickname').in('id', ownerIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; nickname: string }> }),
+  ]);
 
   const joinedSet = new Set((myMemberships ?? []).map((m) => m.group_id));
-  const groupIds = (groups ?? []).map((g) => g.id);
-
-  // Member counts
-  const { data: memberRows } = groupIds.length
-    ? await supabase.from('group_members').select('group_id').in('group_id', groupIds)
-    : { data: [] as Array<{ group_id: string }> };
 
   const memberCounts = new Map<string, number>();
   for (const row of memberRows ?? []) {
     memberCounts.set(row.group_id, (memberCounts.get(row.group_id) ?? 0) + 1);
   }
 
-  // Item counts
-  const { data: itemRows } = groupIds.length
-    ? await supabase.from('media_items').select('group_id').in('group_id', groupIds)
-    : { data: [] as Array<{ group_id: string }> };
-
   const itemCounts = new Map<string, number>();
   for (const row of itemRows ?? []) {
     itemCounts.set(row.group_id, (itemCounts.get(row.group_id) ?? 0) + 1);
   }
+
+  const ownerNicknames = new Map((ownerProfiles ?? []).map((p) => [p.id, p.nickname]));
 
   async function joinGroup(groupId: string) {
     'use server';
@@ -58,10 +68,11 @@ export default async function DiscoverPage() {
     memberCount: memberCounts.get(g.id) ?? 0,
     itemCount: itemCounts.get(g.id) ?? 0,
     isMember: joinedSet.has(g.id),
+    ownerNickname: ownerNicknames.get(g.owner_id) ?? null,
   }));
 
   return (
-    <DiscoverGrid
+    <DiscoverList
       groups={enrichedGroups}
       isAuthenticated={!!user}
       joinGroup={joinGroup}

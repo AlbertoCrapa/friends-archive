@@ -29,11 +29,15 @@ interface Props {
   item: MediaItemWithDetails;
   userId: string;
   onUpdated: (item: MediaItemWithDetails) => void;
-  children: React.ReactNode;
+  children?: React.ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
-export function EditMediaItemDialog({ item, userId, onUpdated, children }: Props) {
-  const [open, setOpen] = useState(false);
+export function EditMediaItemDialog({ item, userId, onUpdated, children, open: controlledOpen, onOpenChange }: Props) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen ?? internalOpen;
+  const setOpen = onOpenChange ?? setInternalOpen;
   const [title, setTitle] = useState(item.title);
   const [status, setStatus] = useState<ItemStatus>(item.status);
   const [genre, setGenre] = useState(item.genre ?? '');
@@ -139,7 +143,7 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children }: Props
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{children}</DialogTrigger>
+      {children && <DialogTrigger asChild>{children}</DialogTrigger>}
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Edit item</DialogTitle>

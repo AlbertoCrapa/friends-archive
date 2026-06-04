@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { Header } from '@/components/layout/Header';
+import { PageTransition } from '@/components/layout/PageTransition';
 
 export default async function DashboardLayout({
   children,
@@ -17,7 +18,9 @@ export default async function DashboardLayout({
   return (
     <div className="min-h-screen bg-stone-950">
       <Header />
-      <main className="max-w-6xl mx-auto px-6 py-8">{children}</main>
+      <PageTransition>
+        <main className="max-w-6xl mx-auto px-6 py-8">{children}</main>
+      </PageTransition>
     </div>
   );
 }

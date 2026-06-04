@@ -51,6 +51,7 @@ export function MediaTable({
   const [optimisticStatus, setOptimisticStatus] = useState<Record<string, ItemStatus>>({});
   const [pendingStatusId, setPendingStatusId] = useState<string | null>(null);
   const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
+  const [editingItem, setEditingItem] = useState<MediaItemWithDetails | null>(null);
 
   async function deleteItem(itemId: string) {
     setDeletingItemId(itemId);
@@ -197,7 +198,7 @@ export function MediaTable({
                   value={effectiveStatus}
                   onValueChange={(value) => updateStatus(item, value as ItemStatus)}
                 >
-                  <SelectTrigger className={cn('h-10 border text-base', statusClasses)} disabled={pendingStatusId === item.id}>
+                  <SelectTrigger className={cn('h-7 border text-[11px] font-mono px-2 py-0', statusClasses)} disabled={pendingStatusId === item.id}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -265,12 +266,10 @@ export function MediaTable({
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <EditMediaItemDialog item={item} userId={userId} onUpdated={(updated) => onUpdated?.(updated)}>
-                      <DropdownMenuItem onSelect={(event) => event.preventDefault()}>
-                        <Pencil className="h-3 w-3 mr-2" />
-                        Edit
-                      </DropdownMenuItem>
-                    </EditMediaItemDialog>
+                    <DropdownMenuItem onSelect={() => setEditingItem(item)}>
+                      <Pencil className="h-3 w-3 mr-2" />
+                      Edit
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       className="text-red-400 focus:text-red-300"
@@ -389,6 +388,15 @@ export function MediaTable({
           </Fragment>
         );
       })}
+      {editingItem ? (
+        <EditMediaItemDialog
+          item={editingItem}
+          userId={userId}
+          onUpdated={(updated) => { onUpdated?.(updated); setEditingItem(null); }}
+          open={true}
+          onOpenChange={(open) => { if (!open) setEditingItem(null); }}
+        />
+      ) : null}
     </div>
   );
 }

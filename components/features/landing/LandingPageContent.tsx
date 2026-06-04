@@ -67,12 +67,7 @@ export function LandingPageContent({ isSignedIn, nickname }: Props) {
 
 function LandingNav({ isSignedIn, nickname }: Props) {
   return (
-    <motion.header
-      className="border-b border-stone-800/50"
-      initial={{ opacity: 0, y: -10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, ease: EASE }}
-    >
+    <header className="sticky top-0 z-40 border-b border-stone-800/50 bg-stone-950/96 backdrop-blur-sm">
       <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
         <span className="font-serif text-xl tracking-widest text-stone-100 uppercase select-none">
           The Friend Archive
@@ -107,7 +102,7 @@ function LandingNav({ isSignedIn, nickname }: Props) {
           )}
         </nav>
       </div>
-    </motion.header>
+    </header>
   );
 }
 
@@ -115,7 +110,7 @@ function LandingNav({ isSignedIn, nickname }: Props) {
 
 function HeroSection({ isSignedIn }: { isSignedIn: boolean }) {
   return (
-    <section className="relative min-h-[100svh] flex flex-col items-center justify-center text-center px-6 py-32">
+    <section className="relative min-h-[100svh] flex flex-col items-center justify-center text-center px-6 py-20 sm:py-28">
       {/* Ambient glow — not glassmorphism, just a soft radial wash */}
       <div className="absolute inset-0 pointer-events-none select-none" aria-hidden>
         <div
@@ -143,7 +138,7 @@ function HeroSection({ isSignedIn }: { isSignedIn: boolean }) {
 
         <motion.h1
           className="font-serif font-light text-stone-100 leading-[0.9] tracking-tight"
-          style={{ fontSize: 'clamp(3.4rem, 9vw, 7.5rem)' }}
+          style={{ fontSize: 'clamp(2.8rem, 7vw, 6.5rem)' }}
           variants={fadeUp}
         >
           The Friend
@@ -259,7 +254,7 @@ function HowItWorksSection() {
   ];
 
   return (
-    <section ref={ref as React.RefObject<HTMLElement>} className="border-t border-stone-800/50 py-24 sm:py-36">
+    <section ref={ref as React.RefObject<HTMLElement>} className="border-t border-stone-800/50 py-16 sm:py-24 lg:py-32">
       <div className="max-w-6xl mx-auto px-6">
         <motion.div
           variants={staggerContainer()}
@@ -287,7 +282,7 @@ function HowItWorksSection() {
             </motion.h2>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-0">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-0">
             {steps.map((step) => (
               <motion.div
                 key={step.number}
@@ -317,7 +312,7 @@ function SharedCatalogueSection() {
   const { ref, isInView } = useScrollReveal();
 
   return (
-    <section ref={ref as React.RefObject<HTMLElement>} className="border-t border-stone-800/50 py-24 sm:py-36">
+    <section ref={ref as React.RefObject<HTMLElement>} className="border-t border-stone-800/50 py-16 sm:py-24 lg:py-32">
       <div className="max-w-6xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-center">
         {/* Text */}
         <motion.div
@@ -439,7 +434,7 @@ function PersonalTrackingSection() {
   const { ref, isInView } = useScrollReveal();
 
   return (
-    <section ref={ref as React.RefObject<HTMLElement>} className="border-t border-stone-800/50 py-24 sm:py-36">
+    <section ref={ref as React.RefObject<HTMLElement>} className="border-t border-stone-800/50 py-16 sm:py-24 lg:py-32">
       <div className="max-w-6xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-center">
         {/* UI mock — left on desktop */}
         <motion.div
@@ -607,7 +602,7 @@ function MediaCategoriesSection() {
   const { ref, isInView } = useScrollReveal();
 
   return (
-    <section ref={ref as React.RefObject<HTMLElement>} className="border-t border-stone-800/50 py-24 sm:py-36">
+    <section ref={ref as React.RefObject<HTMLElement>} className="border-t border-stone-800/50 py-16 sm:py-24 lg:py-32">
       <div className="max-w-6xl mx-auto px-6">
         <motion.div
           variants={staggerContainer()}
@@ -709,7 +704,7 @@ function PricingTeaserSection() {
   return (
     <section
       ref={ref as React.RefObject<HTMLElement>}
-      className="border-t border-stone-800/50 py-24 sm:py-36"
+      className="border-t border-stone-800/50 py-16 sm:py-24 lg:py-32"
       style={{ backgroundColor: 'var(--color-surface)' }}
     >
       <div className="max-w-6xl mx-auto px-6">
@@ -730,7 +725,7 @@ function PricingTeaserSection() {
               </motion.p>
               <motion.h2
                 variants={fadeUp}
-                className="font-serif text-4xl sm:text-5xl text-stone-100 font-light leading-[1.05] max-w-xl"
+                className="font-serif text-3xl sm:text-4xl lg:text-5xl text-stone-100 font-light leading-[1.05] max-w-xl"
               >
                 Start free. Upgrade when you need more.
               </motion.h2>
@@ -746,7 +741,7 @@ function PricingTeaserSection() {
 
           <motion.div
             variants={staggerContainer(0.07)}
-            className="grid grid-cols-1 sm:grid-cols-3 gap-4"
+            className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4"
           >
             {PRICING_PLANS.map((plan) => (
               <motion.div
@@ -840,7 +835,7 @@ function FinalCtaSection({ isSignedIn }: { isSignedIn: boolean }) {
   return (
     <section
       ref={ref as React.RefObject<HTMLElement>}
-      className="border-t border-stone-800/50 py-28 sm:py-44 text-center px-6"
+      className="border-t border-stone-800/50 py-20 sm:py-32 lg:py-44 text-center px-6"
     >
       <motion.div
         variants={staggerContainer()}
@@ -850,7 +845,7 @@ function FinalCtaSection({ isSignedIn }: { isSignedIn: boolean }) {
       >
         <motion.h2
           variants={fadeUp}
-          className="font-serif text-5xl sm:text-6xl text-stone-100 font-light leading-[0.95]"
+          className="font-serif text-4xl sm:text-5xl lg:text-6xl text-stone-100 font-light leading-[0.95]"
         >
           Start archiving
           <br />

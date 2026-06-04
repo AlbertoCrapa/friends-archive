@@ -39,6 +39,13 @@ const statusFilters: Array<{ value: StatusFilter; label: string }> = [
   { value: 'completed', label: 'Completed' },
 ];
 
+const STATUS_ACTIVE_CLASSES: Record<StatusFilter, string> = {
+  all: 'border-stone-600/70 text-stone-300 bg-stone-800/40',
+  plan_to_consume: 'border-amber-700/60 text-amber-400 bg-amber-950/25',
+  consuming: 'border-sky-700/60 text-sky-400 bg-sky-950/25',
+  completed: 'border-emerald-700/60 text-emerald-400 bg-emerald-950/25',
+};
+
 export function GroupMediaSection({
   groupId,
   userId,
@@ -128,7 +135,7 @@ export function GroupMediaSection({
 
         {/* Type filter tabs */}
         <div className="flex items-center justify-between gap-2">
-          <div className="flex gap-0 overflow-x-auto overflow-y-hidden scrollbar-hide">
+          <div className="flex gap-0 overflow-x-auto scrollbar-hide" style={{ marginBottom: '-1px' }}>
             {typeFilters.map(({ value, label }) => {
               const isActive = activeType === value;
               const count = getCountForType(value);
@@ -137,7 +144,7 @@ export function GroupMediaSection({
                   key={value}
                   type="button"
                   onClick={() => switchType(value)}
-                  className={`cursor-pointer min-h-[44px] px-3 sm:px-4 py-2 text-xs sm:text-sm font-mono uppercase tracking-wider transition-colors border-b-2 -mb-px whitespace-nowrap
+                  className={`cursor-pointer min-h-[44px] px-3 sm:px-4 py-2 text-xs sm:text-sm font-mono uppercase tracking-wider transition-colors border-b-2 whitespace-nowrap
                     ${isActive
                       ? 'text-amber-500 border-amber-500'
                       : 'text-stone-500 border-transparent hover:text-stone-300'
@@ -153,7 +160,7 @@ export function GroupMediaSection({
           </div>
 
           {isMember && (
-            <div className="shrink-0">
+            <div className="shrink-0 pb-1">
               <AddMediaDialog
                 groupId={groupId}
                 userId={userId}
@@ -171,10 +178,10 @@ export function GroupMediaSection({
           )}
         </div>
 
-        {/* Search + status filter row */}
-        <div className="flex items-center gap-2 py-2.5">
+        {/* Search + status filter row — stacks on mobile */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 py-2.5">
           {/* Search */}
-          <div className="relative flex-1 max-w-xs">
+          <div className="relative w-full sm:flex-1 sm:max-w-xs">
             <Search
               className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 pointer-events-none"
               style={{ color: 'oklch(0.42 0.005 60)' }}
@@ -184,7 +191,7 @@ export function GroupMediaSection({
               placeholder="Search titles..."
               value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-              className="h-9 pl-9 pr-9 text-sm font-light"
+              className="h-9 pl-9 pr-9 text-sm font-light w-full"
               style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
             />
             {search && (
@@ -199,8 +206,8 @@ export function GroupMediaSection({
             )}
           </div>
 
-          {/* Status filter */}
-          <div className="flex gap-1 overflow-x-auto scrollbar-hide">
+          {/* Status filter — scrollable row */}
+          <div className="flex gap-1 overflow-x-auto scrollbar-hide w-full sm:w-auto pb-0.5 sm:pb-0">
             {statusFilters.map(({ value, label }) => (
               <button
                 key={value}
@@ -208,7 +215,7 @@ export function GroupMediaSection({
                 onClick={() => { setActiveStatus(value); setPage(1); }}
                 className={`cursor-pointer min-h-9 px-3 text-[11px] font-mono uppercase tracking-wider whitespace-nowrap border transition-colors
                   ${activeStatus === value
-                    ? 'border-amber-700/60 text-amber-400 bg-amber-950/20'
+                    ? STATUS_ACTIVE_CLASSES[value]
                     : 'border-stone-800/60 text-stone-500 hover:text-stone-300 hover:border-stone-700'
                   }`}
               >

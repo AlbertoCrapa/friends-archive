@@ -49,12 +49,12 @@ export default async function DashboardPage() {
     memberCountMap.set(row.group_id, (memberCountMap.get(row.group_id) ?? 0) + 1);
   }
 
-  // Fetch the user's subscription plan
-  const { data: subscription } = await supabase
-    .from('subscriptions')
-    .select('plan, status')
-    .eq('user_id', user!.id)
-    .single();
+  // Fetch the user's subscription plan + personal stats (parallel)
+  const [{ data: subscription }, { count: consumedCount }, { count: addedCount }] = await Promise.all([
+    supabase.from('subscriptions').select('plan, status').eq('user_id', user!.id).single(),
+    supabase.from('consumption_records').select('id', { count: 'exact', head: true }).eq('user_id', user!.id),
+    supabase.from('media_items').select('id', { count: 'exact', head: true }).eq('added_by', user!.id),
+  ]);
 
   type GroupRow = Group & { role: GroupRole; itemCount: number; memberCount: number };
   const groups: GroupRow[] = (memberships ?? []).map((m) => {
@@ -72,6 +72,7 @@ export default async function DashboardPage() {
     subscription?.plan === 'premium' ? 10 : subscription?.plan === 'enterprise' ? Infinity : 2;
   const atLimit = ownedCount >= maxOwned;
   const plan = subscription?.plan ?? 'free';
+  const totalItems = Array.from(itemCountMap.values()).reduce((sum, n) => sum + n, 0);
 
   return (
     <DashboardContent
@@ -79,6 +80,9 @@ export default async function DashboardPage() {
       ownedCount={ownedCount}
       atLimit={atLimit}
       plan={plan}
+      totalItems={totalItems}
+      consumedCount={consumedCount ?? 0}
+      addedCount={addedCount ?? 0}
     />
   );
 }

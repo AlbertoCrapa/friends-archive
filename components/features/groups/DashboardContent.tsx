@@ -14,6 +14,9 @@ interface Props {
   ownedCount: number;
   atLimit: boolean;
   plan: string;
+  totalItems: number;
+  consumedCount: number;
+  addedCount: number;
 }
 
 const EASE = [0.22, 1, 0.36, 1] as const;
@@ -27,7 +30,7 @@ const cardVariants = {
   }),
 };
 
-export function DashboardContent({ groups, ownedCount, atLimit, plan }: Props) {
+export function DashboardContent({ groups, ownedCount, atLimit, plan, totalItems, consumedCount, addedCount }: Props) {
   return (
     <div className="space-y-8">
       {/* Page header */}
@@ -72,6 +75,27 @@ export function DashboardContent({ groups, ownedCount, atLimit, plan }: Props) {
           )}
         </div>
       </motion.div>
+
+      {/* Stats strip */}
+      {groups.length > 0 && (
+        <motion.div
+          className="grid grid-cols-3 border border-stone-800/50 divide-x divide-stone-800/50"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, ease: EASE, delay: 0.1 }}
+        >
+          {[
+            { value: totalItems, label: 'total items' },
+            { value: consumedCount, label: 'consumed' },
+            { value: addedCount, label: 'added by me' },
+          ].map(({ value, label }) => (
+            <div key={label} className="px-4 sm:px-6 py-4 text-center">
+              <p className="font-serif text-2xl sm:text-3xl text-stone-100">{value}</p>
+              <p className="font-mono text-[10px] uppercase tracking-widest text-stone-600 mt-0.5">{label}</p>
+            </div>
+          ))}
+        </motion.div>
+      )}
 
       {/* Groups grid */}
       {groups.length === 0 ? (
