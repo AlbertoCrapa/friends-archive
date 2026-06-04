@@ -49,6 +49,7 @@ export function GroupSettings({ group, members, currentUserId }: Props) {
   const [saved, setSaved] = useState(false);
   const [deletingGroup, setDeletingGroup] = useState(false);
   const [removingMember, setRemovingMember] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -89,7 +90,6 @@ export function GroupSettings({ group, members, currentUserId }: Props) {
   }
 
   async function deleteGroup() {
-    if (!confirm(`Delete "${group.name}"? This is permanent and cannot be undone.`)) return;
     setDeletingGroup(true);
     const supabase = createClient();
     await supabase.from('groups').delete().eq('id', group.id);
@@ -100,7 +100,7 @@ export function GroupSettings({ group, members, currentUserId }: Props) {
     <div className="space-y-10">
       {/* Info form */}
       <section className="space-y-5">
-        <h2 className="font-mono uppercase tracking-widest text-xs text-stone-500">Group info</h2>
+        <h2 className="font-mono uppercase tracking-[0.3em] text-xs" style={{ color: 'oklch(0.42 0.005 60)' }}>Group info</h2>
         <form onSubmit={handleSave} className="space-y-5">
           <div className="space-y-2">
             <Label htmlFor="name">Name</Label>
@@ -154,15 +154,18 @@ export function GroupSettings({ group, members, currentUserId }: Props) {
 
       {/* Members */}
       <section className="space-y-4">
-        <h2 className="font-mono uppercase tracking-widest text-xs text-stone-500">Members</h2>
-        <div className="border border-stone-800/50 divide-y divide-stone-800/50">
+        <h2 className="font-mono uppercase tracking-[0.3em] text-xs" style={{ color: 'oklch(0.42 0.005 60)' }}>Members</h2>
+        <div className="border border-stone-800/50">
           {members.map((m) => (
-            <div key={m.user_id} className="flex items-center justify-between px-4 py-3">
-              <div>
-                <span className="text-stone-200 text-sm font-mono">
+            <div key={m.user_id} className="flex items-center justify-between px-5 py-3.5 border-b border-stone-800/30 last:border-b-0">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="text-stone-200 text-sm font-mono truncate">
                   {m.profiles?.nickname ?? 'Unknown'}
                 </span>
-                <span className="text-stone-600 text-xs ml-2 uppercase tracking-wider">
+                <span
+                  className="font-mono text-[10px] uppercase tracking-wider shrink-0"
+                  style={{ color: m.role === 'owner' ? 'var(--color-accent)' : 'oklch(0.4 0.005 60)' }}
+                >
                   {m.role}
                 </span>
               </div>
@@ -170,12 +173,16 @@ export function GroupSettings({ group, members, currentUserId }: Props) {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-11 w-11 text-stone-500 hover:text-red-400"
+                  className="h-11 w-11 shrink-0 text-stone-600 hover:text-red-400"
                   disabled={removingMember === m.user_id}
                   onClick={() => removeMember(m.user_id)}
-                  title="Remove member"
+                  aria-label={`Remove ${m.profiles?.nickname ?? 'member'}`}
                 >
-                  <UserMinus className="h-3.5 w-3.5" />
+                  {removingMember === m.user_id ? (
+                    <Spinner className="h-3.5 w-3.5" />
+                  ) : (
+                    <UserMinus className="h-3.5 w-3.5" />
+                  )}
                 </Button>
               )}
             </div>
@@ -184,28 +191,72 @@ export function GroupSettings({ group, members, currentUserId }: Props) {
       </section>
 
       {/* Danger zone */}
-      <section className="space-y-4 border border-red-900/50 p-5">
-        <h2 className="font-mono uppercase tracking-widest text-xs text-red-500">Danger zone</h2>
-        <p className="text-stone-500 text-sm font-light">
-          Deleting this group will permanently remove all media items and consumption records.
-          This cannot be undone.
-        </p>
-        <Button
-          variant="destructive"
-          disabled={deletingGroup}
-          onClick={deleteGroup}
-          className="gap-2"
+      <section className="space-y-5">
+        <div className="border-t border-stone-800/50 pt-5">
+          <h2 className="font-mono uppercase tracking-[0.3em] text-xs" style={{ color: 'oklch(0.6 0.18 15)' }}>
+            Danger zone
+          </h2>
+        </div>
+        <div
+          className="border p-5 space-y-4"
+          style={{ borderColor: 'oklch(0.5 0.18 15 / 0.3)', backgroundColor: 'oklch(0.12 0.04 15 / 0.15)' }}
         >
-          <Trash2 className="h-4 w-4" />
-          {deletingGroup ? (
-            <span className="inline-flex items-center gap-2">
-              <Spinner />
-              Deleting...
-            </span>
+          <div className="space-y-1.5">
+            <p className="text-stone-200 text-sm font-light">
+              Delete <span className="font-mono text-stone-100">{group.name}</span>
+            </p>
+            <p className="text-stone-500 text-sm font-light">
+              Permanently removes all media items and consumption records. This cannot be undone.
+            </p>
+          </div>
+
+          {!confirmDelete ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 border-red-900/50 text-red-400 hover:bg-red-950/30 hover:border-red-800/60 hover:text-red-300"
+              onClick={() => setConfirmDelete(true)}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete group
+            </Button>
           ) : (
-            'Delete group'
+            <div className="flex items-center gap-3 flex-wrap">
+              <p className="text-sm font-mono" style={{ color: 'oklch(0.72 0.18 15)' }}>
+                Are you sure? This cannot be undone.
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={deletingGroup}
+                  onClick={deleteGroup}
+                  className="gap-2"
+                >
+                  {deletingGroup ? (
+                    <span className="inline-flex items-center gap-2">
+                      <Spinner className="h-3 w-3" />
+                      Deleting...
+                    </span>
+                  ) : (
+                    <>
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Yes, delete
+                    </>
+                  )}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setConfirmDelete(false)}
+                  disabled={deletingGroup}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
           )}
-        </Button>
+        </div>
       </section>
     </div>
   );

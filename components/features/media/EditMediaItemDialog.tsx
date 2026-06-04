@@ -192,7 +192,7 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children }: Props
                 <Label htmlFor={`year-${item.id}`}>Year</Label>
                 <Input id={`year-${item.id}`} type="number" inputMode="numeric" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} min="1888" max="2099" placeholder="optional" />
               </div>
-              <div className="space-y-2 col-span-2">
+              <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor={`duration-${item.id}`}>Duration (min)</Label>
                 <Input id={`duration-${item.id}`} type="number" inputMode="numeric" value={durationMinutes} onChange={(e) => setDurationMinutes(e.target.value)} min="1" placeholder="optional" />
               </div>
@@ -222,7 +222,7 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children }: Props
 
           {item.type === 'book' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-2 col-span-2">
+              <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor={`author-${item.id}`}>Author</Label>
                 <Input id={`author-${item.id}`} value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="optional" />
               </div>

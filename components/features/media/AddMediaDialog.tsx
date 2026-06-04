@@ -160,7 +160,7 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
           Add item
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md sm:max-w-md w-full">
         <DialogHeader>
           <DialogTitle>Add an item</DialogTitle>
         </DialogHeader>
@@ -218,7 +218,7 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
                 <Label htmlFor="year">Year</Label>
                 <Input id="year" type="number" inputMode="numeric" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} placeholder="2024" min="1888" max="2099" />
               </div>
-              <div className="space-y-2 col-span-2">
+              <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="duration">Duration (min)</Label>
                 <Input id="duration" type="number" inputMode="numeric" value={durationMinutes} onChange={(e) => setDurationMinutes(e.target.value)} placeholder="optional" min="1" />
               </div>
@@ -248,7 +248,7 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
 
           {type === 'book' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-2 col-span-2">
+              <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="author">Author</Label>
                 <Input id="author" value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="optional" />
               </div>

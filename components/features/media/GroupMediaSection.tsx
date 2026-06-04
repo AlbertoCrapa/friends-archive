@@ -1,11 +1,15 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { AddMediaDialog } from './AddMediaDialog';
 import { MediaTable } from './MediaTable';
+import { Input } from '@/components/ui/input';
+import { Search, X } from 'lucide-react';
 import type { MediaItemWithDetails, MediaType } from '@/types';
 
 type MediaFilterType = 'all' | MediaType;
+type StatusFilter = 'all' | 'plan_to_consume' | 'consuming' | 'completed';
 
 const PAGE_SIZE = 20;
 
@@ -20,12 +24,19 @@ interface Props {
   initialPage: number;
 }
 
-const mediaTypes: Array<{ value: MediaFilterType; label: string }> = [
+const typeFilters: Array<{ value: MediaFilterType; label: string }> = [
   { value: 'all', label: 'All' },
   { value: 'movie', label: 'Movies' },
-  { value: 'tv_series', label: 'TV Series' },
+  { value: 'tv_series', label: 'TV' },
   { value: 'book', label: 'Books' },
   { value: 'video_game', label: 'Games' },
+];
+
+const statusFilters: Array<{ value: StatusFilter; label: string }> = [
+  { value: 'all', label: 'Any status' },
+  { value: 'plan_to_consume', label: 'Planned' },
+  { value: 'consuming', label: 'In progress' },
+  { value: 'completed', label: 'Completed' },
 ];
 
 export function GroupMediaSection({
@@ -39,13 +50,29 @@ export function GroupMediaSection({
   initialPage,
 }: Props) {
   const [activeType, setActiveType] = useState<MediaFilterType>(initialActiveType);
+  const [activeStatus, setActiveStatus] = useState<StatusFilter>('all');
+  const [search, setSearch] = useState('');
   const [page, setPage] = useState(Math.max(1, initialPage));
   const [items, setItems] = useState<MediaItemWithDetails[]>(initialItems);
 
+  // Filter pipeline: type → status → search
   const filteredItems = useMemo(() => {
-    if (activeType === 'all') return items;
-    return items.filter((item) => item.type === activeType);
-  }, [items, activeType]);
+    let result = items;
+    if (activeType !== 'all') result = result.filter((item) => item.type === activeType);
+    if (activeStatus !== 'all') result = result.filter((item) => item.status === activeStatus);
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      result = result.filter((item) => {
+        if (item.title.toLowerCase().includes(q)) return true;
+        const meta = item.metadata as Record<string, unknown> | null;
+        if (!meta) return false;
+        return ['director', 'creator', 'author', 'developer', 'publisher', 'platform'].some(
+          (key) => typeof meta[key] === 'string' && (meta[key] as string).toLowerCase().includes(q)
+        );
+      });
+    }
+    return result;
+  }, [items, activeType, activeStatus, search]);
 
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -56,6 +83,11 @@ export function GroupMediaSection({
     setActiveType(nextType);
     setPage(1);
     syncUrl(nextType, 1);
+  }
+
+  function getCountForType(type: MediaFilterType) {
+    if (type === 'all') return items.length;
+    return items.filter((item) => item.type === type).length;
   }
 
   function handleAddedItem(item: MediaItemWithDetails) {
@@ -79,102 +111,177 @@ export function GroupMediaSection({
   function syncUrl(type: MediaFilterType, nextPage: number) {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
-
-    if (type === 'all') {
-      params.delete('type');
-    } else {
-      params.set('type', type);
-    }
-
-    if (nextPage <= 1) {
-      params.delete('page');
-    } else {
-      params.set('page', String(nextPage));
-    }
-
+    if (type === 'all') params.delete('type');
+    else params.set('type', type);
+    if (nextPage <= 1) params.delete('page');
+    else params.set('page', String(nextPage));
     const query = params.toString();
-    const nextUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
-    window.history.replaceState({}, '', nextUrl);
+    window.history.replaceState({}, '', query ? `${window.location.pathname}?${query}` : window.location.pathname);
   }
 
-  function getCountForType(type: MediaFilterType) {
-    if (type === 'all') return items.length;
-    return items.filter((item) => item.type === type).length;
-  }
+  const hasActiveFilter = search.trim() || activeStatus !== 'all' || activeType !== 'all';
 
   return (
-    <div className="space-y-6">
-      <div className="sticky top-14 z-20 bg-stone-950/95 backdrop-blur-sm border-b border-stone-900 pb-3 -mx-1 px-1 flex items-center justify-between gap-3">
-        <div className="border-b border-stone-800 flex gap-0 overflow-x-auto overflow-y-hidden">
-          {mediaTypes.map(({ value, label }) => {
-            const isActive = activeType === value;
-            return (
+    <div className="space-y-0">
+      {/* ── Sticky control bar ────────────────────────────────────────── */}
+      <div className="sticky top-[56px] z-20 bg-stone-950/96 backdrop-blur-sm border-b border-stone-900 -mx-6 px-6 pb-0">
+
+        {/* Type filter tabs */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex gap-0 overflow-x-auto overflow-y-hidden scrollbar-hide">
+            {typeFilters.map(({ value, label }) => {
+              const isActive = activeType === value;
+              const count = getCountForType(value);
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => switchType(value)}
+                  className={`cursor-pointer min-h-[44px] px-3 sm:px-4 py-2 text-xs sm:text-sm font-mono uppercase tracking-wider transition-colors border-b-2 -mb-px whitespace-nowrap
+                    ${isActive
+                      ? 'text-amber-500 border-amber-500'
+                      : 'text-stone-500 border-transparent hover:text-stone-300'
+                    }`}
+                >
+                  {label}
+                  <span className={`ml-1.5 text-[10px] ${isActive ? 'opacity-70' : 'opacity-40'}`}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {isMember && (
+            <div className="shrink-0">
+              <AddMediaDialog
+                groupId={groupId}
+                userId={userId}
+                activeType={activeType}
+                onAdded={(item) => {
+                  const optimistic = {
+                    ...item,
+                    added_by_profile: currentUserNickname ? { nickname: currentUserNickname } : undefined,
+                    consumption_records: [],
+                  } satisfies MediaItemWithDetails;
+                  handleAddedItem(optimistic);
+                }}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Search + status filter row */}
+        <div className="flex items-center gap-2 py-2.5">
+          {/* Search */}
+          <div className="relative flex-1 max-w-xs">
+            <Search
+              className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 pointer-events-none"
+              style={{ color: 'oklch(0.42 0.005 60)' }}
+            />
+            <Input
+              type="search"
+              placeholder="Search titles..."
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              className="h-9 pl-9 pr-9 text-sm font-light"
+              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 cursor-pointer"
+                style={{ color: 'oklch(0.42 0.005 60)' }}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Status filter */}
+          <div className="flex gap-1 overflow-x-auto scrollbar-hide">
+            {statusFilters.map(({ value, label }) => (
               <button
                 key={value}
                 type="button"
-                onClick={() => switchType(value)}
-                className={`cursor-pointer min-h-11 px-4 py-2 text-sm font-mono uppercase tracking-wider transition-colors border-b-2 -mb-px whitespace-nowrap
-                  ${isActive
-                    ? 'text-amber-500 border-amber-500'
-                    : 'text-stone-500 border-transparent hover:text-stone-300'
+                onClick={() => { setActiveStatus(value); setPage(1); }}
+                className={`cursor-pointer min-h-9 px-3 text-[11px] font-mono uppercase tracking-wider whitespace-nowrap border transition-colors
+                  ${activeStatus === value
+                    ? 'border-amber-700/60 text-amber-400 bg-amber-950/20'
+                    : 'border-stone-800/60 text-stone-500 hover:text-stone-300 hover:border-stone-700'
                   }`}
               >
-                {label} ({getCountForType(value)})
+                {label}
               </button>
-            );
-          })}
+            ))}
+          </div>
         </div>
-
-        {isMember && (
-          <AddMediaDialog
-            groupId={groupId}
-            userId={userId}
-            activeType={activeType}
-            onAdded={(item) => {
-              const optimistic = {
-                ...item,
-                added_by_profile: currentUserNickname
-                  ? { nickname: currentUserNickname }
-                  : undefined,
-                consumption_records: [],
-              } satisfies MediaItemWithDetails;
-              handleAddedItem(optimistic);
-            }}
-          />
-        )}
       </div>
 
-      <MediaTable
-        items={pageItems}
-        consumedSet={initialConsumedSet}
-        activeType={activeType}
-        isMember={isMember}
-        userId={userId}
-        currentUserNickname={currentUserNickname}
-        onDeleted={handleDeletedItem}
-        onUpdated={handleUpdatedItem}
-      />
+      {/* ── Results count when filtering ─────────────────────────────── */}
+      <AnimatePresence>
+        {hasActiveFilter && (
+          <motion.div
+            className="flex items-center justify-between px-0 py-3 mt-4"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            <p className="font-mono text-xs" style={{ color: 'oklch(0.42 0.005 60)' }}>
+              {filteredItems.length} result{filteredItems.length !== 1 ? 's' : ''}
+              {search && <span> matching <em className="not-italic text-stone-300">"{search}"</em></span>}
+            </p>
+            {hasActiveFilter && (
+              <button
+                type="button"
+                onClick={() => { setSearch(''); setActiveStatus('all'); setActiveType('all'); setPage(1); }}
+                className="font-mono text-xs cursor-pointer transition-colors"
+                style={{ color: 'oklch(0.72 0.12 65 / 0.65)' }}
+              >
+                Clear filters
+              </button>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
+      {/* ── Media table ───────────────────────────────────────────────── */}
+      <div className="mt-4">
+        <MediaTable
+          items={pageItems}
+          consumedSet={initialConsumedSet}
+          activeType={activeType}
+          isMember={isMember}
+          userId={userId}
+          currentUserNickname={currentUserNickname}
+          onDeleted={handleDeletedItem}
+          onUpdated={handleUpdatedItem}
+        />
+      </div>
+
+      {/* ── Pagination ────────────────────────────────────────────────── */}
       {filteredItems.length > PAGE_SIZE && (
-        <div className="flex items-center justify-between border-t border-stone-800/50 pt-4">
-          <p className="text-xs font-mono text-stone-600">
-            Showing {pageStart + 1}-{Math.min(pageStart + PAGE_SIZE, filteredItems.length)} of {filteredItems.length}
+        <div className="flex items-center justify-between border-t border-stone-800/50 pt-5 mt-2">
+          <p className="text-xs font-mono" style={{ color: 'oklch(0.38 0.005 60)' }}>
+            {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, filteredItems.length)} of {filteredItems.length}
           </p>
           <div className="flex items-center gap-2">
             <button
               type="button"
-              className="min-h-11 px-4 text-xs font-mono uppercase tracking-wider border border-stone-700 text-stone-300 hover:text-stone-100 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="cursor-pointer min-h-[44px] px-4 text-xs font-mono uppercase tracking-wider border border-stone-700 text-stone-300 hover:text-stone-100 hover:border-stone-600 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
               disabled={currentPage <= 1}
               onClick={() => goToPage(currentPage - 1)}
             >
               Prev
             </button>
-            <span className="text-xs font-mono text-stone-500">
-              Page {currentPage} / {totalPages}
+            <span className="text-xs font-mono px-2" style={{ color: 'oklch(0.4 0.005 60)' }}>
+              {currentPage} / {totalPages}
             </span>
             <button
               type="button"
-              className="min-h-11 px-4 text-xs font-mono uppercase tracking-wider border border-stone-700 text-stone-300 hover:text-stone-100 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="cursor-pointer min-h-[44px] px-4 text-xs font-mono uppercase tracking-wider border border-stone-700 text-stone-300 hover:text-stone-100 hover:border-stone-600 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
               disabled={currentPage >= totalPages}
               onClick={() => goToPage(currentPage + 1)}
             >
