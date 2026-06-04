@@ -49,16 +49,16 @@ export function truncate(str: string, maxLength: number): string {
  */
 export function getStatusColor(status: string): string {
   const colors: Record<string, string> = {
-    plan_to_consume: 'bg-amber-900/30 text-amber-200 border-amber-700/50',
-    consuming: 'bg-emerald-900/30 text-emerald-200 border-emerald-700/50',
-    completed: 'bg-stone-700/30 text-stone-300 border-stone-600/50',
+    plan_to_consume: 'bg-amber-900/30 text-amber-300 border-amber-700/50',
+    consuming: 'bg-sky-900/30 text-sky-300 border-sky-700/50',
+    completed: 'bg-emerald-900/30 text-emerald-300 border-emerald-700/50',
     // Legacy string values — kept for graceful degradation during migration
-    'Plan to Watch': 'bg-amber-900/30 text-amber-200 border-amber-700/50',
-    Watching: 'bg-emerald-900/30 text-emerald-200 border-emerald-700/50',
-    Watched: 'bg-stone-700/30 text-stone-300 border-stone-600/50',
-    'Plan to Read': 'bg-amber-900/30 text-amber-200 border-amber-700/50',
-    Reading: 'bg-emerald-900/30 text-emerald-200 border-emerald-700/50',
-    Read: 'bg-stone-700/30 text-stone-300 border-stone-600/50',
+    'Plan to Watch': 'bg-amber-900/30 text-amber-300 border-amber-700/50',
+    Watching: 'bg-sky-900/30 text-sky-300 border-sky-700/50',
+    Watched: 'bg-emerald-900/30 text-emerald-300 border-emerald-700/50',
+    'Plan to Read': 'bg-amber-900/30 text-amber-300 border-amber-700/50',
+    Reading: 'bg-sky-900/30 text-sky-300 border-sky-700/50',
+    Read: 'bg-emerald-900/30 text-emerald-300 border-emerald-700/50',
   };
   return colors[status] ?? 'bg-stone-800/30 text-stone-400 border-stone-700/50';
 }

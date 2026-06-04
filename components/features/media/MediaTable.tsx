@@ -51,6 +51,7 @@ export function MediaTable({
   const [optimisticStatus, setOptimisticStatus] = useState<Record<string, ItemStatus>>({});
   const [pendingStatusId, setPendingStatusId] = useState<string | null>(null);
   const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
+  const [editingItem, setEditingItem] = useState<MediaItemWithDetails | null>(null);
 
   async function deleteItem(itemId: string) {
     setDeletingItemId(itemId);
@@ -130,15 +131,22 @@ export function MediaTable({
   }
 
   if (items.length === 0) {
-    const emptyLabel = activeType === 'all' ? 'items' : `${getTypeLabel(activeType).toLowerCase()}s`;
+    const typeLabel = activeType === 'all' ? 'items' : `${getTypeLabel(activeType as MediaType).toLowerCase()}s`;
 
     return (
-      <div className="border border-stone-800/50 py-16 text-center space-y-2">
-        <p className="font-serif text-xl text-stone-600">
-          No {emptyLabel} yet
+      <div className="border border-stone-800/50 py-20 text-center space-y-3">
+        <p className="font-serif text-2xl" style={{ color: 'oklch(0.38 0.005 60)' }}>
+          No {typeLabel} yet
         </p>
         {isMember && (
-          <p className="text-stone-700 text-sm font-mono">Add the first one above.</p>
+          <p className="text-sm font-mono" style={{ color: 'oklch(0.32 0.005 60)' }}>
+            Use the button above to add the first one.
+          </p>
+        )}
+        {!isMember && (
+          <p className="text-sm font-mono" style={{ color: 'oklch(0.32 0.005 60)' }}>
+            Nothing here yet.
+          </p>
         )}
       </div>
     );
@@ -190,7 +198,7 @@ export function MediaTable({
                   value={effectiveStatus}
                   onValueChange={(value) => updateStatus(item, value as ItemStatus)}
                 >
-                  <SelectTrigger className={cn('h-10 border text-base', statusClasses)} disabled={pendingStatusId === item.id}>
+                  <SelectTrigger className={cn('h-7 border text-[11px] font-mono px-2 py-0', statusClasses)} disabled={pendingStatusId === item.id}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -224,14 +232,27 @@ export function MediaTable({
               {item.added_by_profile?.nickname ?? 'Unknown'}
             </div>
 
-            <div className="flex items-center gap-2 pt-0.5 min-w-0">
-              <span className="text-xs font-mono text-stone-500 truncate">
-                {consumedUsers.join(', ') || 'Nobody'}
-              </span>
-              {isCurrentUserConsumed && (
-                <Badge variant="secondary" className="text-[10px] shrink-0">
-                  You consumed this
-                </Badge>
+            <div className="min-w-0 pt-0.5">
+              {consumedUsers.length === 0 ? (
+                <span className="text-xs font-mono" style={{ color: 'oklch(0.32 0.005 60)' }}>Nobody</span>
+              ) : (
+                <div className="flex flex-wrap gap-1">
+                  {consumedUsers.slice(0, 3).map((name) => (
+                    <span
+                      key={name}
+                      className={`font-mono text-[10px] px-1.5 py-0.5 border truncate max-w-[90px] ${
+                        isCurrentUserConsumed && name === currentUserNickname
+                          ? 'border-amber-800/50 text-amber-400/80'
+                          : 'border-stone-800/50 text-stone-400'
+                      }`}
+                    >
+                      {name}
+                    </span>
+                  ))}
+                  {consumedUsers.length > 3 && (
+                    <span className="font-mono text-[10px] text-stone-600">+{consumedUsers.length - 3}</span>
+                  )}
+                </div>
               )}
             </div>
 
@@ -245,12 +266,10 @@ export function MediaTable({
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <EditMediaItemDialog item={item} userId={userId} onUpdated={(updated) => onUpdated?.(updated)}>
-                      <DropdownMenuItem onSelect={(event) => event.preventDefault()}>
-                        <Pencil className="h-3 w-3 mr-2" />
-                        Edit
-                      </DropdownMenuItem>
-                    </EditMediaItemDialog>
+                    <DropdownMenuItem onSelect={() => setEditingItem(item)}>
+                      <Pencil className="h-3 w-3 mr-2" />
+                      Edit
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       className="text-red-400 focus:text-red-300"
@@ -318,14 +337,30 @@ export function MediaTable({
 
             <div className="space-y-1">
               <p className="text-xs font-mono text-stone-500">Consumed by</p>
-              <p className="text-sm text-stone-300 break-words">{consumedUsers.join(', ') || 'Nobody yet'}</p>
+              {consumedUsers.length === 0 ? (
+                <p className="text-sm font-mono" style={{ color: 'oklch(0.38 0.005 60)' }}>Nobody yet</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {consumedUsers.slice(0, 5).map((name) => (
+                    <span
+                      key={name}
+                      className="font-mono text-xs px-2 py-0.5 border border-stone-800/60 text-stone-300"
+                    >
+                      {name}
+                    </span>
+                  ))}
+                  {consumedUsers.length > 5 && (
+                    <span className="font-mono text-xs text-stone-600">+{consumedUsers.length - 5} more</span>
+                  )}
+                </div>
+              )}
             </div>
 
-            <div className="flex items-center gap-2 pt-1">
+            <div className="flex items-center flex-wrap gap-2 pt-1">
               <ConsumedByDialog itemId={item.id} itemTitle={item.title} />
               {isMember && (
                 <EditMediaItemDialog item={item} userId={userId} onUpdated={(updated) => onUpdated?.(updated)}>
-                  <Button variant="outline" size="sm" className="min-w-24">
+                  <Button variant="outline" size="sm" className="min-h-[44px] min-w-[80px]">
                     Edit
                   </Button>
                 </EditMediaItemDialog>
@@ -334,7 +369,7 @@ export function MediaTable({
                 <Button
                   variant="destructive"
                   size="sm"
-                  className="min-w-24"
+                  className="min-h-[44px] min-w-[80px]"
                   onClick={() => deleteItem(item.id)}
                   disabled={deletingItemId === item.id}
                 >
@@ -353,6 +388,15 @@ export function MediaTable({
           </Fragment>
         );
       })}
+      {editingItem ? (
+        <EditMediaItemDialog
+          item={editingItem}
+          userId={userId}
+          onUpdated={(updated) => { onUpdated?.(updated); setEditingItem(null); }}
+          open={true}
+          onOpenChange={(open) => { if (!open) setEditingItem(null); }}
+        />
+      ) : null}
     </div>
   );
 }

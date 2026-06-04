@@ -1,15 +1,90 @@
+import { Suspense } from 'react';
 import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import { GroupMediaSection } from '@/components/features/media/GroupMediaSection';
+import { GroupMediaLoader } from '@/components/features/media/GroupMediaLoader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Globe, Lock, Settings, Users } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
+import { ArrowLeft, Globe, Lock, Settings, Users } from 'lucide-react';
 import Link from 'next/link';
-import type { ConsumptionRecord, GroupRole, MediaItemWithDetails, MediaType } from '@/types';
+import type { GroupRole, MediaType } from '@/types';
 
 interface Props {
   params: Promise<{ groupId: string }>;
   searchParams: Promise<{ type?: 'all' | MediaType; page?: string }>;
+}
+
+const TAB_LABELS = ['All', 'Movies', 'TV', 'Books', 'Games'];
+const STATUS_LABELS = ['Any status', 'Planned', 'In progress', 'Completed'];
+
+function MediaSectionSkeleton({ isMember }: { isMember: boolean }) {
+  return (
+    <div className="space-y-0">
+      {/* Sticky control bar — rendered with real labels so it feels instant */}
+      <div className="sticky top-[56px] z-20 bg-stone-950/96 backdrop-blur-sm border-b border-stone-900 -mx-6 px-6 pb-0">
+        {/* Type tabs */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex gap-0 overflow-x-auto overflow-y-hidden scrollbar-hide">
+            {TAB_LABELS.map((label, i) => (
+              <div
+                key={label}
+                className={`min-h-[44px] px-3 sm:px-4 py-2 text-xs sm:text-sm font-mono uppercase tracking-wider border-b-2 -mb-px whitespace-nowrap select-none ${
+                  i === 0 ? 'text-amber-500 border-amber-500' : 'text-stone-600 border-transparent'
+                }`}
+              >
+                {label}
+              </div>
+            ))}
+          </div>
+          {isMember && <Skeleton className="h-9 w-28 shrink-0" />}
+        </div>
+        {/* Search + status filter */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 py-2.5">
+          <Skeleton className="h-9 w-full sm:w-64 max-w-xs" />
+          <div className="flex gap-1 overflow-x-auto scrollbar-hide">
+            {STATUS_LABELS.map((label) => (
+              <div
+                key={label}
+                className="min-h-9 px-3 text-[11px] font-mono uppercase tracking-wider whitespace-nowrap border border-stone-800/60 text-stone-700 select-none"
+              >
+                {label}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Table skeleton only */}
+      <div className="border border-stone-800/50 mt-4">
+        <div className="hidden md:grid md:grid-cols-[2.2fr_1fr_1fr_1.6fr_1fr_1.4fr_76px] gap-4 px-4 py-3 border-b border-stone-800/60">
+          {Array.from({ length: 7 }).map((_, i) => (
+            <Skeleton key={i} className="h-3" />
+          ))}
+        </div>
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="px-4 py-4 border-b border-stone-800/30 hidden md:grid md:grid-cols-[2.2fr_1fr_1fr_1.6fr_1fr_1.4fr_76px] gap-4 items-start">
+            <div className="space-y-1.5">
+              <Skeleton className="h-4 w-4/5" />
+              <Skeleton className="h-3 w-2/5" />
+            </div>
+            <Skeleton className="h-4 w-16" />
+            <Skeleton className="h-7 w-full" />
+            <Skeleton className="h-5 w-full" />
+            <Skeleton className="h-4 w-20" />
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-7 w-7 ml-auto" />
+          </div>
+        ))}
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={`m${i}`} className="md:hidden p-4 border-b border-stone-800/30 space-y-3">
+            <Skeleton className="h-5 w-3/4" />
+            <Skeleton className="h-3 w-1/3" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export default async function GroupDetailPage({ params, searchParams }: Props) {
@@ -22,102 +97,31 @@ export default async function GroupDetailPage({ params, searchParams }: Props) {
 
   if (!user) redirect('/login');
 
-  // Fetch the group
-  const { data: group } = await supabase
-    .from('groups')
-    .select('id, name, description, visibility, owner_id, created_at')
-    .eq('id', groupId)
-    .single();
+  const [{ data: group }, { data: membership }, { count: memberCount }] = await Promise.all([
+    supabase
+      .from('groups')
+      .select('id, name, description, visibility, owner_id, created_at')
+      .eq('id', groupId)
+      .single(),
+    supabase
+      .from('group_members')
+      .select('role')
+      .eq('group_id', groupId)
+      .eq('user_id', user.id)
+      .single(),
+    supabase
+      .from('group_members')
+      .select('user_id', { count: 'exact', head: true })
+      .eq('group_id', groupId),
+  ]);
 
   if (!group) notFound();
-
-  // Determine membership
-  const { data: membership } = await supabase
-    .from('group_members')
-    .select('role')
-    .eq('group_id', groupId)
-    .eq('user_id', user.id)
-    .single();
 
   const isMember = !!membership;
   const role: GroupRole | null = membership?.role ?? null;
   const isOwner = role === 'owner';
 
-  // Non-members can only view public groups in read-only mode
   if (!isMember && group.visibility === 'private') notFound();
-
-  // Fetch all media items once; client-side tabs filter without refetching.
-  const { data: items } = await supabase
-    .from('media_items')
-    .select('id, group_id, title, type, status, genre, metadata, added_by, created_at, updated_at')
-    .eq('group_id', groupId)
-    .order('created_at', { ascending: false });
-
-  const itemIds = (items ?? []).map((item) => item.id);
-  const adderIds = Array.from(new Set((items ?? []).map((item) => item.added_by)));
-
-  const [{ data: adders }, { data: consumptionRows }, { data: currentProfile }] = await Promise.all([
-    adderIds.length > 0
-      ? supabase.from('profiles').select('id, nickname').in('id', adderIds)
-      : Promise.resolve({ data: [] as Array<{ id: string; nickname: string }> }),
-    itemIds.length > 0
-      ? supabase
-          .from('consumption_records')
-          .select('id, media_item_id, user_id, consumed_at, note, created_at, updated_at, profiles(nickname)')
-          .in('media_item_id', itemIds)
-      : Promise.resolve({ data: [] as Array<{
-          id: string;
-          media_item_id: string;
-          user_id: string;
-          consumed_at: string;
-          note: string | null;
-          created_at: string;
-          updated_at: string;
-          profiles: { nickname: string } | null;
-        }> }),
-    supabase.from('profiles').select('nickname').eq('id', user.id).single(),
-  ]);
-
-  const consumedSet = new Set(
-    (consumptionRows ?? [])
-      .filter((row) => row.user_id === user.id)
-      .map((row) => row.media_item_id)
-  );
-
-  const addersById = new Map((adders ?? []).map((adder) => [adder.id, adder.nickname]));
-  const consumptionByItemId = new Map<string, ConsumptionRecord[]>();
-
-  for (const row of consumptionRows ?? []) {
-    const profileRow = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
-
-    const nextRow: ConsumptionRecord = {
-      id: row.id,
-      media_item_id: row.media_item_id,
-      user_id: row.user_id,
-      consumed_at: row.consumed_at,
-      note: row.note,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-      profile: profileRow ? { nickname: profileRow.nickname } : undefined,
-    };
-
-    const list = consumptionByItemId.get(row.media_item_id) ?? [];
-    list.push(nextRow);
-    consumptionByItemId.set(row.media_item_id, list);
-  }
-
-  const enrichedItems: MediaItemWithDetails[] = (items ?? []).map((item) => ({
-    ...item,
-    added_by_profile: addersById.get(item.added_by)
-      ? { nickname: addersById.get(item.added_by)! }
-      : undefined,
-    consumption_records: consumptionByItemId.get(item.id) ?? [],
-  }));
-  // Member count
-  const { count: memberCount } = await supabase
-    .from('group_members')
-    .select('user_id', { count: 'exact', head: true })
-    .eq('group_id', groupId);
 
   const validTypes = new Set(['all', 'movie', 'tv_series', 'book', 'video_game']);
   const initialActiveType = validTypes.has(activeType) ? activeType : 'all';
@@ -126,12 +130,13 @@ export default async function GroupDetailPage({ params, searchParams }: Props) {
 
   return (
     <div className="space-y-8">
-      {/* Group header */}
+      {/* Group header — renders immediately */}
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-2 min-w-0">
-          <Link href={isMember ? '/dashboard' : '/discover'} className="inline-flex">
-            <Button variant="ghost" size="sm" className="mb-1">
-              {isMember ? 'Back to dashboard' : 'Back to discover'}
+          <Link href={isMember ? '/dashboard' : '/discover'}>
+            <Button variant="ghost" size="sm" className="gap-2 -ml-2">
+              <ArrowLeft className="h-3.5 w-3.5" />
+              {isMember ? 'Dashboard' : 'Discover'}
             </Button>
           </Link>
           <div className="flex items-center gap-3 flex-wrap">
@@ -169,16 +174,16 @@ export default async function GroupDetailPage({ params, searchParams }: Props) {
         </div>
       </div>
 
-      <GroupMediaSection
-        groupId={groupId}
-        userId={user.id}
-        currentUserNickname={currentProfile?.nickname ?? null}
-        isMember={isMember}
-        initialItems={enrichedItems}
-        initialConsumedSet={consumedSet}
-        initialActiveType={initialActiveType as 'all' | MediaType}
-        initialPage={initialPage}
-      />
+      {/* Media section — streams in with skeleton */}
+      <Suspense fallback={<MediaSectionSkeleton isMember={isMember} />}>
+        <GroupMediaLoader
+          groupId={groupId}
+          userId={user.id}
+          isMember={isMember}
+          initialActiveType={initialActiveType as 'all' | MediaType}
+          initialPage={initialPage}
+        />
+      </Suspense>
     </div>
   );
 }
