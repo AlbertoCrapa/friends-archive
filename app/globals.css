@@ -73,9 +73,9 @@
 
   /* Layering */
   --z-nav: 40;
-  --z-dropdown: 50;
   --z-modal: 60;
-  --z-toast: 70;
+  --z-dropdown: 70;
+  --z-toast: 80;
 
   font-family: var(--font-mono);
   line-height: var(--lh-relaxed);
