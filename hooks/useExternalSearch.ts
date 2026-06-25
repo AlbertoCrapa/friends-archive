@@ -75,7 +75,12 @@ export function useExternalSearch(
   }, []);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled) {
+      // Disabled (e.g. an item was just linked) — make sure no stale spinner
+      // keeps the submit button locked.
+      setIsSearching(false);
+      return;
+    }
 
     const q = query.trim();
     if (q.length < MIN_QUERY) {

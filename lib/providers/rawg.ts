@@ -3,7 +3,7 @@
 // Server-only. Normalizes RAWG /games search into ExternalWork[].
 // ============================================
 
-import type { ExternalWork } from '@/types';
+import type { ExternalWork, VideoGameMetadata } from '@/types';
 import { fetchJson } from './http';
 
 interface RawgResult {
@@ -52,4 +52,46 @@ export async function searchRawg(query: string): Promise<ExternalWork[]> {
       } satisfies ExternalWork;
     })
     .filter((work): work is NonNullable<typeof work> => work !== null);
+}
+
+// ── Detail lookup (developer/publisher/platforms not in the search list) ──────
+
+interface RawgGameDetails {
+  released?: string;
+  developers?: Array<{ name?: string; slug?: string }>;
+  publishers?: Array<{ name?: string }>;
+  platforms?: Array<{ platform?: { name?: string } }>;
+}
+
+/**
+ * Fetch full metadata for one RAWG game so the developer (and publisher /
+ * platforms) can be auto-filled. Costs ONE extra RAWG call per selection —
+ * acceptable because selections are rare and deliberate. Returns null on failure.
+ */
+export async function getRawgDetails(id: string): Promise<VideoGameMetadata | null> {
+  const apiKey = process.env.RAWG_API_KEY;
+  if (!apiKey) return null;
+
+  const d = await fetchJson<RawgGameDetails>(
+    `https://api.rawg.io/api/games/${id}?key=${apiKey}`
+  );
+  if (!d) return null;
+
+  const developerObj = d.developers?.[0];
+  const developer = developerObj?.name;
+  const publisher = d.publishers?.[0]?.name;
+  const year = yearFrom(d.released);
+  const platforms = d.platforms
+    ?.map((p) => p.platform?.name)
+    .filter((name): name is string => !!name);
+
+  return {
+    ...(developer ? { developer } : {}),
+    ...(developer && developerObj?.slug
+      ? { developer_url: `https://rawg.io/developers/${developerObj.slug}` }
+      : {}),
+    ...(publisher ? { publisher } : {}),
+    ...(year ? { release_year: year } : {}),
+    ...(platforms && platforms.length ? { platforms } : {}),
+  } satisfies VideoGameMetadata;
 }

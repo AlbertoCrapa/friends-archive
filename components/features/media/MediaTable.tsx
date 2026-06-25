@@ -200,7 +200,9 @@ export function MediaTable({
                 )}
               </div>
               {item.metadata && (
-                <p className="text-[11px] font-mono text-stone-600 truncate">{getMetaSummary(item)}</p>
+                <p className="text-[11px] font-mono text-stone-600 truncate">
+                  <MetaSummary item={item} />
+                </p>
               )}
             </div>
 
@@ -271,7 +273,13 @@ export function MediaTable({
             </div>
 
             <div className="flex items-center justify-end gap-1">
-              <ConsumedByDialog itemId={item.id} itemTitle={item.title} />
+              <ConsumedByDialog
+                itemId={item.id}
+                itemTitle={item.title}
+                userId={userId}
+                currentUserNickname={currentUserNickname}
+                isMember={isMember}
+              />
               {isMember && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -325,7 +333,7 @@ export function MediaTable({
                 )}
               </div>
               <p className="text-xs font-mono text-stone-500">{getTypeLabel(item.type)}</p>
-              {item.metadata && <p className="text-xs font-mono text-stone-600">{getMetaSummary(item)}</p>}
+              {item.metadata && <p className="text-xs font-mono text-stone-600"><MetaSummary item={item} /></p>}
             </div>
 
             <div className="flex flex-wrap gap-1.5">
@@ -384,7 +392,13 @@ export function MediaTable({
             </div>
 
             <div className="flex items-center flex-wrap gap-2 pt-1">
-              <ConsumedByDialog itemId={item.id} itemTitle={item.title} />
+              <ConsumedByDialog
+                itemId={item.id}
+                itemTitle={item.title}
+                userId={userId}
+                currentUserNickname={currentUserNickname}
+                isMember={isMember}
+              />
               {isMember && (
                 <EditMediaItemDialog item={item} userId={userId} onUpdated={(updated) => onUpdated?.(updated)}>
                   <Button variant="outline" size="sm" className="min-h-[44px] min-w-[80px]">
@@ -458,18 +472,56 @@ function getTagChips(item: MediaItemWithDetails): string[] {
   return Array.from(tags).slice(0, 4);
 }
 
-function getMetaSummary(item: MediaItem): string {
-  const m = item.metadata as Record<string, unknown>;
-  if (!m) return '';
-  const parts: string[] = [];
-  if (m.director) parts.push(`dir. ${m.director}`);
-  if (m.creator) parts.push(`cr. ${m.creator}`);
-  if (m.author) parts.push(`${m.author}`);
-  if (m.developer) parts.push(`${m.developer}`);
-  if (m.release_year) parts.push(String(m.release_year));
-  if (m.seasons) parts.push(`${m.seasons} seasons`);
-  if (m.duration_minutes) parts.push(`${m.duration_minutes} min`);
-  return parts.join(' · ');
+/**
+ * Renders the metadata summary line. Person/company entries (director, creator,
+ * author, developer) become clickable external links when the matching *_url is
+ * present in metadata; everything else is plain text. Returns null when empty.
+ */
+function MetaSummary({ item }: { item: MediaItem }) {
+  const m = (item.metadata ?? {}) as Record<string, unknown>;
+  const nodes: React.ReactNode[] = [];
+
+  const pushPerson = (prefix: string, value: unknown, url: unknown) => {
+    if (typeof value !== 'string' || !value) return;
+    const label = prefix ? `${prefix} ${value}` : value;
+    if (typeof url === 'string' && url) {
+      nodes.push(
+        <a
+          key={nodes.length}
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="hover:text-amber-500 underline decoration-dotted underline-offset-2 transition-colors"
+        >
+          {label}
+        </a>
+      );
+    } else {
+      nodes.push(<span key={nodes.length}>{label}</span>);
+    }
+  };
+
+  pushPerson('dir.', m.director, m.director_url);
+  pushPerson('cr.', m.creator, m.creator_url);
+  pushPerson('', m.author, m.author_url);
+  pushPerson('', m.developer, m.developer_url);
+  if (m.release_year) nodes.push(<span key={nodes.length}>{String(m.release_year)}</span>);
+  if (m.seasons) nodes.push(<span key={nodes.length}>{`${m.seasons} seasons`}</span>);
+  if (m.duration_minutes) nodes.push(<span key={nodes.length}>{`${m.duration_minutes} min`}</span>);
+
+  if (nodes.length === 0) return null;
+
+  return (
+    <>
+      {nodes.map((node, i) => (
+        <Fragment key={i}>
+          {i > 0 && ' · '}
+          {node}
+        </Fragment>
+      ))}
+    </>
+  );
 }
 
 function getTypeLabel(type: MediaType): string {

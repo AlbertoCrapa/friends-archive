@@ -21,12 +21,16 @@ export type ItemStatus = 'plan_to_consume' | 'consuming' | 'completed';
  */
 export interface MovieMetadata {
   director?: string;
+  /** External page for the director (e.g. TMDB person), when known. */
+  director_url?: string;
   release_year?: number;
   duration_minutes?: number;
 }
 
 export interface TvSeriesMetadata {
   creator?: string;
+  /** External page for the creator (e.g. TMDB person), when known. */
+  creator_url?: string;
   release_year?: number;
   seasons?: number;
   platform?: string;
@@ -34,12 +38,16 @@ export interface TvSeriesMetadata {
 
 export interface BookMetadata {
   author?: string;
+  /** External page for the author (e.g. Open Library author), when known. */
+  author_url?: string;
   publication_year?: number;
   publisher?: string;
 }
 
 export interface VideoGameMetadata {
   developer?: string;
+  /** External page for the developer (e.g. RAWG developer), when known. */
+  developer_url?: string;
   publisher?: string;
   release_year?: number;
   platforms?: string[];
@@ -74,6 +82,8 @@ export interface ExternalWork {
   type: MediaType;
   title: string;
   year?: number;
+  /** Genre hint (maps to the media_items.genre column, not metadata). */
+  genre?: string;
   /** Director / author / developer — shown to disambiguate suggestions. */
   subtitle?: string;
   /** Poster/cover thumbnail for the suggestion row. */

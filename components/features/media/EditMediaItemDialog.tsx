@@ -56,6 +56,17 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
   const [durationMinutes, setDurationMinutes] = useState(String(metadata.duration_minutes ?? ''));
   const [platform, setPlatform] = useState(String(metadata.platform ?? ''));
 
+  // Person/company links (director_url, author_url, …). Seeded from the existing
+  // item so an edit doesn't drop them, updated on (re)link.
+  const URL_KEYS = ['director_url', 'creator_url', 'author_url', 'developer_url'] as const;
+  const [metaLinks, setMetaLinks] = useState<Record<string, string>>(() => {
+    const seed: Record<string, string> = {};
+    for (const k of URL_KEYS) {
+      if (typeof metadata[k] === 'string') seed[k] = metadata[k] as string;
+    }
+    return seed;
+  });
+
   // External identification layer
   const [externalId, setExternalId] = useState<string | null>(item.external_id);
   const [externalSource, setExternalSource] = useState<string | null>(item.external_source);
@@ -75,11 +86,11 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [enriching, setEnriching] = useState(false);
 
   const statusOptions = useMemo(() => getStatusOptions(item.type), [item.type]);
 
-  function applyWorkMetadata(work: ExternalWork) {
-    const m = work.metadata as Record<string, unknown>;
+  function applyWorkMetadata(m: Record<string, unknown>) {
     if (m.release_year != null) setReleaseYear(String(m.release_year));
     else if (m.publication_year != null) setReleaseYear(String(m.publication_year));
     if (typeof m.director === 'string') setDirector(m.director);
@@ -89,38 +100,67 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
     if (m.seasons != null) setSeasons(String(m.seasons));
     if (m.duration_minutes != null) setDurationMinutes(String(m.duration_minutes));
     if (typeof m.platform === 'string') setPlatform(m.platform);
+
+    setMetaLinks((prev) => {
+      const next = { ...prev };
+      for (const k of URL_KEYS) {
+        if (typeof m[k] === 'string') next[k] = m[k] as string;
+      }
+      return next;
+    });
   }
 
-  function linkToWork(work: ExternalWork) {
+  async function linkToWork(work: ExternalWork) {
     setTitle(work.title);
-    applyWorkMetadata(work);
+    applyWorkMetadata(work.metadata as Record<string, unknown>);
     setExternalId(work.external_id);
     setExternalSource(work.external_source);
     setExternalUrl(work.external_url);
     // Setting externalId disables the search hook; clear the query box.
     setLinkQuery('');
     resetSearch();
+
+    // Enrich with full details (director/duration, developer, etc.).
+    setEnriching(true);
+    try {
+      const res = await fetch(
+        `/api/external-details?id=${encodeURIComponent(work.external_id)}`
+      );
+      if (res.ok) {
+        const { metadata } = (await res.json()) as { metadata: Record<string, unknown> | null };
+        if (metadata) applyWorkMetadata(metadata);
+      }
+    } catch {
+      // keep the search-derived fields
+    } finally {
+      setEnriching(false);
+    }
   }
 
   function unlink() {
     setExternalId(null);
     setExternalSource(null);
     setExternalUrl(null);
+    setMetaLinks({});
   }
 
   function buildMetadata(type: MediaType): Record<string, unknown> {
     const year = releaseYear ? parseInt(releaseYear, 10) : undefined;
+    const linkFor = (nameField: string, key: string) =>
+      nameField && metaLinks[key] ? { [key]: metaLinks[key] } : {};
 
     switch (type) {
       case 'movie':
         return {
           ...(director ? { director } : {}),
+          ...linkFor(director, 'director_url'),
           ...(year ? { release_year: year } : {}),
           ...(durationMinutes ? { duration_minutes: parseInt(durationMinutes, 10) } : {}),
         };
       case 'tv_series':
         return {
           ...(creator ? { creator } : {}),
+          ...linkFor(creator, 'creator_url'),
           ...(year ? { release_year: year } : {}),
           ...(seasons ? { seasons: parseInt(seasons, 10) } : {}),
           ...(platform ? { platform } : {}),
@@ -128,11 +168,13 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
       case 'book':
         return {
           ...(author ? { author } : {}),
+          ...linkFor(author, 'author_url'),
           ...(year ? { publication_year: year } : {}),
         };
       case 'video_game':
         return {
           ...(developer ? { developer } : {}),
+          ...linkFor(developer, 'developer_url'),
           ...(year ? { release_year: year } : {}),
         };
       default:
@@ -379,11 +421,16 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
           {error && <FormBanner message={error} variant="error" />}
 
           <DialogFooter>
-            <Button type="submit" disabled={loading}>
+            <Button type="submit" disabled={loading || searching || enriching}>
               {loading ? (
                 <span className="inline-flex items-center gap-2">
                   <Spinner />
                   Saving...
+                </span>
+              ) : searching || enriching ? (
+                <span className="inline-flex items-center gap-2">
+                  <Spinner />
+                  {enriching ? 'Loading details…' : 'Searching…'}
                 </span>
               ) : (
                 'Save changes'

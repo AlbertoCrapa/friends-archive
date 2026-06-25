@@ -62,6 +62,11 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
   const [seasons, setSeasons] = useState('');
   const [durationMinutes, setDurationMinutes] = useState('');
   const [platform, setPlatform] = useState('');
+  const [genre, setGenre] = useState('');
+
+  // Person/company links (director_url, author_url, …) captured from the enrich
+  // call — not form fields, so they're tracked separately and merged on save.
+  const [metaLinks, setMetaLinks] = useState<Record<string, string>>({});
 
   // External identification layer
   const [externalId, setExternalId] = useState<string | null>(null);
@@ -71,6 +76,7 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [enriching, setEnriching] = useState(false);
 
   // Throttled, quota-capped external search (debounce + cooldown + caps).
   // Disabled once an item is linked so a selection can't re-trigger calls.
@@ -90,10 +96,13 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
     setExternalSource(null);
     setExternalUrl(null);
     setExternalTitle(null);
+    setMetaLinks({});
   }
 
-  function applyMetadata(work: ExternalWork) {
-    const m = work.metadata as Record<string, unknown>;
+  const URL_KEYS = ['director_url', 'creator_url', 'author_url', 'developer_url'] as const;
+
+  function applyMetadata(metadata: Record<string, unknown>) {
+    const m = metadata;
     setReleaseYear(
       m.release_year != null
         ? String(m.release_year)
@@ -108,17 +117,42 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
     setSeasons(m.seasons != null ? String(m.seasons) : '');
     setDurationMinutes(m.duration_minutes != null ? String(m.duration_minutes) : '');
     setPlatform(typeof m.platform === 'string' ? m.platform : '');
+
+    const links: Record<string, string> = {};
+    for (const k of URL_KEYS) {
+      if (typeof m[k] === 'string') links[k] = m[k] as string;
+    }
+    setMetaLinks(links);
   }
 
-  function selectWork(work: ExternalWork) {
+  async function selectWork(work: ExternalWork) {
     setTitle(work.title);
-    applyMetadata(work);
+    applyMetadata(work.metadata as Record<string, unknown>); // search-derived fields
     setExternalId(work.external_id);
     setExternalSource(work.external_source);
     setExternalUrl(work.external_url);
     setExternalTitle(work.title);
     // Linking disables the search hook (enabled = open && !externalId),
-    // so no further calls fire and the dropdown hides.
+    // so no further search calls fire and the dropdown hides.
+
+    // Enrich with full details (director/duration, developer, etc.) the search
+    // list can't return. Merges over the search metadata; failures are silent.
+    setEnriching(true);
+    try {
+      const res = await fetch(
+        `/api/external-details?id=${encodeURIComponent(work.external_id)}`
+      );
+      if (res.ok) {
+        const { metadata } = (await res.json()) as { metadata: Record<string, unknown> | null };
+        if (metadata) {
+          applyMetadata({ ...(work.metadata as Record<string, unknown>), ...metadata });
+        }
+      }
+    } catch {
+      // keep the search-derived fields; user can fill the rest manually
+    } finally {
+      setEnriching(false);
+    }
   }
 
   function handleTitleChange(value: string) {
@@ -131,16 +165,22 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
 
   function buildMetadata(): Record<string, unknown> {
     const year = releaseYear ? parseInt(releaseYear, 10) : undefined;
+    // Only keep the link relevant to this type, and only if the matching name is
+    // still present (so editing the name away doesn't leave a dangling link).
+    const linkFor = (nameField: string, key: string) =>
+      nameField && metaLinks[key] ? { [key]: metaLinks[key] } : {};
     switch (type) {
       case 'movie':
         return {
           ...(director ? { director } : {}),
+          ...linkFor(director, 'director_url'),
           ...(year ? { release_year: year } : {}),
           ...(durationMinutes ? { duration_minutes: parseInt(durationMinutes, 10) } : {}),
         };
       case 'tv_series':
         return {
           ...(creator ? { creator } : {}),
+          ...linkFor(creator, 'creator_url'),
           ...(year ? { release_year: year } : {}),
           ...(seasons ? { seasons: parseInt(seasons, 10) } : {}),
           ...(platform ? { platform } : {}),
@@ -148,11 +188,13 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
       case 'book':
         return {
           ...(author ? { author } : {}),
+          ...linkFor(author, 'author_url'),
           ...(year ? { publication_year: year } : {}),
         };
       case 'video_game':
         return {
           ...(developer ? { developer } : {}),
+          ...linkFor(developer, 'developer_url'),
           ...(year ? { release_year: year } : {}),
         };
       default:
@@ -170,6 +212,7 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
     setSeasons('');
     setDurationMinutes('');
     setPlatform('');
+    setGenre('');
     setStatus('plan_to_consume');
     resetSearch();
     resetExternalLink();
@@ -189,6 +232,7 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
         title: title.trim(),
         type,
         status,
+        genre: genre.trim() || null,
         metadata: buildMetadata(),
         external_id: externalId,
         external_source: externalSource,
@@ -256,8 +300,18 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
               value={type}
               onValueChange={(value) => {
                 setType(value as MediaType);
-                // Switching provider invalidates the current link; the search
-                // hook re-queries the new provider on its own.
+                // Switching type starts fresh: clear the title and every
+                // type-specific field so nothing carries over from the old type.
+                setTitle('');
+                setDirector('');
+                setCreator('');
+                setAuthor('');
+                setDeveloper('');
+                setReleaseYear('');
+                setSeasons('');
+                setDurationMinutes('');
+                setPlatform('');
+                setGenre('');
                 resetExternalLink();
               }}
             >
@@ -366,18 +420,29 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
             )}
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="status">Status</Label>
-            <Select value={status} onValueChange={(v) => setStatus(v as ItemStatus)}>
-              <SelectTrigger id="status">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {statusOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="status">Status</Label>
+              <Select value={status} onValueChange={(v) => setStatus(v as ItemStatus)}>
+                <SelectTrigger id="status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {statusOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="genre">Genre</Label>
+              <Input
+                id="genre"
+                value={genre}
+                onChange={(e) => setGenre(e.target.value)}
+                placeholder="optional"
+              />
+            </div>
           </div>
 
           {/* Type-specific metadata */}
@@ -448,11 +513,16 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
           {error && <FormBanner message={error} variant="error" />}
 
           <DialogFooter>
-            <Button type="submit" disabled={loading}>
+            <Button type="submit" disabled={loading || searching || enriching}>
               {loading ? (
                 <span className="inline-flex items-center gap-2">
                   <Spinner />
                   Adding...
+                </span>
+              ) : searching || enriching ? (
+                <span className="inline-flex items-center gap-2">
+                  <Spinner />
+                  {enriching ? 'Loading details…' : 'Searching…'}
                 </span>
               ) : (
                 'Add item'
