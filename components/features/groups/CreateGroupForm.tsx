@@ -96,8 +96,8 @@ export function CreateGroupForm() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="private">Private — only members can see it</SelectItem>
-            <SelectItem value="public">Public — anyone can discover and view it</SelectItem>
+            <SelectItem value="private">Private — hidden from Discover; content visible to members only</SelectItem>
+            <SelectItem value="public">Public — listed on Discover; anyone can view, joining needs your approval</SelectItem>
           </SelectContent>
         </Select>
       </div>

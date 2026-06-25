@@ -144,7 +144,7 @@ Before reading the phases, understand what the project currently is and what it 
 
 ## Phase 3 — Group System
 
-**Goal:** Implement the complete group creation, membership, and settings system. After this phase, users can create groups, join public groups, view their groups on the dashboard, and manage group settings.
+**Goal:** Implement the complete group creation, membership, and settings system. After this phase, users can create groups, request access to other groups (membership is granted when the owner approves), view their groups on the dashboard, and manage group settings.
 
 **Dependencies:** Phase 2 (authentication must be working).
 
@@ -156,7 +156,7 @@ Before reading the phases, understand what the project currently is and what it 
 - [ ] **3.4** Create `components/features/groups/GroupCard.tsx` — card component displaying group name, description, visibility badge, member count, and item count. Used on the dashboard.
 - [ ] **3.5** Create `components/features/groups/GroupList.tsx` — renders a list of `GroupCard` components. Used on the dashboard and discover page.
 - [ ] **3.6** Update `app/(dashboard)/dashboard/page.tsx` — fetch and display the current user's groups using a Server Component query. Show "Create your first group" CTA if no groups exist.
-- [ ] **3.7** Implement join group flow — on the group detail page (public group, non-member), show a "Join Group" button. On click, insert a row into `group_members`. Check `can_join_group()` before inserting; show upgrade prompt if limit reached.
+- [ ] **3.7** Implement request-to-join flow — joining any group (public or private) requires owner approval. A non-member sees a "Request to join" button: on a public group's page alongside the read-only content, on a private group's link as a blocked page showing only the group name. The request calls `request_group_access()`; the owner is notified (header bell + group settings) and approves via `approve_join_request()` (which checks `can_join_group()` for the requester) or declines via `decline_join_request()`. A declined requester may request again; a pending request can be cancelled with `cancel_join_request()`.
 - [ ] **3.8** Implement leave group flow — on the group detail page (for members who are not owners), show a "Leave Group" option.
 - [ ] **3.9** Create `hooks/useGroups.ts` — client hook for group mutations (create, update, delete) used in Client Component forms.
 
@@ -216,7 +216,7 @@ Before reading the phases, understand what the project currently is and what it 
 - [ ] **5.2** Create `app/upgrade/page.tsx` — placeholder page. Displays a clear message: "Payment integration is coming soon. To activate Premium or Enterprise, please contact us." No form or payment widget.
 - [ ] **5.3** Verify limit enforcement — test that:
   - A free user who owns 2 groups cannot create a third (receives an error message directing them to `/pricing`)
-  - A free user who belongs to 5 groups cannot join a sixth
+  - A free user who belongs to 5 groups cannot be approved into a sixth (`approve_join_request()` fails with `plan_limit_reached`)
   - The error messages in the UI clearly reference the plan limits and the pricing page
 - [ ] **5.4** Add subscription plan badge to `app/(dashboard)/dashboard/page.tsx` — shows the current user's plan (Free / Premium / Enterprise) with a link to `/pricing` for free users.
 

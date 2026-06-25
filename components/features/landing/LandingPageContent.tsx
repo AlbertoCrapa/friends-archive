@@ -10,7 +10,6 @@ import {
   BookOpen,
   Gamepad2,
   Check,
-  ArrowRight,
 } from 'lucide-react';
 
 const EASE = [0.16, 1, 0.3, 1] as const;
@@ -68,11 +67,11 @@ export function LandingPageContent({ isSignedIn, nickname }: Props) {
 function LandingNav({ isSignedIn, nickname }: Props) {
   return (
     <header className="sticky top-0 z-40 border-b border-stone-800/50 bg-stone-950/96 backdrop-blur-sm">
-      <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-        <span className="font-serif text-xl tracking-widest text-stone-100 uppercase select-none">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
+        <span className="font-serif text-base sm:text-xl tracking-[0.15em] sm:tracking-widest text-stone-100 uppercase select-none whitespace-nowrap">
           The Friend Archive
         </span>
-        <nav className="flex items-center gap-3">
+        <nav className="flex items-center gap-2 sm:gap-3 shrink-0">
           <Link
             href="/pricing"
             className="hidden sm:block font-mono text-xs uppercase tracking-wider text-stone-500 hover:text-stone-300 transition-colors"
@@ -108,95 +107,190 @@ function LandingNav({ isSignedIn, nickname }: Props) {
 
 // ─── Hero ─────────────────────────────────────────────────────────────────────
 
+const HERO_LEDGER = [
+  { n: '001', title: 'Dune: Part Two', type: 'Movie', status: 'Watched', statusColor: 'oklch(0.72 0.14 160)' },
+  { n: '002', title: 'The Bear', type: 'TV', status: 'Watching', statusColor: 'oklch(0.78 0.13 62)' },
+  { n: '003', title: 'Project Hail Mary', type: 'Book', status: 'Reading', statusColor: 'oklch(0.78 0.13 62)' },
+  { n: '004', title: 'Elden Ring', type: 'Game', status: 'Planned', statusColor: 'oklch(0.42 0.005 60)' },
+  { n: '005', title: 'Past Lives', type: 'Movie', status: 'Planned', statusColor: 'oklch(0.42 0.005 60)' },
+] as const;
+
 function HeroSection({ isSignedIn }: { isSignedIn: boolean }) {
   return (
-    <section className="relative min-h-[100svh] flex flex-col items-center justify-center text-center px-6 py-20 sm:py-28">
-      {/* Ambient glow — not glassmorphism, just a soft radial wash */}
-      <div className="absolute inset-0 pointer-events-none select-none" aria-hidden>
+    <section className="relative min-h-[calc(100svh-73px)] flex flex-col">
+      {/* Ambient glow — soft radial wash, fluid so it never forces overflow */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none select-none" aria-hidden>
         <div
-          className="absolute top-[40%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-[760px] h-[420px] rounded-full"
+          className="absolute top-[38%] left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
           style={{
+            width: 'min(760px, 110vw)',
+            height: 'min(420px, 60vh)',
             background:
               'radial-gradient(ellipse at center, oklch(0.65 0.14 60 / 0.055) 0%, transparent 70%)',
           }}
         />
       </div>
 
-      <motion.div
-        className="relative space-y-7 max-w-4xl"
-        variants={staggerContainer(0.1)}
-        initial="hidden"
-        animate="visible"
+      <div
+        className="relative flex-1 w-full max-w-6xl mx-auto px-6 grid items-center gap-x-16 gap-y-12 lg:grid-cols-[7fr_5fr]"
+        style={{
+          paddingTop: 'clamp(3rem, 7vh, 5rem)',
+          paddingBottom: 'clamp(3rem, 7vh, 5rem)',
+        }}
       >
-        <motion.p
-          className="font-mono uppercase tracking-[0.35em] text-xs"
-          style={{ color: 'oklch(0.72 0.12 65 / 0.65)' }}
-          variants={fadeUp}
-        >
-          Track together. Remember always.
-        </motion.p>
-
-        <motion.h1
-          className="font-serif font-light text-stone-100 leading-[0.9] tracking-tight"
-          style={{ fontSize: 'clamp(2.8rem, 7vw, 6.5rem)' }}
-          variants={fadeUp}
-        >
-          The Friend
-          <br />
-          <span style={{ color: 'var(--color-accent)' }}>Archive</span>
-        </motion.h1>
-
-        <motion.p
-          className="text-stone-400 max-w-xl mx-auto font-light leading-relaxed"
-          style={{ fontSize: 'clamp(1rem, 2.5vw, 1.18rem)' }}
-          variants={fadeUp}
-        >
-          A shared catalogue for everything worth experiencing together.
-          Movies, TV series, books, and games — organised, remembered,
-          and enjoyed with the people who matter.
-        </motion.p>
-
+        {/* Copy */}
         <motion.div
-          className="flex items-center gap-4 flex-wrap justify-center"
-          variants={fadeUp}
+          className="space-y-7"
+          variants={staggerContainer(0.1)}
+          initial="hidden"
+          animate="visible"
         >
-          {isSignedIn ? (
-            <>
-              <Link href="/dashboard">
-                <Button size="lg" className="gap-2">
-                  Open dashboard <ArrowRight className="h-4 w-4" />
-                </Button>
-              </Link>
-              <Link href="/discover">
-                <Button variant="outline" size="lg">Discover groups</Button>
-              </Link>
-            </>
-          ) : (
-            <>
-              <Link href="/register">
-                <Button size="lg" className="gap-2">
-                  Create your archive <ArrowRight className="h-4 w-4" />
-                </Button>
-              </Link>
-              <Link href="/login">
-                <Button variant="ghost" size="lg">Sign in</Button>
-              </Link>
-            </>
-          )}
-        </motion.div>
-      </motion.div>
+          <motion.div
+            className="inline-flex items-center gap-3 border px-3.5 py-1.5"
+            style={{ borderColor: 'oklch(0.45 0.08 65 / 0.45)' }}
+            variants={fadeUp}
+          >
+            <span
+              className="w-1.5 h-1.5 rotate-45 shrink-0"
+              style={{ backgroundColor: 'var(--color-accent)' }}
+            />
+            <span
+              className="font-mono uppercase tracking-[0.28em] text-[10px] sm:text-xs"
+              style={{ color: 'oklch(0.72 0.12 65 / 0.7)' }}
+            >
+              Track together · Remember always
+            </span>
+          </motion.div>
 
-      {/* Scroll indicator */}
-      <motion.div
-        className="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 1.5, duration: 0.8 }}
-        aria-hidden
-      >
-        <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-stone-700">Scroll</span>
-        <div className="w-px h-10 bg-gradient-to-b from-stone-700 to-transparent" />
-      </motion.div>
+          <motion.h1
+            className="font-serif font-light text-stone-100 leading-[0.92] tracking-tight"
+            style={{ fontSize: 'clamp(2.6rem, 6vw + 1rem, 6rem)' }}
+            variants={fadeUp}
+          >
+            The Friend
+            <br />
+            <span style={{ color: 'var(--color-accent)' }}>Archive</span>
+          </motion.h1>
+
+          <motion.p
+            className="text-stone-400 max-w-xl font-light leading-relaxed"
+            style={{ fontSize: 'clamp(1rem, 0.5vw + 0.9rem, 1.18rem)' }}
+            variants={fadeUp}
+          >
+            A shared catalogue for everything worth experiencing together.
+            Movies, TV series, books, and games: organised, remembered,
+            and enjoyed with the people who matter.
+          </motion.p>
+
+          <motion.div className="flex items-center gap-4 flex-wrap" variants={fadeUp}>
+            {isSignedIn ? (
+              <>
+                <Link href="/dashboard">
+                  <Button size="lg">Open dashboard</Button>
+                </Link>
+                <Link href="/discover">
+                  <Button variant="outline" size="lg">Discover groups</Button>
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link href="/register">
+                  <Button size="lg">Create your archive</Button>
+                </Link>
+                <Link href="/login">
+                  <Button variant="ghost" size="lg">Sign in</Button>
+                </Link>
+              </>
+            )}
+          </motion.div>
+        </motion.div>
+
+        {/* Catalogue card */}
+        <motion.div
+          className="relative w-full max-w-md mx-auto lg:max-w-none"
+          initial={{ opacity: 0, y: 36 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.9, ease: EASE, delay: 0.55 }}
+        >
+          <div
+            className="border lg:rotate-1 lg:hover:rotate-0 transition-transform duration-500"
+            style={{
+              backgroundColor: 'var(--color-surface)',
+              borderColor: 'var(--color-border)',
+              boxShadow: 'var(--shadow-2)',
+            }}
+          >
+            <div className="border-b px-5 py-3.5 flex items-baseline justify-between gap-3" style={{ borderColor: 'var(--color-border)' }}>
+              <span className="font-serif text-xl text-stone-100 truncate">Friday Night Crew</span>
+              <span
+                className="font-mono text-[10px] uppercase tracking-[0.2em] whitespace-nowrap"
+                style={{ color: 'oklch(0.42 0.005 60)' }}
+              >
+                Catalogue Nº 027
+              </span>
+            </div>
+            <ul>
+              {HERO_LEDGER.map((row) => (
+                <li
+                  key={row.n}
+                  className="px-5 py-3 flex items-center gap-4 border-b last:border-b-0"
+                  style={{ borderColor: 'oklch(0.24 0.005 60 / 0.55)' }}
+                >
+                  <span
+                    className="font-mono text-[10px] tracking-wider shrink-0"
+                    style={{ color: 'oklch(0.36 0.005 60)' }}
+                  >
+                    {row.n}
+                  </span>
+                  <span className="text-sm text-stone-200 font-light truncate flex-1">
+                    {row.title}
+                  </span>
+                  <span
+                    className="font-mono text-[10px] uppercase tracking-wider hidden sm:block shrink-0"
+                    style={{ color: 'oklch(0.36 0.005 60)' }}
+                  >
+                    {row.type}
+                  </span>
+                  <span
+                    className="font-mono text-[10px] uppercase tracking-wider shrink-0"
+                    style={{ color: row.statusColor }}
+                  >
+                    {row.status}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <div className="px-5 py-3 border-t" style={{ borderColor: 'var(--color-border)' }}>
+              <span
+                className="font-mono text-[10px] uppercase tracking-[0.2em]"
+                style={{ color: 'oklch(0.42 0.005 60)' }}
+              >
+                6 friends · 14 titles · est. 2024
+              </span>
+            </div>
+          </div>
+
+          {/* Rubber-stamp mark */}
+          <motion.div
+            className="absolute -top-3 -right-2 sm:-right-4 rotate-6 border-2 px-3 py-1 select-none"
+            style={{
+              borderColor: 'oklch(0.55 0.12 60 / 0.55)',
+              backgroundColor: 'var(--color-background)',
+            }}
+            initial={{ opacity: 0, scale: 1.4, rotate: 6 }}
+            animate={{ opacity: 1, scale: 1, rotate: 6 }}
+            transition={{ duration: 0.35, ease: EASE, delay: 1.15 }}
+            aria-hidden
+          >
+            <span
+              className="font-mono text-[10px] uppercase tracking-[0.3em]"
+              style={{ color: 'oklch(0.68 0.12 60 / 0.8)' }}
+            >
+              Archived
+            </span>
+          </motion.div>
+        </motion.div>
+      </div>
     </section>
   );
 }
@@ -212,16 +306,23 @@ function MediaTypesStrip() {
       ref={ref as React.RefObject<HTMLElement>}
       className="border-t border-stone-800/50 py-9"
     >
-      <div className="max-w-6xl mx-auto px-6 flex items-center justify-center gap-8 sm:gap-16 flex-wrap">
+      <div className="max-w-6xl mx-auto px-6 flex items-center justify-center gap-x-5 gap-y-3 sm:gap-x-8 flex-wrap">
         {types.map((type, i) => (
           <motion.span
             key={type}
-            className="font-mono uppercase tracking-[0.3em] text-xs"
-            style={{ color: 'oklch(0.38 0.005 60)' }}
+            className="flex items-center gap-x-5 sm:gap-x-8 font-mono uppercase tracking-[0.3em] text-xs"
+            style={{ color: 'oklch(0.42 0.005 60)' }}
             initial={{ opacity: 0 }}
             animate={isInView ? { opacity: 1 } : {}}
             transition={{ delay: i * 0.09, duration: 0.55 }}
           >
+            {i > 0 && (
+              <span
+                className="w-1 h-1 rotate-45 shrink-0"
+                style={{ backgroundColor: 'oklch(0.55 0.12 60 / 0.5)' }}
+                aria-hidden
+              />
+            )}
             {type}
           </motion.span>
         ))}
@@ -287,11 +388,16 @@ function HowItWorksSection() {
               <motion.div
                 key={step.number}
                 variants={fadeUp}
-                className="pt-8 pb-10 pr-0 sm:pr-10 border-t-2 border-stone-800/60"
+                className="relative pt-8 pb-10 pr-0 sm:pr-10 border-t-2 border-stone-800/60"
               >
                 <span
+                  className="absolute -top-0.5 left-0 w-12 h-0.5"
+                  style={{ backgroundColor: 'oklch(0.55 0.12 60 / 0.6)' }}
+                  aria-hidden
+                />
+                <span
                   className="font-mono font-light leading-none block mb-6 select-none"
-                  style={{ fontSize: '4.8rem', color: 'oklch(0.20 0.005 60)' }}
+                  style={{ fontSize: 'clamp(3.6rem, 4vw + 1.5rem, 4.8rem)', color: 'oklch(0.24 0.02 60)' }}
                 >
                   {step.number}
                 </span>
@@ -363,13 +469,13 @@ function SharedCatalogueSection() {
         {/* UI mock */}
         <motion.div
           className="border border-stone-800/60 overflow-hidden"
-          style={{ backgroundColor: 'var(--color-surface)' }}
+          style={{ backgroundColor: 'var(--color-surface)', boxShadow: 'var(--shadow-2)' }}
           initial={{ opacity: 0, y: 40 }}
           animate={isInView ? { opacity: 1, y: 0 } : {}}
           transition={{ duration: 0.8, ease: EASE, delay: 0.22 }}
         >
           <div className="border-b border-stone-800/60 px-5 py-3.5 flex items-center justify-between">
-            <span className="font-serif text-sm text-stone-200">Cinema Crew</span>
+            <span className="font-serif text-xl text-stone-100">Cinema Crew</span>
             <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: 'oklch(0.4 0.005 60)' }}>
               6 members
             </span>
@@ -439,18 +545,19 @@ function PersonalTrackingSection() {
         {/* UI mock — left on desktop */}
         <motion.div
           className="border border-stone-800/60 order-2 lg:order-1 overflow-hidden"
-          style={{ backgroundColor: 'var(--color-surface)' }}
+          style={{ backgroundColor: 'var(--color-surface)', boxShadow: 'var(--shadow-2)' }}
           initial={{ opacity: 0, y: 40 }}
           animate={isInView ? { opacity: 1, y: 0 } : {}}
           transition={{ duration: 0.8, ease: EASE, delay: 0.22 }}
         >
-          <div className="border-b border-stone-800/60 px-5 py-3.5">
-            <p
-              className="font-mono text-[10px] uppercase tracking-wider"
+          <div className="border-b border-stone-800/60 px-5 py-3.5 flex items-baseline justify-between gap-3">
+            <span className="font-serif text-xl text-stone-100 truncate">Dune: Part Two</span>
+            <span
+              className="font-mono text-[10px] uppercase tracking-wider whitespace-nowrap"
               style={{ color: 'oklch(0.4 0.005 60)' }}
             >
-              Dune: Part Two — consumed by
-            </p>
+              Consumed by
+            </span>
           </div>
           <div className="p-5 space-y-5">
             {[
@@ -476,6 +583,17 @@ function PersonalTrackingSection() {
               <div key={user.name} className="space-y-1.5">
                 <div className="flex items-center gap-3 flex-wrap">
                   <span
+                    className="w-6 h-6 flex items-center justify-center border font-mono text-[10px] uppercase shrink-0 select-none"
+                    style={{
+                      borderColor: user.isYou ? 'oklch(0.45 0.1 65 / 0.6)' : 'var(--color-border)',
+                      backgroundColor: 'var(--color-surface-elevated)',
+                      color: user.isYou ? 'var(--color-accent)' : 'var(--color-text-muted)',
+                    }}
+                    aria-hidden
+                  >
+                    {user.name.charAt(0)}
+                  </span>
+                  <span
                     className="font-mono text-xs"
                     style={{
                       color: user.isYou ? 'var(--color-accent)' : 'var(--color-text-secondary)',
@@ -500,14 +618,14 @@ function PersonalTrackingSection() {
                 </div>
                 {user.note ? (
                   <p
-                    className="text-xs font-light leading-relaxed"
+                    className="text-xs font-light leading-relaxed pl-9"
                     style={{ color: 'oklch(0.48 0.005 60)' }}
                   >
                     "{user.note}"
                   </p>
                 ) : (
                   <p
-                    className="text-xs font-mono italic"
+                    className="text-xs font-mono italic pl-9"
                     style={{ color: 'oklch(0.36 0.005 60)' }}
                   >
                     No note added yet
@@ -635,17 +753,20 @@ function MediaCategoriesSection() {
               <motion.div
                 key={label}
                 variants={fadeUp}
-                className="p-8 space-y-4 border-b border-r border-stone-800/40 last:border-b-0 even:border-r-0 sm:even:border-r sm:[&:nth-child(3)]:border-r-0 sm:[&:nth-child(3)]:border-b-0 sm:[&:nth-child(4)]:border-b-0"
+                className="group p-8 space-y-4 border-b border-r border-stone-800/40 last:border-b-0 even:border-r-0 sm:even:border-r sm:[&:nth-child(3)]:border-r-0 sm:[&:nth-child(3)]:border-b-0 sm:[&:nth-child(4)]:border-b-0 transition-colors duration-300 hover:bg-[var(--color-surface)]"
                 style={{ backgroundColor: 'var(--color-background)' }}
               >
                 <div className="flex items-center gap-4">
                   <div
-                    className="w-10 h-10 flex items-center justify-center border border-stone-800/60 shrink-0"
-                    style={{ backgroundColor: 'var(--color-surface-elevated)' }}
+                    className="w-11 h-11 flex items-center justify-center border shrink-0 transition-colors duration-300"
+                    style={{
+                      backgroundColor: 'var(--color-surface-elevated)',
+                      borderColor: 'oklch(0.45 0.08 65 / 0.35)',
+                    }}
                   >
-                    <Icon className="h-4 w-4" style={{ color: 'var(--color-accent)' }} />
+                    <Icon className="h-[18px] w-[18px]" style={{ color: 'var(--color-accent)' }} />
                   </div>
-                  <h3 className="font-serif text-xl text-stone-100">{label}</h3>
+                  <h3 className="font-serif text-2xl text-stone-100">{label}</h3>
                 </div>
                 <p className="text-stone-500 text-sm font-light leading-relaxed">{description}</p>
               </motion.div>
@@ -732,8 +853,8 @@ function PricingTeaserSection() {
             </div>
             <motion.div variants={fadeUp} className="shrink-0">
               <Link href="/pricing">
-                <Button variant="ghost" size="sm" className="gap-1.5">
-                  Full pricing details <ArrowRight className="h-3.5 w-3.5" />
+                <Button variant="ghost" size="sm">
+                  Full pricing details
                 </Button>
               </Link>
             </motion.div>
@@ -753,6 +874,7 @@ function PricingTeaserSection() {
                   backgroundColor: plan.highlight
                     ? 'oklch(0.14 0.04 60 / 0.2)'
                     : 'var(--color-background)',
+                  boxShadow: plan.highlight ? 'var(--shadow-2)' : 'none',
                 }}
               >
                 <div className="space-y-2">
@@ -835,13 +957,24 @@ function FinalCtaSection({ isSignedIn }: { isSignedIn: boolean }) {
   return (
     <section
       ref={ref as React.RefObject<HTMLElement>}
-      className="border-t border-stone-800/50 py-20 sm:py-32 lg:py-44 text-center px-6"
+      className="relative border-t border-stone-800/50 py-20 sm:py-32 lg:py-44 text-center px-6"
     >
+      <div className="absolute inset-0 overflow-hidden pointer-events-none select-none" aria-hidden>
+        <div
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
+          style={{
+            width: 'min(680px, 100vw)',
+            height: 'min(380px, 80%)',
+            background:
+              'radial-gradient(ellipse at center, oklch(0.65 0.14 60 / 0.05) 0%, transparent 70%)',
+          }}
+        />
+      </div>
       <motion.div
         variants={staggerContainer()}
         initial="hidden"
         animate={isInView ? 'visible' : 'hidden'}
-        className="max-w-2xl mx-auto space-y-8"
+        className="relative max-w-2xl mx-auto space-y-8"
       >
         <motion.h2
           variants={fadeUp}
@@ -860,16 +993,12 @@ function FinalCtaSection({ isSignedIn }: { isSignedIn: boolean }) {
         <motion.div variants={fadeUp} className="flex justify-center gap-4 flex-wrap">
           {isSignedIn ? (
             <Link href="/dashboard">
-              <Button size="lg" className="gap-2">
-                Open dashboard <ArrowRight className="h-4 w-4" />
-              </Button>
+              <Button size="lg">Open dashboard</Button>
             </Link>
           ) : (
             <>
               <Link href="/register">
-                <Button size="lg" className="gap-2">
-                  Create your archive <ArrowRight className="h-4 w-4" />
-                </Button>
+                <Button size="lg">Create your archive</Button>
               </Link>
               <Link href="/login">
                 <Button variant="ghost" size="lg">
