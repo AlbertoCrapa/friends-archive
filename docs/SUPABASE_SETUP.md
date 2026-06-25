@@ -1310,3 +1310,86 @@ CREATE POLICY "Authenticated users can read group metadata"
 ```
 
 Existing memberships are untouched — current members stay members. Only the path INTO a group changes.
+
+---
+
+## 8. Migration — External Identification Layer
+
+This migration adds an **optional, globally consistent external reference** to every
+media item without changing the group-centric philosophy. Each item still owns its
+internal `id` (UUID) and still belongs to exactly one group. Three new **nullable**
+columns let an item point at a stable identifier from a trusted external provider
+(TMDB for movies/TV, Open Library for books, RAWG for video games). Manual entries
+leave all three columns `NULL` and behave exactly as before — identical manual
+entries in different groups stay independent and unlinked.
+
+Run this single block in the SQL Editor. It is additive and safe to run once; there
+is no data backfill (existing rows simply keep `NULL`).
+
+```sql
+-- External identity layer for media_items.
+-- external_id is a namespaced, provider-stable key that is IDENTICAL across all
+-- groups for the same real-world work, e.g.:
+--   tmdb:movie:693134      tmdb:tv:1396
+--   openlibrary:book:OL45804W
+--   rawg:game:3498
+-- This makes future cross-group analytics (most-added works, popularity rankings)
+-- a simple GROUP BY external_id, with no change to the per-group ownership model.
+ALTER TABLE public.media_items
+  ADD COLUMN IF NOT EXISTS external_id     TEXT,
+  ADD COLUMN IF NOT EXISTS external_source TEXT,
+  ADD COLUMN IF NOT EXISTS external_url    TEXT;
+
+-- external_source is constrained to the providers we normalize. NULL = manual entry.
+ALTER TABLE public.media_items
+  ADD CONSTRAINT external_source_valid
+    CHECK (external_source IS NULL OR external_source IN ('tmdb', 'openlibrary', 'rawg'));
+
+-- external_id and external_source are set together or not at all.
+ALTER TABLE public.media_items
+  ADD CONSTRAINT external_id_with_source
+    CHECK ((external_id IS NULL) = (external_source IS NULL));
+
+COMMENT ON COLUMN public.media_items.external_id IS
+  'Namespaced provider-stable id (e.g. tmdb:movie:693134). NULL for manual entries. Identical across all groups for the same work.';
+COMMENT ON COLUMN public.media_items.external_source IS
+  'Originating provider: tmdb | openlibrary | rawg. NULL for manual entries.';
+COMMENT ON COLUMN public.media_items.external_url IS
+  'Cached external page for the work (provider detail page). NULL for manual entries.';
+
+-- Index for the future global-discovery / most-added rollups.
+CREATE INDEX IF NOT EXISTS idx_media_items_external_id
+  ON public.media_items (external_id);
+```
+
+**RLS / privileges:** nothing changes. The new columns ride the existing
+`media_items` policies (§5e). `external_id` is intentionally **not** part of the
+`added_by` immutability rule — re-linking a previously manual item to its external
+work is a supported edit (any group member can do it, same as editing title/genre).
+
+**Example future analytics query** (not built yet — the column makes it possible):
+
+```sql
+SELECT external_id, external_source, COUNT(*) AS times_added
+FROM public.media_items
+WHERE external_id IS NOT NULL
+GROUP BY external_id, external_source
+ORDER BY times_added DESC;
+```
+
+### External provider environment variables
+
+The app reaches the providers from a **server-side** route handler
+(`app/api/external-search/route.ts`) so API keys are never exposed to the browser.
+Add these to `.env.local` (Open Library needs no key):
+
+```env
+# Movies + TV — https://www.themoviedb.org/settings/api  (v3 API key, free)
+TMDB_API_KEY=
+
+# Video games — https://rawg.io/apidocs  (free key, 20k requests/month)
+RAWG_API_KEY=
+```
+
+If a key is missing or a provider is unreachable, search degrades gracefully to
+manual entry — it never blocks adding an item.

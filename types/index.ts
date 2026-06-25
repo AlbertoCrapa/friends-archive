@@ -21,12 +21,16 @@ export type ItemStatus = 'plan_to_consume' | 'consuming' | 'completed';
  */
 export interface MovieMetadata {
   director?: string;
+  /** External page for the director (e.g. TMDB person), when known. */
+  director_url?: string;
   release_year?: number;
   duration_minutes?: number;
 }
 
 export interface TvSeriesMetadata {
   creator?: string;
+  /** External page for the creator (e.g. TMDB person), when known. */
+  creator_url?: string;
   release_year?: number;
   seasons?: number;
   platform?: string;
@@ -34,12 +38,16 @@ export interface TvSeriesMetadata {
 
 export interface BookMetadata {
   author?: string;
+  /** External page for the author (e.g. Open Library author), when known. */
+  author_url?: string;
   publication_year?: number;
   publisher?: string;
 }
 
 export interface VideoGameMetadata {
   developer?: string;
+  /** External page for the developer (e.g. RAWG developer), when known. */
+  developer_url?: string;
   publisher?: string;
   release_year?: number;
   platforms?: string[];
@@ -50,6 +58,39 @@ export type MediaMetadata =
   | TvSeriesMetadata
   | BookMetadata
   | VideoGameMetadata;
+
+// ── External Identification Layer ────────────────────────────────────────────
+
+/**
+ * Trusted external providers whose stable ids we normalize into media_items.
+ * One provider per media category — see lib/providers/.
+ */
+export type ExternalSource = 'tmdb' | 'openlibrary' | 'rawg';
+
+/**
+ * A single normalized search result from any external provider.
+ * Every provider adapter maps its heterogeneous payload into THIS shape, so the
+ * UI, the stored columns, and any future analytics speak one language regardless
+ * of origin.
+ */
+export interface ExternalWork {
+  /** Namespaced, provider-stable id, e.g. "tmdb:movie:693134". Identical across groups. */
+  external_id: string;
+  external_source: ExternalSource;
+  /** External detail page to visit (cached so the UI never needs a live call). */
+  external_url: string;
+  type: MediaType;
+  title: string;
+  year?: number;
+  /** Genre hint (maps to the media_items.genre column, not metadata). */
+  genre?: string;
+  /** Director / author / developer — shown to disambiguate suggestions. */
+  subtitle?: string;
+  /** Poster/cover thumbnail for the suggestion row. */
+  image_url?: string;
+  /** Pre-mapped into our existing per-type JSONB shape, ready to store. */
+  metadata: MediaMetadata;
+}
 
 // ── Users / Auth ────────────────────────────────────────────────────────────
 
@@ -140,6 +181,19 @@ export interface PendingJoinRequest {
   created_at: string;
 }
 
+/**
+ * A recently-approved request, enriched for the *requester's* notification UI.
+ * Tells the requester that an owner accepted them into a group. Derived (not
+ * stored) the same way pending requests are — see DATA_MODEL § 6.6.
+ */
+export interface AcceptedJoinRequest {
+  id: string;
+  group_id: string;
+  group_name: string;
+  approver_nickname: string;
+  resolved_at: string;
+}
+
 // ── Media Items ──────────────────────────────────────────────────────────────
 
 export interface MediaItem {
@@ -151,6 +205,10 @@ export interface MediaItem {
   genre: string | null;
   added_by: string;
   metadata: MediaMetadata;
+  /** Namespaced external id (e.g. "tmdb:movie:693134"). NULL for manual entries. */
+  external_id: string | null;
+  external_source: ExternalSource | null;
+  external_url: string | null;
   created_at: string;
   updated_at: string;
 }

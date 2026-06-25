@@ -317,6 +317,9 @@ A single media item within a group. The `type` field determines which keys are m
 | `genre`      | `TEXT`        | NULL     | `NULL`              | Optional genre or category tag. Max 100 chars.                |
 | `added_by`   | `UUID`        | NOT NULL | —                   | FK to `profiles.id`. Set server-side; immutable after insert. |
 | `metadata`   | `JSONB`       | NOT NULL | `'{}'`              | Type-specific fields. Schema varies by `type`.                |
+| `external_id`     | `TEXT`   | NULL     | `NULL`              | Namespaced provider-stable id (e.g. `tmdb:movie:693134`). Identical across all groups for the same work. NULL = manual entry. |
+| `external_source` | `TEXT`   | NULL     | `NULL`              | Originating provider: `tmdb` \| `openlibrary` \| `rawg`. Set together with `external_id`. |
+| `external_url`    | `TEXT`   | NULL     | `NULL`              | Cached external detail page for the work. NULL = manual entry. |
 | `created_at` | `TIMESTAMPTZ` | NOT NULL | `NOW()`             | Row creation time.                                            |
 | `updated_at` | `TIMESTAMPTZ` | NOT NULL | `NOW()`             | Last updated.                                                 |
 
@@ -324,9 +327,11 @@ A single media item within a group. The `type` field determines which keys are m
 
 | Name               | Type        | Expression                                   |
 | ------------------ | ----------- | -------------------------------------------- |
-| `media_items_pkey` | PRIMARY KEY | `id`                                         |
-| `title_length`     | CHECK       | `char_length(title) BETWEEN 1 AND 500`       |
-| `genre_length`     | CHECK       | `genre IS NULL OR char_length(genre) <= 100` |
+| `media_items_pkey`       | PRIMARY KEY | `id`                                                 |
+| `title_length`           | CHECK       | `char_length(title) BETWEEN 1 AND 500`               |
+| `genre_length`           | CHECK       | `genre IS NULL OR char_length(genre) <= 100`         |
+| `external_source_valid`  | CHECK       | `external_source IS NULL OR external_source IN ('tmdb','openlibrary','rawg')` |
+| `external_id_with_source`| CHECK       | `(external_id IS NULL) = (external_source IS NULL)`   |
 
 **Foreign keys:**
 
@@ -451,6 +456,7 @@ auth.users
 | `idx_media_items_type`                  | `media_items`         | `type`          | Type tab filtering                    |
 | `idx_media_items_status`                | `media_items`         | `status`        | Status filter                         |
 | `idx_media_items_added_by`              | `media_items`         | `added_by`      | "Added by" filter                     |
+| `idx_media_items_external_id`           | `media_items`         | `external_id`   | Future cross-group rollups (most-added works) |
 | `idx_consumption_records_user_id`       | `consumption_records` | `user_id`       | "What has user X consumed?"           |
 | `idx_consumption_records_media_item_id` | `consumption_records` | `media_item_id` | "Who has consumed item X?"            |
 
@@ -618,7 +624,43 @@ owner sees the request (notification bell, group settings)
 
 **Why private group metadata is readable by all authenticated users:** the `groups` SELECT policy is `USING (true)`. This is deliberate — a private group's shared link must render a blocked page showing the group's *name* and a request button. Only metadata (name, description, visibility, owner) is exposed; `group_members`, `media_items`, and `consumption_records` all keep member-only policies for private groups. Treat private group names/descriptions accordingly: they are visible to anyone with an account who has the link.
 
-**Notifications are derived, not stored:** there is no separate notifications table. The owner's notification bell is simply a query for `status = 'pending'` requests on groups they own; the requester's "pending / declined" states come from their own rows. No extra writes, no read/unread bookkeeping, nothing to get out of sync.
+**Notifications are derived, not stored:** there is no separate notifications table. The owner's notification bell is simply a query for `status = 'pending'` requests on groups they own; the requester's "pending / declined" states come from their own rows. The requester's **"accepted" notification** ("X accepted you, you're now part of the group") is likewise derived — a query for the requester's own rows with `status = 'approved'` and `resolved_at` within a recent time window (14 days), with `resolved_by` joined for the approver's nickname. Because there is no read/unread bookkeeping, the time window is what keeps the accepted list from growing forever. No extra writes, nothing to get out of sync.
+
+---
+
+### 6.7 Why an optional external identification layer
+
+**The decision:** Each media item may carry a nullable `external_id` (plus
+`external_source` and `external_url`) referencing a stable id from a trusted
+external provider — TMDB for movies/TV, Open Library for books, RAWG for video
+games. The value is **namespaced** (e.g. `tmdb:movie:693134`) so it is unique
+across providers and **identical across all groups** for the same real-world work.
+
+**Why not change the ownership model:** The app stays fully group-centric. Every
+item still owns its internal `id` (UUID) and belongs to exactly one group. The
+external layer is purely additive and optional — it links items that refer to the
+same work without merging or de-duplicating any group's local rows.
+
+**Why namespaced columns instead of just a number:** A bare provider id (e.g.
+`693134`) is not globally unique — TMDB and RAWG ids can collide. Namespacing makes
+one string self-describing and collision-free, which is exactly what future global
+analytics need (`GROUP BY external_id`).
+
+**Why separate columns instead of inside `metadata` JSONB:** identity is
+cross-cutting and must be indexable for future global-discovery features, so it
+earns real columns and an index. `metadata` stays the per-type display bag (now
+*populated from* the provider when an item is linked, instead of only by hand).
+
+**Why nullable / manual still works:** if no external match exists (or the provider
+is unreachable), the user adds a manual entry exactly as before. All three columns
+stay `NULL`, no external links render, and identical manual entries in different
+groups remain independent and unlinked.
+
+**Why not part of the `added_by` immutability rule:** unlike attribution, the
+external link is correctable — a member can link a previously manual item, or unlink
+a mis-linked one, from the edit dialog. It is an ordinary editable field. Normalized
+provider abstraction and the search/autocomplete flow live in `lib/providers/` and
+`app/api/external-search/`.
 
 ---
 

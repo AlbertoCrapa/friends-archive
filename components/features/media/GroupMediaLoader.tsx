@@ -26,7 +26,7 @@ export async function GroupMediaLoader({
     supabase.from('profiles').select('nickname').eq('id', userId).single(),
     supabase
       .from('media_items')
-      .select('id, group_id, title, type, status, genre, metadata, added_by, created_at, updated_at')
+      .select('id, group_id, title, type, status, genre, metadata, added_by, external_id, external_source, external_url, created_at, updated_at')
       .eq('group_id', groupId)
       .order('created_at', { ascending: false }),
   ]);

@@ -16,7 +16,7 @@ import {
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { ExternalLink, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { getStatusLabel, getStatusOptions } from '@/types';
 import { getStatusColor } from '@/lib/utils';
 import type { ItemStatus, MediaItem, MediaItemWithDetails, MediaType } from '@/types';
@@ -184,9 +184,25 @@ export function MediaTable({
               transition={{ duration: 0.2, delay: Math.min(0.012 * index, 0.2) }}
             >
             <div className="space-y-1 min-w-0">
-              <p className="text-stone-100 font-light leading-snug truncate">{item.title}</p>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <p className="text-stone-100 font-light leading-snug truncate">{item.title}</p>
+                {item.external_url && (
+                  <a
+                    href={item.external_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={`View on ${item.external_source}`}
+                    aria-label={`View "${item.title}" on ${item.external_source}`}
+                    className="shrink-0 text-stone-600 hover:text-amber-500 transition-colors cursor-pointer"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
+              </div>
               {item.metadata && (
-                <p className="text-[11px] font-mono text-stone-600 truncate">{getMetaSummary(item)}</p>
+                <p className="text-[11px] font-mono text-stone-600 truncate">
+                  <MetaSummary item={item} />
+                </p>
               )}
             </div>
 
@@ -257,7 +273,13 @@ export function MediaTable({
             </div>
 
             <div className="flex items-center justify-end gap-1">
-              <ConsumedByDialog itemId={item.id} itemTitle={item.title} />
+              <ConsumedByDialog
+                itemId={item.id}
+                itemTitle={item.title}
+                userId={userId}
+                currentUserNickname={currentUserNickname}
+                isMember={isMember}
+              />
               {isMember && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -296,9 +318,22 @@ export function MediaTable({
               transition={{ duration: 0.2, delay: Math.min(0.012 * index, 0.2) }}
             >
             <div className="space-y-1">
-              <p className="text-base text-stone-100 leading-snug break-words">{item.title}</p>
+              <div className="flex items-start gap-1.5">
+                <p className="text-base text-stone-100 leading-snug break-words">{item.title}</p>
+                {item.external_url && (
+                  <a
+                    href={item.external_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`View "${item.title}" on ${item.external_source}`}
+                    className="shrink-0 mt-1 text-stone-600 hover:text-amber-500 transition-colors cursor-pointer"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                )}
+              </div>
               <p className="text-xs font-mono text-stone-500">{getTypeLabel(item.type)}</p>
-              {item.metadata && <p className="text-xs font-mono text-stone-600">{getMetaSummary(item)}</p>}
+              {item.metadata && <p className="text-xs font-mono text-stone-600"><MetaSummary item={item} /></p>}
             </div>
 
             <div className="flex flex-wrap gap-1.5">
@@ -357,7 +392,13 @@ export function MediaTable({
             </div>
 
             <div className="flex items-center flex-wrap gap-2 pt-1">
-              <ConsumedByDialog itemId={item.id} itemTitle={item.title} />
+              <ConsumedByDialog
+                itemId={item.id}
+                itemTitle={item.title}
+                userId={userId}
+                currentUserNickname={currentUserNickname}
+                isMember={isMember}
+              />
               {isMember && (
                 <EditMediaItemDialog item={item} userId={userId} onUpdated={(updated) => onUpdated?.(updated)}>
                   <Button variant="outline" size="sm" className="min-h-[44px] min-w-[80px]">
@@ -431,18 +472,56 @@ function getTagChips(item: MediaItemWithDetails): string[] {
   return Array.from(tags).slice(0, 4);
 }
 
-function getMetaSummary(item: MediaItem): string {
-  const m = item.metadata as Record<string, unknown>;
-  if (!m) return '';
-  const parts: string[] = [];
-  if (m.director) parts.push(`dir. ${m.director}`);
-  if (m.creator) parts.push(`cr. ${m.creator}`);
-  if (m.author) parts.push(`${m.author}`);
-  if (m.developer) parts.push(`${m.developer}`);
-  if (m.release_year) parts.push(String(m.release_year));
-  if (m.seasons) parts.push(`${m.seasons} seasons`);
-  if (m.duration_minutes) parts.push(`${m.duration_minutes} min`);
-  return parts.join(' · ');
+/**
+ * Renders the metadata summary line. Person/company entries (director, creator,
+ * author, developer) become clickable external links when the matching *_url is
+ * present in metadata; everything else is plain text. Returns null when empty.
+ */
+function MetaSummary({ item }: { item: MediaItem }) {
+  const m = (item.metadata ?? {}) as Record<string, unknown>;
+  const nodes: React.ReactNode[] = [];
+
+  const pushPerson = (prefix: string, value: unknown, url: unknown) => {
+    if (typeof value !== 'string' || !value) return;
+    const label = prefix ? `${prefix} ${value}` : value;
+    if (typeof url === 'string' && url) {
+      nodes.push(
+        <a
+          key={nodes.length}
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="hover:text-amber-500 underline decoration-dotted underline-offset-2 transition-colors"
+        >
+          {label}
+        </a>
+      );
+    } else {
+      nodes.push(<span key={nodes.length}>{label}</span>);
+    }
+  };
+
+  pushPerson('dir.', m.director, m.director_url);
+  pushPerson('cr.', m.creator, m.creator_url);
+  pushPerson('', m.author, m.author_url);
+  pushPerson('', m.developer, m.developer_url);
+  if (m.release_year) nodes.push(<span key={nodes.length}>{String(m.release_year)}</span>);
+  if (m.seasons) nodes.push(<span key={nodes.length}>{`${m.seasons} seasons`}</span>);
+  if (m.duration_minutes) nodes.push(<span key={nodes.length}>{`${m.duration_minutes} min`}</span>);
+
+  if (nodes.length === 0) return null;
+
+  return (
+    <>
+      {nodes.map((node, i) => (
+        <Fragment key={i}>
+          {i > 0 && ' · '}
+          {node}
+        </Fragment>
+      ))}
+    </>
+  );
 }
 
 function getTypeLabel(type: MediaType): string {

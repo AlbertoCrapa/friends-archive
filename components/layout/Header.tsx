@@ -11,8 +11,15 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { JoinRequestsBell } from '@/components/features/groups/JoinRequestsBell';
-import { Compass, LogOut, User, Settings } from 'lucide-react';
-import type { PendingJoinRequest } from '@/types';
+import { PrimaryNavButton } from '@/components/layout/PrimaryNavButton';
+import { SignOutMenuItem } from '@/components/layout/SignOutMenuItem';
+import { User, Settings } from 'lucide-react';
+import type { PendingJoinRequest, AcceptedJoinRequest } from '@/types';
+
+// How long an "accepted" notification stays in the bell after the owner
+// approves. Derived from resolved_at — there is no read/unread bookkeeping
+// (see DATA_MODEL § 6.6), so a time window keeps the list from growing forever.
+const ACCEPTED_NOTIFICATION_WINDOW_DAYS = 14;
 
 async function signOut() {
   'use server';
@@ -27,6 +34,7 @@ export async function Header() {
 
   let nickname: string | null = null;
   let pendingRequests: PendingJoinRequest[] = [];
+  let acceptedRequests: AcceptedJoinRequest[] = [];
   if (user) {
     const { data: profile } = await supabase
       .from('profiles')
@@ -54,6 +62,31 @@ export async function Header() {
         created_at: row.created_at,
       };
     });
+
+    // Requester notifications: requests of this user that an owner recently
+    // approved — "X accepted you, you're now part of the group".
+    const acceptedSince = new Date(
+      Date.now() - ACCEPTED_NOTIFICATION_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    const { data: acceptedRows } = await supabase
+      .from('group_join_requests')
+      .select('id, group_id, resolved_at, groups!inner(name), profiles!group_join_requests_resolved_by_fkey(nickname)')
+      .eq('user_id', user.id)
+      .eq('status', 'approved')
+      .gte('resolved_at', acceptedSince)
+      .order('resolved_at', { ascending: false });
+
+    acceptedRequests = (acceptedRows ?? []).map((row) => {
+      const groupRel = row.groups as unknown as { name: string };
+      const approverRel = row.profiles as unknown as { nickname: string } | null;
+      return {
+        id: row.id,
+        group_id: row.group_id,
+        group_name: groupRel?.name ?? 'Unknown group',
+        approver_nickname: approverRel?.nickname ?? 'The owner',
+        resolved_at: row.resolved_at as string,
+      };
+    });
   }
 
   return (
@@ -64,16 +97,9 @@ export async function Header() {
         </Link>
 
         <nav className="flex items-center gap-1 sm:gap-2">
-          <Link href="/discover" className="hidden sm:inline-flex">
-            <Button variant="ghost" size="sm">Discover</Button>
-          </Link>
-          <Link href="/discover" className="sm:hidden inline-flex">
-            <Button variant="ghost" size="icon" className="h-11 w-11" aria-label="Discover">
-              <Compass className="h-4 w-4" />
-            </Button>
-          </Link>
+          <PrimaryNavButton />
 
-          {user && <JoinRequestsBell requests={pendingRequests} />}
+          {user && <JoinRequestsBell requests={pendingRequests} accepted={acceptedRequests} />}
 
           {user ? (
             <DropdownMenu>
@@ -103,14 +129,7 @@ export async function Header() {
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <form action={signOut}>
-                  <DropdownMenuItem asChild>
-                    <button type="submit" className="flex items-center gap-2 w-full text-red-400 focus:text-red-300">
-                      <LogOut className="h-3 w-3" />
-                      Sign out
-                    </button>
-                  </DropdownMenuItem>
-                </form>
+                <SignOutMenuItem action={signOut} />
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (

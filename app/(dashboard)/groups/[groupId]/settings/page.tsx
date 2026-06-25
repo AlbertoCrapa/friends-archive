@@ -25,22 +25,38 @@ export default async function GroupSettingsPage({ params }: Props) {
     .single();
 
   if (!group) notFound();
-  if (group.owner_id !== user.id) redirect(`/groups/${groupId}`);
 
-  // Fetch members + pending access requests
-  const [{ data: members }, { data: joinRequests }] = await Promise.all([
-    supabase
-      .from('group_members')
-      .select('user_id, role, joined_at, profiles(nickname)')
-      .eq('group_id', groupId)
-      .order('joined_at', { ascending: true }),
-    supabase
+  const isOwner = group.owner_id === user.id;
+
+  // Members can view their group's settings (read-only, with a "leave" action);
+  // non-members are bounced back to the group page.
+  const { data: membership } = await supabase
+    .from('group_members')
+    .select('role')
+    .eq('group_id', groupId)
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (!membership) redirect(`/groups/${groupId}`);
+
+  // Members list is visible to everyone in the group; pending access requests
+  // are owner-only (RLS would return nothing for a member anyway).
+  const { data: members } = await supabase
+    .from('group_members')
+    .select('user_id, role, joined_at, profiles(nickname)')
+    .eq('group_id', groupId)
+    .order('joined_at', { ascending: true });
+
+  let joinRequests: JoinRequestRow[] = [];
+  if (isOwner) {
+    const { data } = await supabase
       .from('group_join_requests')
       .select('id, user_id, created_at, profiles!group_join_requests_user_id_fkey(nickname)')
       .eq('group_id', groupId)
       .eq('status', 'pending')
-      .order('created_at', { ascending: true }),
-  ]);
+      .order('created_at', { ascending: true });
+    joinRequests = (data ?? []) as unknown as JoinRequestRow[];
+  }
 
   return (
     <div className="max-w-2xl space-y-8">
@@ -57,8 +73,9 @@ export default async function GroupSettingsPage({ params }: Props) {
       <GroupSettings
         group={group}
         members={(members ?? []) as unknown as Member[]}
-        joinRequests={(joinRequests ?? []) as unknown as JoinRequestRow[]}
+        joinRequests={joinRequests}
         currentUserId={user.id}
+        isOwner={isOwner}
       />
     </div>
   );

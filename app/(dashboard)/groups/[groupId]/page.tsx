@@ -3,12 +3,13 @@ import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { GroupMediaLoader } from '@/components/features/media/GroupMediaLoader';
 import { RequestAccessPanel } from '@/components/features/groups/RequestAccessPanel';
+import { ShareGroupButton } from '@/components/features/groups/ShareGroupButton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { PageLoader } from '@/components/ui/page-loader';
 import { ArrowLeft, Globe, Lock, Settings, Users } from 'lucide-react';
 import Link from 'next/link';
-import type { GroupRole, JoinRequestStatus, MediaType } from '@/types';
+import type { JoinRequestStatus, MediaType } from '@/types';
 
 interface Props {
   params: Promise<{ groupId: string }>;
@@ -57,8 +58,6 @@ export default async function GroupDetailPage({ params, searchParams }: Props) {
   if (!group) notFound();
 
   const isMember = !!membership;
-  const role: GroupRole | null = membership?.role ?? null;
-  const isOwner = role === 'owner';
   const requestStatus: JoinRequestStatus | null =
     (joinRequest?.status as JoinRequestStatus | undefined) ?? null;
 
@@ -136,7 +135,8 @@ export default async function GroupDetailPage({ params, searchParams }: Props) {
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {isOwner && (
+          <ShareGroupButton groupId={groupId} groupName={group.name} />
+          {isMember && (
             <Link href={`/groups/${groupId}/settings`}>
               <Button variant="outline" size="sm" className="gap-1">
                 <Settings className="h-3 w-3" />
