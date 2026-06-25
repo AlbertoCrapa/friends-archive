@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Check, Trash2, UserMinus, X } from 'lucide-react';
+import { Check, LogOut, Trash2, UserMinus, X } from 'lucide-react';
 import { GroupArchiveData } from '@/components/features/groups/GroupArchiveData';
 
 interface Group {
@@ -46,9 +46,11 @@ interface Props {
   members: Member[];
   joinRequests: JoinRequestRow[];
   currentUserId: string;
+  /** Owners get the full editable view; members get a read-only view + "leave". */
+  isOwner: boolean;
 }
 
-export function GroupSettings({ group, members, joinRequests, currentUserId }: Props) {
+export function GroupSettings({ group, members, joinRequests, currentUserId, isOwner }: Props) {
   const router = useRouter();
   const [name, setName] = useState(group.name);
   const [description, setDescription] = useState(group.description ?? '');
@@ -61,6 +63,9 @@ export function GroupSettings({ group, members, joinRequests, currentUserId }: P
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [resolvingRequest, setResolvingRequest] = useState<string | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
+  const [leavingGroup, setLeavingGroup] = useState(false);
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -127,6 +132,23 @@ export function GroupSettings({ group, members, joinRequests, currentUserId }: P
     router.push('/dashboard');
   }
 
+  async function leaveGroup() {
+    setLeavingGroup(true);
+    setLeaveError(null);
+    const supabase = createClient();
+    const { error: leaveErr } = await supabase
+      .from('group_members')
+      .delete()
+      .eq('group_id', group.id)
+      .eq('user_id', currentUserId);
+    if (leaveErr) {
+      setLeaveError('We could not remove you from the group. Please try again.');
+      setLeavingGroup(false);
+      return;
+    }
+    router.push('/dashboard');
+  }
+
   return (
     <div className="space-y-10">
       {/* Info form */}
@@ -141,6 +163,7 @@ export function GroupSettings({ group, members, joinRequests, currentUserId }: P
               onChange={(e) => setName(e.target.value)}
               maxLength={80}
               required
+              disabled={!isOwner}
             />
           </div>
           <div className="space-y-2">
@@ -151,11 +174,16 @@ export function GroupSettings({ group, members, joinRequests, currentUserId }: P
               onChange={(e) => setDescription(e.target.value)}
               maxLength={300}
               rows={3}
+              disabled={!isOwner}
             />
           </div>
           <div className="space-y-2">
             <Label htmlFor="visibility">Visibility</Label>
-            <Select value={visibility} onValueChange={(v) => setVisibility(v as 'public' | 'private')}>
+            <Select
+              value={visibility}
+              onValueChange={(v) => setVisibility(v as 'public' | 'private')}
+              disabled={!isOwner}
+            >
               <SelectTrigger id="visibility">
                 <SelectValue />
               </SelectTrigger>
@@ -168,18 +196,20 @@ export function GroupSettings({ group, members, joinRequests, currentUserId }: P
 
           {error && <FormBanner message={error} variant="error" />}
 
-          <Button type="submit" disabled={saving}>
-            {saved ? (
-              'Saved!'
-            ) : saving ? (
-              <span className="inline-flex items-center gap-2">
-                <Spinner />
-                Saving...
-              </span>
-            ) : (
-              'Save changes'
-            )}
-          </Button>
+          {isOwner && (
+            <Button type="submit" disabled={saving}>
+              {saved ? (
+                'Saved!'
+              ) : saving ? (
+                <span className="inline-flex items-center gap-2">
+                  <Spinner />
+                  Saving...
+                </span>
+              ) : (
+                'Save changes'
+              )}
+            </Button>
+          )}
         </form>
       </section>
 
@@ -250,7 +280,7 @@ export function GroupSettings({ group, members, joinRequests, currentUserId }: P
                   {m.role}
                 </span>
               </div>
-              {m.user_id !== currentUserId && (
+              {isOwner && m.user_id !== currentUserId && (
                 <Button
                   variant="ghost"
                   size="icon"
@@ -288,60 +318,125 @@ export function GroupSettings({ group, members, joinRequests, currentUserId }: P
           className="border p-5 space-y-4"
           style={{ borderColor: 'oklch(0.5 0.18 15 / 0.3)', backgroundColor: 'oklch(0.12 0.04 15 / 0.15)' }}
         >
-          <div className="space-y-1.5">
-            <p className="text-stone-200 text-sm font-light">
-              Delete <span className="font-mono text-stone-100">{group.name}</span>
-            </p>
-            <p className="text-stone-500 text-sm font-light">
-              Permanently removes all media items and consumption records. This cannot be undone.
-            </p>
-          </div>
-
-          {!confirmDelete ? (
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-2 border-red-900/50 text-red-400 hover:bg-red-950/30 hover:border-red-800/60 hover:text-red-300"
-              onClick={() => setConfirmDelete(true)}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Delete group
-            </Button>
-          ) : (
-            <div className="flex items-center gap-3 flex-wrap">
-              <p className="text-sm font-mono" style={{ color: 'oklch(0.72 0.18 15)' }}>
-                Are you sure? This cannot be undone.
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  disabled={deletingGroup}
-                  onClick={deleteGroup}
-                  className="gap-2"
-                >
-                  {deletingGroup ? (
-                    <span className="inline-flex items-center gap-2">
-                      <Spinner className="h-3 w-3" />
-                      Deleting...
-                    </span>
-                  ) : (
-                    <>
-                      <Trash2 className="h-3.5 w-3.5" />
-                      Yes, delete
-                    </>
-                  )}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setConfirmDelete(false)}
-                  disabled={deletingGroup}
-                >
-                  Cancel
-                </Button>
+          {isOwner ? (
+            <>
+              <div className="space-y-1.5">
+                <p className="text-stone-200 text-sm font-light">
+                  Delete <span className="font-mono text-stone-100">{group.name}</span>
+                </p>
+                <p className="text-stone-500 text-sm font-light">
+                  Permanently removes all media items and consumption records. This cannot be undone.
+                </p>
               </div>
-            </div>
+
+              {!confirmDelete ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 border-red-900/50 text-red-400 hover:bg-red-950/30 hover:border-red-800/60 hover:text-red-300"
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete group
+                </Button>
+              ) : (
+                <div className="flex items-center gap-3 flex-wrap">
+                  <p className="text-sm font-mono" style={{ color: 'oklch(0.72 0.18 15)' }}>
+                    Are you sure? This cannot be undone.
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      disabled={deletingGroup}
+                      onClick={deleteGroup}
+                      className="gap-2"
+                    >
+                      {deletingGroup ? (
+                        <span className="inline-flex items-center gap-2">
+                          <Spinner className="h-3 w-3" />
+                          Deleting...
+                        </span>
+                      ) : (
+                        <>
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Yes, delete
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setConfirmDelete(false)}
+                      disabled={deletingGroup}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="space-y-1.5">
+                <p className="text-stone-200 text-sm font-light">
+                  Leave <span className="font-mono text-stone-100">{group.name}</span>
+                </p>
+                <p className="text-stone-500 text-sm font-light">
+                  You will lose access to this group&apos;s archive. You can request to join
+                  again later. Your contributions stay in the group.
+                </p>
+              </div>
+
+              {!confirmLeave ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 border-red-900/50 text-red-400 hover:bg-red-950/30 hover:border-red-800/60 hover:text-red-300"
+                  onClick={() => setConfirmLeave(true)}
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  Leave group
+                </Button>
+              ) : (
+                <div className="flex items-center gap-3 flex-wrap">
+                  <p className="text-sm font-mono" style={{ color: 'oklch(0.72 0.18 15)' }}>
+                    Are you sure you want to leave?
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      disabled={leavingGroup}
+                      onClick={leaveGroup}
+                      className="gap-2"
+                    >
+                      {leavingGroup ? (
+                        <span className="inline-flex items-center gap-2">
+                          <Spinner className="h-3 w-3" />
+                          Leaving...
+                        </span>
+                      ) : (
+                        <>
+                          <LogOut className="h-3.5 w-3.5" />
+                          Yes, leave
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setConfirmLeave(false)}
+                      disabled={leavingGroup}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {leaveError && <FormBanner message={leaveError} variant="error" />}
+            </>
           )}
         </div>
       </section>

@@ -140,6 +140,19 @@ export interface PendingJoinRequest {
   created_at: string;
 }
 
+/**
+ * A recently-approved request, enriched for the *requester's* notification UI.
+ * Tells the requester that an owner accepted them into a group. Derived (not
+ * stored) the same way pending requests are — see DATA_MODEL § 6.6.
+ */
+export interface AcceptedJoinRequest {
+  id: string;
+  group_id: string;
+  group_name: string;
+  approver_nickname: string;
+  resolved_at: string;
+}
+
 // ── Media Items ──────────────────────────────────────────────────────────────
 
 export interface MediaItem {
