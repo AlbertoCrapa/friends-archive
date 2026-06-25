@@ -16,7 +16,7 @@ import {
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { ExternalLink, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { getStatusLabel, getStatusOptions } from '@/types';
 import { getStatusColor } from '@/lib/utils';
 import type { ItemStatus, MediaItem, MediaItemWithDetails, MediaType } from '@/types';
@@ -184,7 +184,21 @@ export function MediaTable({
               transition={{ duration: 0.2, delay: Math.min(0.012 * index, 0.2) }}
             >
             <div className="space-y-1 min-w-0">
-              <p className="text-stone-100 font-light leading-snug truncate">{item.title}</p>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <p className="text-stone-100 font-light leading-snug truncate">{item.title}</p>
+                {item.external_url && (
+                  <a
+                    href={item.external_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={`View on ${item.external_source}`}
+                    aria-label={`View "${item.title}" on ${item.external_source}`}
+                    className="shrink-0 text-stone-600 hover:text-amber-500 transition-colors cursor-pointer"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
+              </div>
               {item.metadata && (
                 <p className="text-[11px] font-mono text-stone-600 truncate">{getMetaSummary(item)}</p>
               )}
@@ -296,7 +310,20 @@ export function MediaTable({
               transition={{ duration: 0.2, delay: Math.min(0.012 * index, 0.2) }}
             >
             <div className="space-y-1">
-              <p className="text-base text-stone-100 leading-snug break-words">{item.title}</p>
+              <div className="flex items-start gap-1.5">
+                <p className="text-base text-stone-100 leading-snug break-words">{item.title}</p>
+                {item.external_url && (
+                  <a
+                    href={item.external_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`View "${item.title}" on ${item.external_source}`}
+                    className="shrink-0 mt-1 text-stone-600 hover:text-amber-500 transition-colors cursor-pointer"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                )}
+              </div>
               <p className="text-xs font-mono text-stone-500">{getTypeLabel(item.type)}</p>
               {item.metadata && <p className="text-xs font-mono text-stone-600">{getMetaSummary(item)}</p>}
             </div>

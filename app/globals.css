@@ -75,6 +75,9 @@
   --z-nav: 40;
   --z-dropdown: 50;
   --z-modal: 60;
+  /* Popovers (Select / DropdownMenu) portal to <body>, so when opened inside a
+     modal they must sit ABOVE it. Keep this greater than --z-modal (+1 content). */
+  --z-popover: 65;
   --z-toast: 70;
 
   font-family: var(--font-mono);

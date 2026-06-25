@@ -342,7 +342,6 @@ The following are deferred to future work and must NOT be partially implemented:
 
 - **Payment processing** — Stripe or any other payment provider integration
 - **Email notifications** — Welcome emails, activity digests (Supabase Auth confirmation emails are in scope)
-- **Media search / autocomplete** — Fetching metadata from TMDB, Open Library, etc.
 - **File uploads** — Cover images, avatars
 - **OAuth providers** — Google, GitHub login (only email + password is in scope)
 - **Group join request workflow** — Currently any authenticated user can join a public group directly; a request/approval flow is deferred
@@ -435,6 +434,46 @@ The Friend Archive frontend must follow the design and interaction rules below.
 
 ---
 
+## 22. External Identification Layer
+
+Media items may carry an **optional, globally consistent external reference** so the
+same real-world work can be recognised across groups (foundation for future global
+discovery / most-added rankings). The app stays group-centric: each item still owns
+its internal UUID and belongs to one group.
+
+- **Columns on `media_items`** (all nullable): `external_id`, `external_source`,
+  `external_url`. `external_id` is **namespaced and provider-stable**, e.g.
+  `tmdb:movie:693134`, `openlibrary:book:OL45804W`, `rawg:game:3498`. The same work
+  yields the same `external_id` in every group.
+- **Providers (one per category):** TMDB → `movie` + `tv_series`; Open Library →
+  `book`; RAWG → `video_game`. All free. Keys (`TMDB_API_KEY`, `RAWG_API_KEY`) are
+  server-only; Open Library needs none.
+- **Single normalized abstraction:** every provider payload is mapped to the
+  `ExternalWork` type by an adapter in `lib/providers/`. Nothing outside that folder
+  touches provider-shaped JSON. `searchExternal(type, query)` is the only entry point.
+- **Search path:** the browser calls `GET /api/external-search?type=&q=` (a
+  server route that holds the keys and requires a session). Never call providers
+  from the client and never put keys in `NEXT_PUBLIC_*`.
+- **Autocomplete + fallback:** `AddMediaDialog` searches as the user types and, on
+  selection, fills the title + per-type metadata and stamps the three external
+  columns. If nothing matches or a provider is unreachable, manual entry still works
+  and the columns stay `NULL`. A failed external call must **never** block adding an
+  item.
+- **Quota discipline (`hooks/useExternalSearch.ts`):** the shared free quotas (RAWG
+  is only ~20k req/**month** for ALL users) are protected by one hook used by both
+  dialogs. It enforces a typing **debounce** (1.2s), a **cooldown** between real
+  calls (2s), an in-memory **cache** (identical queries never re-fetch), and
+  **per-session call caps** (movies/TV/books 30; `video_game`/RAWG only 12) plus a
+  tab-wide RAWG ceiling (50). When a cap is hit the UI tells the user to add
+  manually. Tune the constants at the top of that file — do not loosen the RAWG caps
+  without reason.
+- **Editing:** `external_id` is **not** immutable (unlike `added_by`). Members may
+  link a manual item or unlink a mis-linked one via `EditMediaItemDialog`.
+- **Links:** when `external_url` is set, `MediaTable` shows an open-in-new icon to
+  the provider's page. Manual items show no link.
+
+---
+
 ## Changelog
 
 | Date       | Change                                                                              |
@@ -442,3 +481,4 @@ The Friend Archive frontend must follow the design and interaction rules below.
 | 2026-05-31 | Initial instructions written during migration from Vite SPA to Next.js + Supabase   |
 | 2026-06-01 | Documented status-to-consumption auto-sync behavior and consumed-by display rules   |
 | 2026-06-01 | Added mandatory frontend design tokens, motion, loading/error, and button standards |
+| 2026-06-25 | Added external identification layer (TMDB/Open Library/RAWG) + search autocomplete; moved media search into scope |

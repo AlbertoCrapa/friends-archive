@@ -51,6 +51,37 @@ export type MediaMetadata =
   | BookMetadata
   | VideoGameMetadata;
 
+// ── External Identification Layer ────────────────────────────────────────────
+
+/**
+ * Trusted external providers whose stable ids we normalize into media_items.
+ * One provider per media category — see lib/providers/.
+ */
+export type ExternalSource = 'tmdb' | 'openlibrary' | 'rawg';
+
+/**
+ * A single normalized search result from any external provider.
+ * Every provider adapter maps its heterogeneous payload into THIS shape, so the
+ * UI, the stored columns, and any future analytics speak one language regardless
+ * of origin.
+ */
+export interface ExternalWork {
+  /** Namespaced, provider-stable id, e.g. "tmdb:movie:693134". Identical across groups. */
+  external_id: string;
+  external_source: ExternalSource;
+  /** External detail page to visit (cached so the UI never needs a live call). */
+  external_url: string;
+  type: MediaType;
+  title: string;
+  year?: number;
+  /** Director / author / developer — shown to disambiguate suggestions. */
+  subtitle?: string;
+  /** Poster/cover thumbnail for the suggestion row. */
+  image_url?: string;
+  /** Pre-mapped into our existing per-type JSONB shape, ready to store. */
+  metadata: MediaMetadata;
+}
+
 // ── Users / Auth ────────────────────────────────────────────────────────────
 
 export interface Profile {
@@ -164,6 +195,10 @@ export interface MediaItem {
   genre: string | null;
   added_by: string;
   metadata: MediaMetadata;
+  /** Namespaced external id (e.g. "tmdb:movie:693134"). NULL for manual entries. */
+  external_id: string | null;
+  external_source: ExternalSource | null;
+  external_url: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { useExternalSearch } from '@/hooks/useExternalSearch';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Input } from '@/components/ui/input';
@@ -23,8 +24,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus } from 'lucide-react';
-import type { MediaType, ItemStatus, MediaItem } from '@/types';
+import { Plus, Link2, Search, X } from 'lucide-react';
+import type { ExternalWork, MediaType, ItemStatus, MediaItem } from '@/types';
 import { getStatusOptions } from '@/types';
 
 interface Props {
@@ -33,6 +34,9 @@ interface Props {
   activeType: MediaType | 'all';
   onAdded?: (item: MediaItem) => void;
 }
+
+const SELECT_COLUMNS =
+  'id, group_id, title, type, status, genre, metadata, added_by, external_id, external_source, external_url, created_at, updated_at';
 
 export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) {
   const router = useRouter();
@@ -59,8 +63,71 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
   const [durationMinutes, setDurationMinutes] = useState('');
   const [platform, setPlatform] = useState('');
 
+  // External identification layer
+  const [externalId, setExternalId] = useState<string | null>(null);
+  const [externalSource, setExternalSource] = useState<string | null>(null);
+  const [externalUrl, setExternalUrl] = useState<string | null>(null);
+  const [externalTitle, setExternalTitle] = useState<string | null>(null);
+
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Throttled, quota-capped external search (debounce + cooldown + caps).
+  // Disabled once an item is linked so a selection can't re-trigger calls.
+  const {
+    results: suggestions,
+    isSearching: searching,
+    limitReached,
+    unavailable: searchFailed,
+    callsRemaining,
+    reset: resetSearch,
+  } = useExternalSearch(type, title, open && !externalId);
+
+  const showSuggestions = !externalId && suggestions.length > 0;
+
+  function resetExternalLink() {
+    setExternalId(null);
+    setExternalSource(null);
+    setExternalUrl(null);
+    setExternalTitle(null);
+  }
+
+  function applyMetadata(work: ExternalWork) {
+    const m = work.metadata as Record<string, unknown>;
+    setReleaseYear(
+      m.release_year != null
+        ? String(m.release_year)
+        : m.publication_year != null
+          ? String(m.publication_year)
+          : ''
+    );
+    setDirector(typeof m.director === 'string' ? m.director : '');
+    setCreator(typeof m.creator === 'string' ? m.creator : '');
+    setAuthor(typeof m.author === 'string' ? m.author : '');
+    setDeveloper(typeof m.developer === 'string' ? m.developer : '');
+    setSeasons(m.seasons != null ? String(m.seasons) : '');
+    setDurationMinutes(m.duration_minutes != null ? String(m.duration_minutes) : '');
+    setPlatform(typeof m.platform === 'string' ? m.platform : '');
+  }
+
+  function selectWork(work: ExternalWork) {
+    setTitle(work.title);
+    applyMetadata(work);
+    setExternalId(work.external_id);
+    setExternalSource(work.external_source);
+    setExternalUrl(work.external_url);
+    setExternalTitle(work.title);
+    // Linking disables the search hook (enabled = open && !externalId),
+    // so no further calls fire and the dropdown hides.
+  }
+
+  function handleTitleChange(value: string) {
+    setTitle(value);
+    // Typing diverges from the linked work — drop the external link.
+    if (externalId && value !== externalTitle) {
+      resetExternalLink();
+    }
+  }
 
   function buildMetadata(): Record<string, unknown> {
     const year = releaseYear ? parseInt(releaseYear, 10) : undefined;
@@ -93,6 +160,21 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
     }
   }
 
+  function resetForm() {
+    setTitle('');
+    setDirector('');
+    setCreator('');
+    setAuthor('');
+    setDeveloper('');
+    setReleaseYear('');
+    setSeasons('');
+    setDurationMinutes('');
+    setPlatform('');
+    setStatus('plan_to_consume');
+    resetSearch();
+    resetExternalLink();
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -108,8 +190,11 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
         type,
         status,
         metadata: buildMetadata(),
+        external_id: externalId,
+        external_source: externalSource,
+        external_url: externalUrl,
       })
-      .select('id, group_id, title, type, status, genre, metadata, added_by, created_at, updated_at')
+      .select(SELECT_COLUMNS)
       .single();
 
     if (insertError) {
@@ -127,16 +212,7 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
         );
     }
 
-    setTitle('');
-    setDirector('');
-    setCreator('');
-    setAuthor('');
-    setDeveloper('');
-    setReleaseYear('');
-    setSeasons('');
-    setDurationMinutes('');
-    setPlatform('');
-    setStatus('plan_to_consume');
+    resetForm();
     setOpen(false);
 
     if (insertedItem) {
@@ -153,7 +229,14 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
   const statusOptions = getStatusOptions(type);
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) resetSearch();
+        else resetForm();
+      }}
+    >
       <DialogTrigger asChild>
         <Button size="sm" className="gap-2">
           <Plus className="h-4 w-4" />
@@ -165,32 +248,122 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
           <DialogTitle>Add an item</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
-          {activeType === 'all' && (
-            <div className="space-y-2">
-              <Label htmlFor="type">Type</Label>
-              <Select value={type} onValueChange={(value) => setType(value as MediaType)}>
-                <SelectTrigger id="type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="movie">Movie</SelectItem>
-                  <SelectItem value="tv_series">TV Series</SelectItem>
-                  <SelectItem value="book">Book</SelectItem>
-                  <SelectItem value="video_game">Game</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+          {/* Always shown. Defaults to the filter tab you opened it from, but
+              remains changeable so any type can be added from any section. */}
+          <div className="space-y-2">
+            <Label htmlFor="type">Type</Label>
+            <Select
+              value={type}
+              onValueChange={(value) => {
+                setType(value as MediaType);
+                // Switching provider invalidates the current link; the search
+                // hook re-queries the new provider on its own.
+                resetExternalLink();
+              }}
+            >
+              <SelectTrigger id="type">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="movie">Movie</SelectItem>
+                <SelectItem value="tv_series">TV Series</SelectItem>
+                <SelectItem value="book">Book</SelectItem>
+                <SelectItem value="video_game">Game</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
           <div className="space-y-2">
             <Label htmlFor="title">Title</Label>
-            <Input
-              id="title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Enter a title…"
-              required
-            />
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-stone-500 pointer-events-none" />
+              <Input
+                id="title"
+                value={title}
+                onChange={(e) => handleTitleChange(e.target.value)}
+                placeholder="Search a title…"
+                className="pl-9 pr-9"
+                autoComplete="off"
+                required
+              />
+              {searching && (
+                <Spinner className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5" />
+              )}
+
+              {/* Suggestions dropdown */}
+              {showSuggestions && suggestions.length > 0 && (
+                <div className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto border border-stone-700 bg-stone-950 shadow-lg">
+                  {suggestions.map((work) => (
+                    <button
+                      key={work.external_id}
+                      type="button"
+                      onClick={() => selectWork(work)}
+                      className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-stone-900 transition-colors cursor-pointer border-b border-stone-800/60 last:border-b-0"
+                    >
+                      {work.image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={work.image_url}
+                          alt=""
+                          className="h-10 w-7 shrink-0 object-cover bg-stone-800"
+                        />
+                      ) : (
+                        <div className="h-10 w-7 shrink-0 bg-stone-800" />
+                      )}
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm text-stone-100">{work.title}</span>
+                        {work.subtitle && (
+                          <span className="block truncate text-[11px] font-mono text-stone-500">
+                            {work.subtitle}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Linked / manual / unavailable hint line */}
+            {externalId ? (
+              <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
+                <span className="inline-flex items-center gap-1 text-amber-500/90">
+                  <Link2 className="h-3 w-3" />
+                  Linked to {externalSource}
+                </span>
+                <button
+                  type="button"
+                  onClick={resetExternalLink}
+                  className="inline-flex items-center gap-1 text-stone-500 hover:text-stone-300 cursor-pointer"
+                >
+                  <X className="h-3 w-3" />
+                  Unlink
+                </button>
+              </div>
+            ) : limitReached ? (
+              <p className="text-[11px] font-mono text-amber-500/80">
+                Search limit reached for this item — please add it manually.
+              </p>
+            ) : searchFailed ? (
+              <p className="text-[11px] font-mono text-stone-500">
+                Search unavailable — you can still add this manually.
+              </p>
+            ) : searching ? (
+              <p className="text-[11px] font-mono text-stone-500">Searching…</p>
+            ) : (
+              title.trim().length >= 2 &&
+              suggestions.length === 0 && (
+                <p className="text-[11px] font-mono text-stone-500">
+                  No matches — fill the details below to add it manually.
+                </p>
+              )
+            )}
+            {/* Games (RAWG) are on the scarcest shared quota — show what's left. */}
+            {type === 'video_game' && !externalId && callsRemaining <= 5 && (
+              <p className="text-[10px] font-mono text-stone-600">
+                {callsRemaining} game searches left for this item
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
