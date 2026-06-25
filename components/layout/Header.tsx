@@ -10,7 +10,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { JoinRequestsBell } from '@/components/features/groups/JoinRequestsBell';
 import { Compass, LogOut, User, Settings } from 'lucide-react';
+import type { PendingJoinRequest } from '@/types';
 
 async function signOut() {
   'use server';
@@ -24,6 +26,7 @@ export async function Header() {
   const { data: { user } } = await supabase.auth.getUser();
 
   let nickname: string | null = null;
+  let pendingRequests: PendingJoinRequest[] = [];
   if (user) {
     const { data: profile } = await supabase
       .from('profiles')
@@ -31,6 +34,26 @@ export async function Header() {
       .eq('id', user.id)
       .single();
     nickname = profile?.nickname ?? null;
+
+    // Owner notifications: pending access requests for groups this user owns
+    const { data: requestRows } = await supabase
+      .from('group_join_requests')
+      .select('id, group_id, created_at, groups!inner(name, owner_id), profiles!group_join_requests_user_id_fkey(nickname)')
+      .eq('status', 'pending')
+      .eq('groups.owner_id', user.id)
+      .order('created_at', { ascending: false });
+
+    pendingRequests = (requestRows ?? []).map((row) => {
+      const groupRel = row.groups as unknown as { name: string };
+      const profileRel = row.profiles as unknown as { nickname: string } | null;
+      return {
+        id: row.id,
+        group_id: row.group_id,
+        group_name: groupRel?.name ?? 'Unknown group',
+        requester_nickname: profileRel?.nickname ?? 'Unknown user',
+        created_at: row.created_at,
+      };
+    });
   }
 
   return (
@@ -49,6 +72,8 @@ export async function Header() {
               <Compass className="h-4 w-4" />
             </Button>
           </Link>
+
+          {user && <JoinRequestsBell requests={pendingRequests} />}
 
           {user ? (
             <DropdownMenu>

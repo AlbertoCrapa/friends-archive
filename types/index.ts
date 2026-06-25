@@ -112,6 +112,34 @@ export interface GroupMembership {
   role: GroupRole | null;
 }
 
+// ── Join Requests ────────────────────────────────────────────────────────────
+
+/**
+ * Lifecycle of a join request. Both public and private groups require an
+ * approved request before a user becomes a member.
+ */
+export type JoinRequestStatus = 'pending' | 'approved' | 'declined';
+
+export interface GroupJoinRequest {
+  id: string;
+  group_id: string;
+  user_id: string;
+  status: JoinRequestStatus;
+  resolved_at: string | null;
+  resolved_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Pending request enriched for the owner's notification UI */
+export interface PendingJoinRequest {
+  id: string;
+  group_id: string;
+  group_name: string;
+  requester_nickname: string;
+  created_at: string;
+}
+
 // ── Media Items ──────────────────────────────────────────────────────────────
 
 export interface MediaItem {

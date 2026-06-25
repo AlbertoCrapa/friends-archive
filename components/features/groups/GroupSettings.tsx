@@ -16,7 +16,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Trash2, UserMinus } from 'lucide-react';
+import { Check, Trash2, UserMinus, X } from 'lucide-react';
+import { GroupArchiveData } from '@/components/features/groups/GroupArchiveData';
 
 interface Group {
   id: string;
@@ -33,13 +34,21 @@ export interface Member {
   profiles: { nickname: string } | null;
 }
 
+export interface JoinRequestRow {
+  id: string;
+  user_id: string;
+  created_at: string;
+  profiles: { nickname: string } | null;
+}
+
 interface Props {
   group: Group;
   members: Member[];
+  joinRequests: JoinRequestRow[];
   currentUserId: string;
 }
 
-export function GroupSettings({ group, members, currentUserId }: Props) {
+export function GroupSettings({ group, members, joinRequests, currentUserId }: Props) {
   const router = useRouter();
   const [name, setName] = useState(group.name);
   const [description, setDescription] = useState(group.description ?? '');
@@ -50,6 +59,8 @@ export function GroupSettings({ group, members, currentUserId }: Props) {
   const [deletingGroup, setDeletingGroup] = useState(false);
   const [removingMember, setRemovingMember] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [resolvingRequest, setResolvingRequest] = useState<string | null>(null);
+  const [requestError, setRequestError] = useState<string | null>(null);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -87,6 +98,26 @@ export function GroupSettings({ group, members, currentUserId }: Props) {
       .eq('user_id', userId);
     router.refresh();
     setRemovingMember(null);
+  }
+
+  async function resolveRequest(requestId: string, action: 'approve' | 'decline') {
+    setResolvingRequest(requestId);
+    setRequestError(null);
+    const supabase = createClient();
+    const { error: rpcError } = await supabase.rpc(
+      action === 'approve' ? 'approve_join_request' : 'decline_join_request',
+      { p_request_id: requestId }
+    );
+    if (rpcError) {
+      setRequestError(
+        rpcError.message.includes('plan_limit_reached')
+          ? 'This user has reached the group limit of their plan.'
+          : 'We could not resolve the request. Please try again.'
+      );
+    } else {
+      router.refresh();
+    }
+    setResolvingRequest(null);
   }
 
   async function deleteGroup() {
@@ -152,6 +183,56 @@ export function GroupSettings({ group, members, currentUserId }: Props) {
         </form>
       </section>
 
+      {/* Pending access requests */}
+      {joinRequests.length > 0 && (
+        <section className="space-y-4">
+          <h2 className="font-mono uppercase tracking-[0.3em] text-xs" style={{ color: 'oklch(0.42 0.005 60)' }}>
+            Access requests
+          </h2>
+          <div className="border border-stone-800/50">
+            {joinRequests.map((request) => (
+              <div
+                key={request.id}
+                className="flex items-center justify-between px-5 py-3.5 border-b border-stone-800/30 last:border-b-0"
+              >
+                <span className="text-stone-200 text-sm font-mono truncate">
+                  {request.profiles?.nickname ?? 'Unknown'}
+                </span>
+                <div className="flex items-center gap-1 shrink-0">
+                  {resolvingRequest === request.id ? (
+                    <Spinner className="h-3.5 w-3.5 mx-2" />
+                  ) : (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-11 w-11 text-stone-600 hover:text-emerald-400"
+                        disabled={resolvingRequest !== null}
+                        onClick={() => resolveRequest(request.id, 'approve')}
+                        aria-label={`Approve ${request.profiles?.nickname ?? 'request'}`}
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-11 w-11 text-stone-600 hover:text-red-400"
+                        disabled={resolvingRequest !== null}
+                        onClick={() => resolveRequest(request.id, 'decline')}
+                        aria-label={`Decline ${request.profiles?.nickname ?? 'request'}`}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          {requestError && <FormBanner message={requestError} variant="error" />}
+        </section>
+      )}
+
       {/* Members */}
       <section className="space-y-4">
         <h2 className="font-mono uppercase tracking-[0.3em] text-xs" style={{ color: 'oklch(0.42 0.005 60)' }}>Members</h2>
@@ -188,6 +269,12 @@ export function GroupSettings({ group, members, currentUserId }: Props) {
             </div>
           ))}
         </div>
+      </section>
+
+      {/* Archive data */}
+      <section className="space-y-4">
+        <h2 className="font-mono uppercase tracking-[0.3em] text-xs" style={{ color: 'oklch(0.42 0.005 60)' }}>Archive data</h2>
+        <GroupArchiveData group={group} userId={currentUserId} />
       </section>
 
       {/* Danger zone */}

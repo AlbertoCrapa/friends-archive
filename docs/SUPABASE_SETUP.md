@@ -17,6 +17,7 @@ This document is the complete, authoritative guide to configuring Supabase for T
 4. [Auth Configuration](#4-auth-configuration)
 5. [Free Tier Optimisation](#5-free-tier-optimisation)
 6. [Verifying the Setup](#6-verifying-the-setup)
+7. [Migration — Request-to-Join Flow](#7-migration--request-to-join-flow)
 
 ---
 
@@ -118,6 +119,10 @@ CREATE TYPE group_visibility AS ENUM ('public', 'private');
 -- Group member role: exactly two roles, no intermediate moderator level.
 CREATE TYPE group_role AS ENUM ('owner', 'member');
 
+-- Join request lifecycle: membership in any group (public or private) is
+-- granted only when the owner approves a pending request.
+CREATE TYPE join_request_status AS ENUM ('pending', 'approved', 'declined');
+
 -- Subscription plan: the three tiers of the application.
 CREATE TYPE subscription_plan AS ENUM ('free', 'premium', 'enterprise');
 
@@ -125,7 +130,7 @@ CREATE TYPE subscription_plan AS ENUM ('free', 'premium', 'enterprise');
 CREATE TYPE subscription_status AS ENUM ('active', 'cancelled', 'expired', 'trialing');
 ```
 
-**Expected result:** `Success. No rows returned` — 6 times, once per `CREATE TYPE` statement. You can verify by going to **Database → Types** in the left sidebar and confirming all six types are listed.
+**Expected result:** `Success. No rows returned` — 7 times, once per `CREATE TYPE` statement. You can verify by going to **Database → Types** in the left sidebar and confirming all seven types are listed.
 
 ---
 
@@ -293,9 +298,37 @@ Application behavior note:
 
 **Expected result:** `Success. No rows returned` — `consumption_records` table appears in **Database → Tables**.
 
-At this point all 6 tables should be visible under **Database → Tables**: `profiles`, `subscriptions`, `groups`, `group_members`, `media_items`, `consumption_records`.
+#### 2g — group_join_requests
 
-#### 2g — Grant table access to Supabase API roles
+```sql
+-- Access requests. Joining any group — public or private — requires a request
+-- that the group owner explicitly approves or declines. One row per
+-- (group, user) pair; a declined request can be re-opened (status flips back
+-- to 'pending' via the request_group_access() function).
+CREATE TABLE public.group_join_requests (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  group_id     UUID NOT NULL REFERENCES public.groups(id) ON DELETE CASCADE,
+  user_id      UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  status       join_request_status NOT NULL DEFAULT 'pending',
+  resolved_at  TIMESTAMPTZ,
+  resolved_by  UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  CONSTRAINT unique_join_request UNIQUE (group_id, user_id)
+);
+
+COMMENT ON TABLE public.group_join_requests IS
+  'Access requests for groups. All writes go through SECURITY DEFINER functions — there are no INSERT/UPDATE/DELETE RLS policies.';
+COMMENT ON COLUMN public.group_join_requests.resolved_by IS
+  'The owner who approved/declined the request. NULL while pending.';
+```
+
+**Expected result:** `Success. No rows returned` — `group_join_requests` table appears in **Database → Tables**.
+
+At this point all 7 tables should be visible under **Database → Tables**: `profiles`, `subscriptions`, `groups`, `group_members`, `group_join_requests`, `media_items`, `consumption_records`.
+
+#### 2h — Grant table access to Supabase API roles
 
 RLS policies do **not** replace normal PostgreSQL privileges. If you skip the grants below, Supabase can still fail with plain errors such as `permission denied for table groups` even when your policies are correct.
 
@@ -332,6 +365,12 @@ CREATE INDEX idx_groups_visibility ON public.groups (visibility);
 -- group_members: lookup by user (all groups a user belongs to) and by group (all members)
 CREATE INDEX idx_group_members_user_id ON public.group_members (user_id);
 CREATE INDEX idx_group_members_group_id ON public.group_members (group_id);
+
+-- group_join_requests: lookup by group (owner reviewing requests), by user
+-- (my requests on discover/group pages), and by status (pending-request badge)
+CREATE INDEX idx_group_join_requests_group_id ON public.group_join_requests (group_id);
+CREATE INDEX idx_group_join_requests_user_id ON public.group_join_requests (user_id);
+CREATE INDEX idx_group_join_requests_status ON public.group_join_requests (status);
 
 -- media_items: lookup by group, by type, by status, and by added_by
 CREATE INDEX idx_media_items_group_id ON public.media_items (group_id);
@@ -385,9 +424,13 @@ CREATE TRIGGER trg_media_items_updated_at
 CREATE TRIGGER trg_consumption_records_updated_at
   BEFORE UPDATE ON public.consumption_records
   FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+CREATE TRIGGER trg_group_join_requests_updated_at
+  BEFORE UPDATE ON public.group_join_requests
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 ```
 
-**Expected result:** `Success. No rows returned` — the function and all five triggers are created. You can verify under **Database → Functions** (look for `handle_updated_at`) and **Database → Triggers**.
+**Expected result:** `Success. No rows returned` — the function and all six triggers are created. You can verify under **Database → Functions** (look for `handle_updated_at`) and **Database → Triggers**.
 
 #### 4b — Auto-create profile and subscription on registration
 
@@ -566,6 +609,151 @@ REVOKE EXECUTE ON FUNCTION public.handle_new_group()         FROM authenticated;
 
 **Expected result:** `Success. No rows returned` — all REVOKE statements succeed. The functions still work (RLS policies and triggers call them internally) but they can no longer be invoked via `/rest/v1/rpc/...`.
 
+#### 4f — Join request flow functions
+
+Membership is granted exclusively through this request → approve flow. There are **no INSERT/UPDATE/DELETE RLS policies** on `group_join_requests`, and no self-join INSERT policy on `group_members` — these four `SECURITY DEFINER` functions are the only write path, so the ownership and plan-limit checks live in exactly one place.
+
+```sql
+-- Checks whether a user owns a group. SECURITY DEFINER so it can be used
+-- inside RLS policies without triggering the groups policies recursively.
+CREATE OR REPLACE FUNCTION public.is_group_owner(p_group_id UUID, p_user_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.groups
+    WHERE id = p_group_id AND owner_id = p_user_id
+  );
+$$;
+
+-- The current user asks to join a group (public or private).
+-- Creates a pending request, or re-opens a previously declined one.
+-- Calling it again while a request is already pending is a harmless no-op.
+CREATE OR REPLACE FUNCTION public.request_group_access(p_group_id UUID)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_user UUID := auth.uid();
+BEGIN
+  IF v_user IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.groups WHERE id = p_group_id) THEN
+    RAISE EXCEPTION 'group_not_found';
+  END IF;
+  IF public.is_group_member(p_group_id, v_user) THEN
+    RAISE EXCEPTION 'already_member';
+  END IF;
+
+  INSERT INTO public.group_join_requests (group_id, user_id)
+  VALUES (p_group_id, v_user)
+  ON CONFLICT (group_id, user_id) DO UPDATE
+    SET status      = 'pending',
+        resolved_at = NULL,
+        resolved_by = NULL,
+        created_at  = NOW()
+    WHERE group_join_requests.status <> 'pending';
+END;
+$$;
+
+-- The current user withdraws their own pending request.
+CREATE OR REPLACE FUNCTION public.cancel_join_request(p_group_id UUID)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  DELETE FROM public.group_join_requests
+  WHERE group_id = p_group_id
+    AND user_id = auth.uid()
+    AND status = 'pending';
+END;
+$$;
+
+-- The group owner approves a pending request: the requester becomes a member
+-- and the request is marked approved. Fails if the requester has reached
+-- their plan's total membership limit.
+CREATE OR REPLACE FUNCTION public.approve_join_request(p_request_id UUID)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_request public.group_join_requests%ROWTYPE;
+BEGIN
+  SELECT * INTO v_request
+  FROM public.group_join_requests
+  WHERE id = p_request_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'request_not_found';
+  END IF;
+  IF NOT public.is_group_owner(v_request.group_id, auth.uid()) THEN
+    RAISE EXCEPTION 'not_owner';
+  END IF;
+  IF v_request.status <> 'pending' THEN
+    RAISE EXCEPTION 'not_pending';
+  END IF;
+  IF NOT public.can_join_group(v_request.user_id) THEN
+    RAISE EXCEPTION 'plan_limit_reached';
+  END IF;
+
+  INSERT INTO public.group_members (group_id, user_id, role)
+  VALUES (v_request.group_id, v_request.user_id, 'member')
+  ON CONFLICT (group_id, user_id) DO NOTHING;
+
+  UPDATE public.group_join_requests
+  SET status = 'approved', resolved_at = NOW(), resolved_by = auth.uid()
+  WHERE id = p_request_id;
+END;
+$$;
+
+-- The group owner declines a pending request. The requester can ask again
+-- later (request_group_access re-opens a declined row).
+CREATE OR REPLACE FUNCTION public.decline_join_request(p_request_id UUID)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_request public.group_join_requests%ROWTYPE;
+BEGIN
+  SELECT * INTO v_request
+  FROM public.group_join_requests
+  WHERE id = p_request_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'request_not_found';
+  END IF;
+  IF NOT public.is_group_owner(v_request.group_id, auth.uid()) THEN
+    RAISE EXCEPTION 'not_owner';
+  END IF;
+  IF v_request.status <> 'pending' THEN
+    RAISE EXCEPTION 'not_pending';
+  END IF;
+
+  UPDATE public.group_join_requests
+  SET status = 'declined', resolved_at = NOW(), resolved_by = auth.uid()
+  WHERE id = p_request_id;
+END;
+$$;
+
+-- These are user-facing RPCs: authenticated users call them via
+-- supabase.rpc(...). Only anonymous access is revoked.
+REVOKE EXECUTE ON FUNCTION public.is_group_owner(uuid, uuid)      FROM anon;
+REVOKE EXECUTE ON FUNCTION public.request_group_access(uuid)      FROM anon;
+REVOKE EXECUTE ON FUNCTION public.cancel_join_request(uuid)       FROM anon;
+REVOKE EXECUTE ON FUNCTION public.approve_join_request(uuid)      FROM anon;
+REVOKE EXECUTE ON FUNCTION public.decline_join_request(uuid)      FROM anon;
+```
+
+**Expected result:** `Success. No rows returned` — five functions (`is_group_owner`, `request_group_access`, `cancel_join_request`, `approve_join_request`, `decline_join_request`) appear in **Database → Functions**.
+
 ---
 
 ### Step 5 — Row Level Security
@@ -611,11 +799,12 @@ ALTER TABLE public.profiles          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.subscriptions     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.groups            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.group_members     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.group_join_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.media_items       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.consumption_records ENABLE ROW LEVEL SECURITY;
 ```
 
-**Expected result:** `Success. No rows returned` — all six `ALTER TABLE` statements succeed. You can verify by going to **Database → Tables**, clicking any table, then checking **RLS enabled** in the table’s settings panel.
+**Expected result:** `Success. No rows returned` — all seven `ALTER TABLE` statements succeed. You can verify by going to **Database → Tables**, clicking any table, then checking **RLS enabled** in the table’s settings panel.
 
 #### 5a — profiles policies
 
@@ -664,16 +853,15 @@ CREATE POLICY "Users can read their own subscription"
 #### 5c — groups policies
 
 ```sql
--- Members can always see their own groups.
--- Non-members can see public groups (for the discovery page and public profiles).
--- Uses is_group_member() (SECURITY DEFINER) to avoid recursive RLS evaluation.
-CREATE POLICY "Members see their groups; anyone sees public groups"
+-- Any authenticated user can read group METADATA (name, description,
+-- visibility, owner). This is intentional: a private group's link must
+-- resolve to a blocked page that shows the group's name and a
+-- "request access" button. The group's CONTENT (items, members,
+-- consumption records) stays protected by the policies on those tables.
+CREATE POLICY "Authenticated users can read group metadata"
   ON public.groups FOR SELECT
   TO authenticated
-  USING (
-    visibility = 'public'
-    OR public.is_group_member(id, auth.uid())
-  );
+  USING (true);
 
 -- Any authenticated user can create a group, subject to their plan's limit.
 CREATE POLICY "Authenticated users can create groups within plan limits"
@@ -715,19 +903,11 @@ CREATE POLICY "Members see group_members for their groups; anyone sees public gr
     OR public.is_group_member(group_id, auth.uid())
   );
 
--- Any authenticated user can join a public group (self-insert as member),
--- subject to their plan's total membership limit.
-CREATE POLICY "Users can join public groups within plan limits"
-  ON public.group_members FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    user_id = auth.uid()
-    AND public.can_join_group(auth.uid())
-    AND EXISTS (
-      SELECT 1 FROM public.groups g
-      WHERE g.id = group_id AND g.visibility = 'public'
-    )
-  );
+-- There is intentionally NO INSERT policy on group_members for authenticated
+-- users. Membership rows are created only by:
+--   1. handle_new_group() — inserts the owner on group creation (trigger).
+--   2. approve_join_request() — inserts the requester when the owner approves.
+-- Both are SECURITY DEFINER and bypass RLS. Self-joining is impossible.
 
 -- A group owner can update member roles within their group.
 CREATE POLICY "Group owner can update member roles"
@@ -753,7 +933,7 @@ CREATE POLICY "Owner can remove members; users can leave"
   );
 ```
 
-**Expected result:** `Success. No rows returned` — four policies appear under **Authentication → Policies → group_members**.
+**Expected result:** `Success. No rows returned` — three policies appear under **Authentication → Policies → group_members** (SELECT, UPDATE, DELETE — deliberately no INSERT).
 
 #### 5e — media_items policies
 
@@ -878,6 +1058,27 @@ CREATE POLICY "Users can delete their own consumption records"
 ```
 
 **Expected result:** `Success. No rows returned` — four policies appear under **Authentication → Policies → consumption_records**.
+
+#### 5g — group_join_requests policies
+
+```sql
+-- A user can see their own requests (to render "pending"/"declined" states).
+-- A group owner can see all requests for their groups (notification bell,
+-- settings page).
+CREATE POLICY "Requesters and group owners can read join requests"
+  ON public.group_join_requests FOR SELECT
+  TO authenticated
+  USING (
+    user_id = auth.uid()
+    OR public.is_group_owner(group_id, auth.uid())
+  );
+
+-- No INSERT, UPDATE, or DELETE policies: every mutation goes through the
+-- SECURITY DEFINER functions from Step 4f (request_group_access,
+-- cancel_join_request, approve_join_request, decline_join_request).
+```
+
+**Expected result:** `Success. No rows returned` — one policy appears under **Authentication → Policies → group_join_requests**.
 
 All five steps are now complete. Proceed to [Section 4 — Auth Configuration](#4-auth-configuration) to finish the setup, then run the verification queries in [Section 6](#6-verifying-the-setup) to confirm everything is correct before starting development.
 
@@ -1016,14 +1217,14 @@ After running all migrations, verify the setup is correct by running these check
 -- 1. All enum types exist
 SELECT typname FROM pg_type WHERE typname IN (
   'media_type', 'item_status', 'group_visibility', 'group_role',
-  'subscription_plan', 'subscription_status'
+  'join_request_status', 'subscription_plan', 'subscription_status'
 );
 
 -- 2. All tables exist with correct column counts
 SELECT table_name, COUNT(column_name) AS col_count
 FROM information_schema.columns
 WHERE table_schema = 'public'
-  AND table_name IN ('profiles', 'subscriptions', 'groups', 'group_members', 'media_items', 'consumption_records')
+  AND table_name IN ('profiles', 'subscriptions', 'groups', 'group_members', 'group_join_requests', 'media_items', 'consumption_records')
 GROUP BY table_name
 ORDER BY table_name;
 
@@ -1031,7 +1232,7 @@ ORDER BY table_name;
 SELECT tablename, rowsecurity
 FROM pg_tables
 WHERE schemaname = 'public'
-  AND tablename IN ('profiles', 'subscriptions', 'groups', 'group_members', 'media_items', 'consumption_records');
+  AND tablename IN ('profiles', 'subscriptions', 'groups', 'group_members', 'group_join_requests', 'media_items', 'consumption_records');
 
 -- 4. All triggers exist
 SELECT trigger_name, event_object_table
@@ -1044,3 +1245,68 @@ ORDER BY event_object_table;
 ```
 
 All checks should pass before proceeding with application development.
+
+---
+
+## 7. Migration — Request-to-Join Flow
+
+If your database was created **before** the request-to-join flow (i.e. it still has the "Users can join public groups within plan limits" policy), run this single migration block in the SQL Editor. Fresh setups that followed the steps above already include everything here — skip this section.
+
+What it changes:
+
+- Joining a group — public or private — now requires a request the owner approves or declines.
+- Private groups: metadata (name/description) becomes readable by any authenticated user so a shared link can render a blocked page with a "request access" button. Content stays members-only.
+- Direct self-insert into `group_members` is removed.
+
+```sql
+-- 1. New enum + table
+CREATE TYPE join_request_status AS ENUM ('pending', 'approved', 'declined');
+
+CREATE TABLE public.group_join_requests (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  group_id     UUID NOT NULL REFERENCES public.groups(id) ON DELETE CASCADE,
+  user_id      UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  status       join_request_status NOT NULL DEFAULT 'pending',
+  resolved_at  TIMESTAMPTZ,
+  resolved_by  UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT unique_join_request UNIQUE (group_id, user_id)
+);
+
+CREATE TRIGGER trg_group_join_requests_updated_at
+  BEFORE UPDATE ON public.group_join_requests
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+CREATE INDEX idx_group_join_requests_group_id ON public.group_join_requests (group_id);
+CREATE INDEX idx_group_join_requests_user_id ON public.group_join_requests (user_id);
+CREATE INDEX idx_group_join_requests_status ON public.group_join_requests (status);
+
+-- 2. Functions: copy the full Step 4f block from this document
+--    (is_group_owner, request_group_access, cancel_join_request,
+--     approve_join_request, decline_join_request + the REVOKE statements).
+
+-- 3. RLS changes
+ALTER TABLE public.group_join_requests ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Requesters and group owners can read join requests"
+  ON public.group_join_requests FOR SELECT
+  TO authenticated
+  USING (
+    user_id = auth.uid()
+    OR public.is_group_owner(group_id, auth.uid())
+  );
+
+-- Self-joining public groups is no longer allowed.
+DROP POLICY "Users can join public groups within plan limits" ON public.group_members;
+
+-- Group metadata becomes readable by all authenticated users (blocked page
+-- for private links). Content tables keep their member-only policies.
+DROP POLICY "Members see their groups; anyone sees public groups" ON public.groups;
+CREATE POLICY "Authenticated users can read group metadata"
+  ON public.groups FOR SELECT
+  TO authenticated
+  USING (true);
+```
+
+Existing memberships are untouched — current members stay members. Only the path INTO a group changes.
