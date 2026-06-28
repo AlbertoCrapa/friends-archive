@@ -44,6 +44,65 @@ export function truncate(str: string, maxLength: number): string {
   return str.slice(0, maxLength - 3) + '…';
 }
 
+// ── Tags ──────────────────────────────────────────────────────────────────
+// Tags are stored in the media_items.genre column as a comma-separated list
+// (the column name is legacy; semantically it is the item's tag set). On top of
+// the user/enrichment-supplied genre tags we surface a few stable metadata
+// values (platform, publisher, people) as derived, filterable tags.
+
+/** Max characters for the serialized tag list (matches the genre CHECK in the DB). */
+export const TAGS_MAX_LENGTH = 255;
+
+/** Metadata keys that also read nicely as filterable tags. */
+const TAG_META_KEYS = ['platform', 'publisher', 'director', 'creator', 'author', 'developer'] as const;
+
+/** Split the stored genre string into trimmed, de-duplicated tags (original case). */
+export function parseTags(genre: string | null | undefined): string[] {
+  if (!genre) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const part of genre.split(',')) {
+    const value = part.trim();
+    if (!value) continue;
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+  }
+  return out;
+}
+
+/** Join tags back into the comma-separated string stored in genre (length-capped). */
+export function serializeTags(tags: string[]): string {
+  return tags.join(', ').slice(0, TAGS_MAX_LENGTH);
+}
+
+/**
+ * The full, normalized (UPPERCASE), de-duplicated tag set for an item — the
+ * genre tags plus the derived metadata tags. Used for display chips and for
+ * tag filtering, so what you see is exactly what you can filter by.
+ */
+export function getItemTags(item: { genre?: string | null; metadata?: unknown }): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (raw: string) => {
+    const value = raw.trim();
+    if (!value) return;
+    const key = value.toUpperCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(key);
+  };
+
+  for (const tag of parseTags(item.genre)) push(tag);
+
+  const meta = (item.metadata ?? {}) as Record<string, unknown>;
+  for (const k of TAG_META_KEYS) {
+    if (typeof meta[k] === 'string') push(meta[k] as string);
+  }
+  return out;
+}
+
 /**
  * Returns Tailwind colour classes for a given item status value.
  */

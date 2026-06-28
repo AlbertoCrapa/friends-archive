@@ -86,7 +86,7 @@ Before reading the phases, understand what the project currently is and what it 
 - [ ] **1.1** Create the Supabase project via the dashboard (see `docs/SUPABASE_SETUP.md` § 1)
 - [ ] **1.2** Add environment variables to `.env.local` (see `docs/SUPABASE_SETUP.md` § 2)
 - [ ] **1.3** Run Step 1 migration: create all enum types
-- [ ] **1.4** Run Step 2 migration: create all six tables in dependency order
+- [ ] **1.4** Run Step 2 migration: create all tables in dependency order (`profiles`, `subscriptions`, `groups`, `group_members`, `media_items`, `consumption_records`, `group_join_requests`, `comments`)
 - [ ] **1.5** Run Step 3 migration: create all indexes
 - [ ] **1.6** Run Step 4 migration: create functions and triggers (updated_at, new user handler, new group handler, limit helpers)
 - [ ] **1.7** Run Step 5 migration: enable RLS and create all policies
@@ -182,6 +182,7 @@ Before reading the phases, understand what the project currently is and what it 
 - [ ] **4.6** Create `hooks/useMediaItems.ts` — client hook for media item mutations (create, update, delete, mark consumed, remove consumed).
 - [ ] **4.7** Update `app/(dashboard)/groups/[groupId]/page.tsx` — integrate `MediaTypeTabs`, `MediaFilters`, and `MediaTable`. Server Component fetches initial items; Client Components handle filtering and mutations.
 - [ ] **4.8** Implement note functionality — within `ConsumedByList` or a separate dialog, allow a user to add/edit their personal consumption note (max 500 chars). Character counter must be visible in the UI.
+- [ ] **4.9** Implement the comments system — shared per-item discussion backed by the `comments` table (see `docs/SUPABASE_SETUP.md` §9 and `docs/DATA_MODEL.md` §3.8). Create a `CommentThread` component (under `components/features/media/`) reachable from a media item, and a `hooks/useComments.ts` hook for create/edit/delete. Each comment shows the author's nickname (joined from `profiles`, never stored) and timestamp. Body is max 2000 chars with a visible character counter. Only group members can post; comments are readable by all members and, for public groups, by any authenticated viewer (read-only). A comment is editable by its author and deletable by its author or the group owner. **Comments are distinct from the per-user consumption note** — they are shared, not private.
 
 **What is replaced:**
 

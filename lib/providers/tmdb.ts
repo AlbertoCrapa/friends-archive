@@ -5,6 +5,8 @@
 
 import type { ExternalWork, MovieMetadata, TvSeriesMetadata } from '@/types';
 import { fetchJson } from './http';
+import type { ExternalDetails } from './types';
+import { genreFromNames } from './types';
 
 const IMAGE_BASE = 'https://image.tmdb.org/t/p/w92';
 
@@ -98,12 +100,14 @@ export async function searchTmdb(
 interface TmdbMovieDetails {
   runtime?: number | null;
   release_date?: string;
+  genres?: Array<{ name?: string }>;
   credits?: { crew?: Array<{ job?: string; name?: string; id?: number }> };
 }
 
 interface TmdbTvDetails {
   first_air_date?: string;
   number_of_seasons?: number;
+  genres?: Array<{ name?: string }>;
   created_by?: Array<{ name?: string; id?: number }>;
   networks?: Array<{ name?: string }>;
 }
@@ -126,7 +130,7 @@ function buildTmdbUrl(path: string): { url: string; headers?: Record<string, str
 export async function getTmdbDetails(
   kind: 'movie' | 'tv_series',
   id: string
-): Promise<MovieMetadata | TvSeriesMetadata | null> {
+): Promise<ExternalDetails | null> {
   if (!process.env.TMDB_API_KEY) return null;
 
   if (kind === 'movie') {
@@ -136,14 +140,15 @@ export async function getTmdbDetails(
     const directorCrew = d.credits?.crew?.find((c) => c.job === 'Director');
     const director = directorCrew?.name;
     const year = yearFrom(d.release_date);
-    return {
+    const metadata: MovieMetadata = {
       ...(director ? { director } : {}),
       ...(director && directorCrew?.id
         ? { director_url: `https://www.themoviedb.org/person/${directorCrew.id}` }
         : {}),
       ...(year ? { release_year: year } : {}),
       ...(d.runtime ? { duration_minutes: d.runtime } : {}),
-    } satisfies MovieMetadata;
+    };
+    return { metadata, genre: genreFromNames((d.genres ?? []).map((g) => g.name)) };
   }
 
   const { url, headers } = buildTmdbUrl(`tv/${id}`);
@@ -153,7 +158,7 @@ export async function getTmdbDetails(
   const creator = creatorObj?.name;
   const platform = d.networks?.[0]?.name;
   const year = yearFrom(d.first_air_date);
-  return {
+  const metadata: TvSeriesMetadata = {
     ...(creator ? { creator } : {}),
     ...(creator && creatorObj?.id
       ? { creator_url: `https://www.themoviedb.org/person/${creatorObj.id}` }
@@ -161,5 +166,6 @@ export async function getTmdbDetails(
     ...(year ? { release_year: year } : {}),
     ...(d.number_of_seasons ? { seasons: d.number_of_seasons } : {}),
     ...(platform ? { platform } : {}),
-  } satisfies TvSeriesMetadata;
+  };
+  return { metadata, genre: genreFromNames((d.genres ?? []).map((g) => g.name)) };
 }

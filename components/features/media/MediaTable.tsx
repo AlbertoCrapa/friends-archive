@@ -18,10 +18,10 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { ExternalLink, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { getStatusLabel, getStatusOptions } from '@/types';
-import { getStatusColor } from '@/lib/utils';
+import { getStatusColor, getItemTags } from '@/lib/utils';
 import type { ItemStatus, MediaItem, MediaItemWithDetails, MediaType } from '@/types';
 import { cn } from '@/lib/utils';
-import { ConsumedByDialog } from './ConsumedByDialog';
+import { CommentsDialog } from './CommentsDialog';
 import { EditMediaItemDialog } from './EditMediaItemDialog';
 
 interface Props {
@@ -29,22 +29,31 @@ interface Props {
   consumedSet: Set<string>;
   activeType: MediaType | 'all';
   isMember: boolean;
+  isOwner: boolean;
   userId: string;
   currentUserNickname: string | null;
+  activeTags?: string[];
+  onToggleTag?: (tag: string) => void;
   onDeleted?: (itemId: string) => void;
   onUpdated?: (item: MediaItemWithDetails) => void;
 }
+
+const TAG_DISPLAY_LIMIT = 6;
 
 export function MediaTable({
   items,
   consumedSet,
   activeType,
   isMember,
+  isOwner,
   userId,
   currentUserNickname,
+  activeTags = [],
+  onToggleTag,
   onDeleted,
   onUpdated,
 }: Props) {
+  const activeTagSet = new Set(activeTags);
   const [optimisticConsumed, setOptimisticConsumed] = useState<Set<string>>(
     new Set(consumedSet)
   );
@@ -173,7 +182,7 @@ export function MediaTable({
         const isCurrentUserConsumed = currentUserNickname
           ? consumedUsers.includes(currentUserNickname)
           : consumed;
-        const tagChips = getTagChips(item);
+        const tagChips = getItemTags(item);
 
         return (
           <Fragment key={item.id}>
@@ -233,15 +242,14 @@ export function MediaTable({
             </div>
 
             <div className="flex flex-wrap gap-1.5 pt-0.5">
-              {tagChips.length === 0 ? (
-                <span className="text-xs font-mono text-stone-700">-</span>
-              ) : (
-                tagChips.map((tag) => (
-                  <Badge key={`${item.id}-${tag}`} variant="tag" className="text-[10px] uppercase">
-                    {tag}
-                  </Badge>
-                ))
-              )}
+              <TagChipList
+                itemId={item.id}
+                tags={tagChips}
+                activeTagSet={activeTagSet}
+                onToggleTag={onToggleTag}
+                keyPrefix="d"
+                emptyLabel="-"
+              />
             </div>
 
             <div className="text-stone-200 text-sm font-mono pt-2 truncate">
@@ -273,12 +281,13 @@ export function MediaTable({
             </div>
 
             <div className="flex items-center justify-end gap-1">
-              <ConsumedByDialog
+              <CommentsDialog
                 itemId={item.id}
                 itemTitle={item.title}
                 userId={userId}
                 currentUserNickname={currentUserNickname}
                 isMember={isMember}
+                isOwner={isOwner}
               />
               {isMember && (
                 <DropdownMenu>
@@ -317,113 +326,132 @@ export function MediaTable({
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.2, delay: Math.min(0.012 * index, 0.2) }}
             >
-            <div className="space-y-1">
-              <div className="flex items-start gap-1.5">
-                <p className="text-base text-stone-100 leading-snug break-words">{item.title}</p>
-                {item.external_url && (
-                  <a
-                    href={item.external_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label={`View "${item.title}" on ${item.external_source}`}
-                    className="shrink-0 mt-1 text-stone-600 hover:text-amber-500 transition-colors cursor-pointer"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
-                )}
-              </div>
-              <p className="text-xs font-mono text-stone-500">{getTypeLabel(item.type)}</p>
-              {item.metadata && <p className="text-xs font-mono text-stone-600"><MetaSummary item={item} /></p>}
-            </div>
-
-            <div className="flex flex-wrap gap-1.5">
-              {tagChips.length === 0 ? (
-                <span className="text-xs font-mono text-stone-700">No tags</span>
-              ) : (
-                tagChips.map((tag) => (
-                  <Badge key={`${item.id}-mobile-${tag}`} variant="tag" className="text-[10px] uppercase">
-                    {tag}
-                  </Badge>
-                ))
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-xs font-mono text-stone-500">Status</p>
-              {isMember ? (
-                <Select value={effectiveStatus} onValueChange={(value) => updateStatus(item, value as ItemStatus)}>
-                  <SelectTrigger className={cn('h-11 border text-sm', statusClasses)} disabled={pendingStatusId === item.id}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getStatusOptions(item.type).map((statusOption) => (
-                      <SelectItem key={`${item.id}-mobile-${statusOption.value}`} value={statusOption.value}>
-                        {statusOption.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Badge className={cn('border text-xs', statusClasses)} variant={undefined}>
-                  {statusLabel}
-                </Badge>
-              )}
-            </div>
-
-            <div className="space-y-1">
-              <p className="text-xs font-mono text-stone-500">Consumed by</p>
-              {consumedUsers.length === 0 ? (
-                <p className="text-sm font-mono" style={{ color: 'oklch(0.38 0.005 60)' }}>Nobody yet</p>
-              ) : (
-                <div className="flex flex-wrap gap-1.5">
-                  {consumedUsers.slice(0, 5).map((name) => (
-                    <span
-                      key={name}
-                      className="font-mono text-xs px-2 py-0.5 border border-stone-800/60 text-stone-300"
+            {/* Title + quick status (title leads; status reads as a colored pill) */}
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 space-y-1">
+                <div className="flex items-start gap-1.5">
+                  <p className="text-base text-stone-100 leading-snug break-words">{item.title}</p>
+                  {item.external_url && (
+                    <a
+                      href={item.external_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={`View "${item.title}" on ${item.external_source}`}
+                      className="shrink-0 mt-1 text-stone-600 hover:text-amber-500 transition-colors cursor-pointer"
                     >
-                      {name}
-                    </span>
-                  ))}
-                  {consumedUsers.length > 5 && (
-                    <span className="font-mono text-xs text-stone-600">+{consumedUsers.length - 5} more</span>
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
                   )}
                 </div>
-              )}
+                <p className="text-[11px] font-mono text-stone-500">{getTypeLabel(item.type)}</p>
+                {item.metadata && (
+                  <p className="text-[11px] font-mono text-stone-600"><MetaSummary item={item} /></p>
+                )}
+              </div>
+
+              <div className="shrink-0">
+                {isMember ? (
+                  <Select value={effectiveStatus} onValueChange={(value) => updateStatus(item, value as ItemStatus)}>
+                    <SelectTrigger className={cn('h-9 border text-[11px] font-mono px-2', statusClasses)} disabled={pendingStatusId === item.id}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {getStatusOptions(item.type).map((statusOption) => (
+                        <SelectItem key={`${item.id}-mobile-${statusOption.value}`} value={statusOption.value}>
+                          {statusOption.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Badge className={cn('border text-[11px]', statusClasses)} variant={undefined}>
+                    {statusLabel}
+                  </Badge>
+                )}
+              </div>
             </div>
 
-            <div className="flex items-center flex-wrap gap-2 pt-1">
-              <ConsumedByDialog
-                itemId={item.id}
-                itemTitle={item.title}
-                userId={userId}
-                currentUserNickname={currentUserNickname}
-                isMember={isMember}
-              />
-              {isMember && (
-                <EditMediaItemDialog item={item} userId={userId} onUpdated={(updated) => onUpdated?.(updated)}>
-                  <Button variant="outline" size="sm" className="min-h-[44px] min-w-[80px]">
-                    Edit
-                  </Button>
-                </EditMediaItemDialog>
-              )}
-              {isMember && (
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  className="min-h-[44px] min-w-[80px]"
-                  onClick={() => deleteItem(item.id)}
-                  disabled={deletingItemId === item.id}
-                >
-                  {deletingItemId === item.id ? (
-                    <span className="inline-flex items-center gap-2">
-                      <Spinner className="h-3 w-3" />
-                      Deleting...
-                    </span>
-                  ) : (
-                    'Delete'
-                  )}
-                </Button>
-              )}
+            {/* Tags — only when present; finger-sized + tappable to filter */}
+            {tagChips.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                <TagChipList
+                  itemId={item.id}
+                  tags={tagChips}
+                  activeTagSet={activeTagSet}
+                  onToggleTag={onToggleTag}
+                  keyPrefix="m"
+                  emptyLabel="No tags"
+                  size="md"
+                />
+              </div>
+            )}
+
+            {/* Footer: who consumed it + actions (comments inline, rest in overflow) */}
+            <div className="flex items-end justify-between gap-2 pt-0.5">
+              <div className="min-w-0">
+                <p className="text-[10px] font-mono uppercase tracking-wider text-stone-600 mb-1">Consumed by</p>
+                {consumedUsers.length === 0 ? (
+                  <p className="text-xs font-mono text-stone-600">Nobody yet</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1">
+                    {consumedUsers.slice(0, 4).map((name) => (
+                      <span
+                        key={name}
+                        className={cn(
+                          'font-mono text-[11px] px-1.5 py-0.5 border truncate max-w-[110px]',
+                          isCurrentUserConsumed && name === currentUserNickname
+                            ? 'border-amber-800/50 text-amber-400/80'
+                            : 'border-stone-800/60 text-stone-300'
+                        )}
+                      >
+                        {name}
+                      </span>
+                    ))}
+                    {consumedUsers.length > 4 && (
+                      <span className="font-mono text-[11px] text-stone-600 self-center">+{consumedUsers.length - 4}</span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1 shrink-0">
+                <CommentsDialog
+                  itemId={item.id}
+                  itemTitle={item.title}
+                  userId={userId}
+                  currentUserNickname={currentUserNickname}
+                  isMember={isMember}
+                  isOwner={isOwner}
+                />
+                {isMember && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-11 w-11">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onSelect={() => setEditingItem(item)}>
+                        <Pencil className="h-3 w-3 mr-2" />
+                        Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="text-red-400 focus:text-red-300"
+                        disabled={deletingItemId === item.id}
+                        onClick={() => deleteItem(item.id)}
+                      >
+                        {deletingItemId === item.id ? (
+                          <Spinner className="mr-2 h-3 w-3" />
+                        ) : (
+                          <Trash2 className="h-3 w-3 mr-2" />
+                        )}
+                        {deletingItemId === item.id ? 'Deleting...' : 'Delete'}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
             </div>
             </motion.div>
           </Fragment>
@@ -442,34 +470,73 @@ export function MediaTable({
   );
 }
 
-function getTagChips(item: MediaItemWithDetails): string[] {
-  const tags = new Set<string>();
-
-  if (item.genre) {
-    for (const part of item.genre.split(',')) {
-      const cleaned = part.trim();
-      if (cleaned) tags.add(cleaned.toUpperCase());
-    }
+/**
+ * Renders an item's tags as chips. When onToggleTag is provided each chip is a
+ * toggle button (active = currently filtering by it); without it they are plain
+ * read-only badges. Shows up to TAG_DISPLAY_LIMIT, then a "+N" overflow count.
+ */
+function TagChipList({
+  itemId,
+  tags,
+  activeTagSet,
+  onToggleTag,
+  keyPrefix,
+  emptyLabel,
+  size = 'sm',
+}: {
+  itemId: string;
+  tags: string[];
+  activeTagSet: Set<string>;
+  onToggleTag?: (tag: string) => void;
+  keyPrefix: string;
+  emptyLabel: string;
+  /** 'md' gives finger-friendly chips for the mobile card. */
+  size?: 'sm' | 'md';
+}) {
+  if (tags.length === 0) {
+    return <span className="text-xs font-mono text-stone-700">{emptyLabel}</span>;
   }
 
-  const metadata = item.metadata as Record<string, unknown>;
-  const candidates = [
-    metadata.platform,
-    metadata.publisher,
-    metadata.director,
-    metadata.creator,
-    metadata.author,
-    metadata.developer,
-  ]
-    .map((value) => (typeof value === 'string' ? value.trim() : ''))
-    .filter(Boolean);
+  const shown = tags.slice(0, TAG_DISPLAY_LIMIT);
+  const extra = tags.length - shown.length;
+  const sizeClasses =
+    size === 'md' ? 'px-2.5 py-1.5 text-[11px]' : 'px-1.5 py-0.5 text-[10px]';
 
-  for (const value of candidates) {
-    if (tags.size >= 4) break;
-    tags.add(value.toUpperCase());
-  }
-
-  return Array.from(tags).slice(0, 4);
+  return (
+    <>
+      {shown.map((tag) => {
+        const active = activeTagSet.has(tag);
+        if (!onToggleTag) {
+          return (
+            <Badge key={`${keyPrefix}-${itemId}-${tag}`} variant="tag" className={cn('uppercase', sizeClasses)}>
+              {tag}
+            </Badge>
+          );
+        }
+        return (
+          <button
+            key={`${keyPrefix}-${itemId}-${tag}`}
+            type="button"
+            onClick={() => onToggleTag(tag)}
+            aria-pressed={active}
+            title={active ? `Remove tag filter: ${tag}` : `Filter by ${tag}`}
+            className={cn(
+              'cursor-pointer border font-mono uppercase tracking-wider transition-colors',
+              sizeClasses,
+              active
+                ? 'border-amber-700/60 text-amber-400 bg-amber-950/30'
+                : 'border-stone-800/60 text-stone-400 hover:border-stone-600 hover:text-stone-200 active:bg-stone-800/40'
+            )}
+          >
+            {tag}
+          </button>
+        );
+      })}
+      {extra > 0 && (
+        <span className="font-mono text-[10px] text-stone-600 self-center">+{extra}</span>
+      )}
+    </>
+  );
 }
 
 /**

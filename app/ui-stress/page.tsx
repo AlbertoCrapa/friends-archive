@@ -280,6 +280,7 @@ export default async function UIStressPage({ searchParams }: Props) {
               consumedSet={consumedSet}
               activeType="all"
               isMember={true}
+              isOwner={true}
               userId="stress-user"
               currentUserNickname="stress-user"
             />
@@ -435,6 +436,7 @@ export default async function UIStressPage({ searchParams }: Props) {
               consumedSet={consumedSet}
               activeType="all"
               isMember={true}
+              isOwner={true}
               userId="stress-user"
               currentUserNickname="stress-user"
             />
@@ -445,6 +447,7 @@ export default async function UIStressPage({ searchParams }: Props) {
               consumedSet={new Set()}
               activeType="all"
               isMember={false}
+              isOwner={false}
               userId="stress-user"
               currentUserNickname={null}
             />
@@ -455,6 +458,7 @@ export default async function UIStressPage({ searchParams }: Props) {
               consumedSet={new Set()}
               activeType="all"
               isMember={true}
+              isOwner={true}
               userId="stress-user"
               currentUserNickname="stress-user"
             />

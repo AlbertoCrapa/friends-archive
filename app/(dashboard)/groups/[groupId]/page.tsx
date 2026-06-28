@@ -58,6 +58,7 @@ export default async function GroupDetailPage({ params, searchParams }: Props) {
   if (!group) notFound();
 
   const isMember = !!membership;
+  const isOwner = group.owner_id === user.id;
   const requestStatus: JoinRequestStatus | null =
     (joinRequest?.status as JoinRequestStatus | undefined) ?? null;
 
@@ -153,6 +154,7 @@ export default async function GroupDetailPage({ params, searchParams }: Props) {
           groupId={groupId}
           userId={user.id}
           isMember={isMember}
+          isOwner={isOwner}
           initialActiveType={initialActiveType as 'all' | MediaType}
           initialPage={initialPage}
         />

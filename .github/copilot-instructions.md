@@ -157,6 +157,7 @@ All table names use `snake_case`. The full schema is in `docs/DATA_MODEL.md`. Th
 | `group_members`       | Junction table: which users belong to which group, and in what role      |
 | `media_items`         | A media item (movie, TV series, book, or video game) within a group      |
 | `consumption_records` | A per-user record of having consumed a specific item, with optional note |
+| `comments`            | Shared per-item discussion; one row per comment, authored by `author_id` |
 
 ---
 
@@ -345,7 +346,6 @@ The following are deferred to future work and must NOT be partially implemented:
 - **File uploads** — Cover images, avatars
 - **OAuth providers** — Google, GitHub login (only email + password is in scope)
 - **Group join request workflow** — Currently any authenticated user can join a public group directly; a request/approval flow is deferred
-- **Item comments / threads** — The personal note on a consumption record is in scope; threaded discussion is not
 - **Mobile-specific native features** — PWA manifest, push notifications
 
 ---
@@ -474,6 +474,42 @@ its internal UUID and belongs to one group.
 
 ---
 
+## 23. Comments System
+
+Media items support **shared discussion** stored in a dedicated `comments` table —
+**not** on `media_items` and **not** reusing `consumption_records.note`.
+
+- **Table:** `comments` (`id`, `media_item_id` → `media_items`, `author_id` →
+  `profiles`, `body`, `created_at`, `updated_at`). One row per comment; an item has
+  many. `body` is **1–2000 chars**, enforced by a `CHECK` constraint and a visible
+  character counter in the UI.
+- **Comment vs note:** a `consumption_records.note` is the author's **private**
+  per-item note. A `comments` row is a **shared** message everyone who can read the
+  group sees. Never conflate the two.
+- **Author identity:** only `author_id` is stored. The display **name** is always
+  derived by joining `author_id` → `profiles.nickname` (same rule as
+  `media_items.added_by`) — never duplicate the nickname into `comments`. Embedded
+  selects must disambiguate the FK: `profiles!comments_author_id_fkey(nickname)`.
+- **Read access (mirrors the item):** anyone who can read the parent group's
+  content can read its comments — group members for any group, plus any
+  authenticated user for items in a **public** group (read-only). This is the exact
+  `consumption_records` visibility rule, enforced by RLS that walks
+  `comment → media_items → groups`.
+- **Write access:** only group **members** can post, and only as themselves
+  (`author_id = auth.uid()`). Non-members viewing a public group are read-only.
+  A comment is editable only by its author; deletable by its author **or** the
+  group owner (basic moderation).
+- **Where it goes:** display lives under a media item (e.g. a `CommentThread`
+  component in `components/features/media/`), reachable from `MediaTable` / the item
+  detail. Mutations go through a hook (`hooks/useComments.ts`) or a Server Action —
+  never a raw client `createClient`. Follow the free-tier rules: explicit columns,
+  no `select('*')`, no polling.
+- **SQL:** schema, indexes, trigger and RLS are in `docs/SUPABASE_SETUP.md` §2h-bis,
+  §3, §4a, §5h and the migration in §9; full data model in `docs/DATA_MODEL.md` §3.8
+  and §6.8. Standalone script: `docs/migrations/2026-06-27_comments.sql`.
+
+---
+
 ## Changelog
 
 | Date       | Change                                                                              |
@@ -482,3 +518,5 @@ its internal UUID and belongs to one group.
 | 2026-06-01 | Documented status-to-consumption auto-sync behavior and consumed-by display rules   |
 | 2026-06-01 | Added mandatory frontend design tokens, motion, loading/error, and button standards |
 | 2026-06-25 | Added external identification layer (TMDB/Open Library/RAWG) + search autocomplete; moved media search into scope |
+| 2026-06-27 | Added `comments` table (shared per-item discussion, members write / public read); moved item comments into scope |
+| 2026-06-27 | Tags: `media_items.genre` now a comma-separated tag list (widened to 255), chip editor in Add/Edit, enrichment-filled tags (incl. RAWG gameplay tags), clickable tag chips + tag filtering on the group page |

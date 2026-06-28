@@ -219,3 +219,35 @@ Why:
 Principle:
 
 - Data-volume resilience and viewport-first verification.
+
+## 12. Comments Replace Per-Item "Reviews"
+
+Date: 2026-06-27
+
+What changed:
+
+- Replaced the old per-item "Reviews" dialog (`ConsumedByDialog.tsx`, backed by the
+  one-per-user `consumption_records.note`) with a true comment thread:
+  `components/features/media/CommentsDialog.tsx`, backed by the new `comments`
+  table (see `docs/SUPABASE_SETUP.md` §9 / `docs/DATA_MODEL.md` §3.8).
+- Each member can post **many** comments per item; everyone who can read the
+  group's content reads them (members, plus any authenticated viewer for public
+  groups, read-only). Each comment shows the author's nickname (joined from
+  `profiles`, never stored) and the date.
+- Authors can edit and delete their own comments; the group owner can delete any
+  comment (moderation). A new `isOwner` boolean is threaded
+  page → `GroupMediaLoader` → `GroupMediaSection` → `MediaTable` → `CommentsDialog`.
+- Composer enforces the 2000-char limit with a live counter, in-button spinner +
+  disabled state while posting/saving, and a friendly inline error banner.
+- The "Consumed By" column is unchanged — it still derives from
+  `consumption_records`, independent of comments.
+- Removed `components/features/media/ConsumedByDialog.tsx`.
+
+Why:
+
+- Brings shared per-item discussion into scope and stops overloading the private
+  consumption note as if it were a public review.
+
+Principle:
+
+- One concept per surface; shared discussion is a first-class, owner-moderated feature.

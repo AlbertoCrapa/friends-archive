@@ -6,6 +6,7 @@ interface Props {
   groupId: string;
   userId: string;
   isMember: boolean;
+  isOwner: boolean;
   initialActiveType: 'all' | MediaType;
   initialPage: number;
 }
@@ -14,6 +15,7 @@ export async function GroupMediaLoader({
   groupId,
   userId,
   isMember,
+  isOwner,
   initialActiveType,
   initialPage,
 }: Props) {
@@ -97,6 +99,7 @@ export async function GroupMediaLoader({
       userId={userId}
       currentUserNickname={currentProfile?.nickname ?? null}
       isMember={isMember}
+      isOwner={isOwner}
       initialItems={enrichedItems}
       initialConsumedSet={consumedSet}
       initialActiveType={initialActiveType}

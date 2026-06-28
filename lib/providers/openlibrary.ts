@@ -13,6 +13,7 @@ interface OpenLibraryDoc {
   author_key?: string[]; // e.g. ["OL23919A"]
   first_publish_year?: number;
   cover_i?: number;
+  subject?: string[]; // genre-ish tags, noisy — we take the first
 }
 
 interface OpenLibraryResponse {
@@ -30,7 +31,7 @@ export async function searchOpenLibrary(query: string): Promise<ExternalWork[]> 
   const url =
     'https://openlibrary.org/search.json' +
     `?title=${encodeURIComponent(query)}&limit=8` +
-    '&fields=key,title,author_name,author_key,first_publish_year,cover_i';
+    '&fields=key,title,author_name,author_key,first_publish_year,cover_i,subject';
 
   // Open Library's search endpoint is slow (often 4–5s, sometimes more); give it
   // a generous budget and identify ourselves per their API etiquette.
@@ -49,6 +50,7 @@ export async function searchOpenLibrary(query: string): Promise<ExternalWork[]> 
       const author = doc.author_name?.[0];
       const authorKey = doc.author_key?.[0];
       const year = doc.first_publish_year;
+      const genre = doc.subject?.[0]?.slice(0, 100);
       return {
         external_id: `openlibrary:book:${workId}`,
         external_source: 'openlibrary',
@@ -56,6 +58,7 @@ export async function searchOpenLibrary(query: string): Promise<ExternalWork[]> 
         type: 'book',
         title: doc.title,
         year,
+        ...(genre ? { genre } : {}),
         subtitle: [author, year ? String(year) : null].filter(Boolean).join(' · ') || undefined,
         image_url: doc.cover_i
           ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-S.jpg`

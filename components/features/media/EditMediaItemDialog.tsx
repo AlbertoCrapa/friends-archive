@@ -24,8 +24,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { TagInput } from '@/components/ui/tag-input';
 import type { ExternalWork, ItemStatus, MediaItemWithDetails, MediaType } from '@/types';
 import { getStatusOptions } from '@/types';
+import { parseTags, serializeTags } from '@/lib/utils';
 
 interface Props {
   item: MediaItemWithDetails;
@@ -42,7 +44,7 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
   const setOpen = onOpenChange ?? setInternalOpen;
   const [title, setTitle] = useState(item.title);
   const [status, setStatus] = useState<ItemStatus>(item.status);
-  const [genre, setGenre] = useState(item.genre ?? '');
+  const [tags, setTags] = useState<string[]>(parseTags(item.genre));
 
   const metadata = (item.metadata ?? {}) as Record<string, unknown>;
   const [director, setDirector] = useState(String(metadata.director ?? ''));
@@ -113,6 +115,7 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
   async function linkToWork(work: ExternalWork) {
     setTitle(work.title);
     applyWorkMetadata(work.metadata as Record<string, unknown>);
+    if (work.genre) setTags(parseTags(work.genre)); // search-derived tags
     setExternalId(work.external_id);
     setExternalSource(work.external_source);
     setExternalUrl(work.external_url);
@@ -127,8 +130,12 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
         `/api/external-details?id=${encodeURIComponent(work.external_id)}`
       );
       if (res.ok) {
-        const { metadata } = (await res.json()) as { metadata: Record<string, unknown> | null };
+        const { metadata, genre } = (await res.json()) as {
+          metadata: Record<string, unknown> | null;
+          genre: string | null;
+        };
         if (metadata) applyWorkMetadata(metadata);
+        if (genre) setTags(parseTags(genre));
       }
     } catch {
       // keep the search-derived fields
@@ -193,7 +200,7 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
       .update({
         title: title.trim(),
         status,
-        genre: genre.trim() || null,
+        genre: serializeTags(tags) || null,
         metadata: buildMetadata(item.type),
         external_id: externalId,
         external_source: externalSource,
@@ -343,15 +350,12 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor={`genre-${item.id}`}>Genre</Label>
-              <Input
-                id={`genre-${item.id}`}
-                value={genre}
-                onChange={(e) => setGenre(e.target.value)}
-                placeholder="optional"
-              />
-            </div>
+            {item.type === 'movie' && (
+              <div className="space-y-2">
+                <Label htmlFor={`duration-${item.id}`}>Duration (min)</Label>
+                <Input id={`duration-${item.id}`} type="number" inputMode="numeric" value={durationMinutes} onChange={(e) => setDurationMinutes(e.target.value)} min="1" placeholder="optional" />
+              </div>
+            )}
           </div>
 
           {item.type === 'movie' && (
@@ -363,10 +367,6 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
               <div className="space-y-2">
                 <Label htmlFor={`year-${item.id}`}>Year</Label>
                 <Input id={`year-${item.id}`} type="number" inputMode="numeric" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} min="1888" max="2099" placeholder="optional" />
-              </div>
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor={`duration-${item.id}`}>Duration (min)</Label>
-                <Input id={`duration-${item.id}`} type="number" inputMode="numeric" value={durationMinutes} onChange={(e) => setDurationMinutes(e.target.value)} min="1" placeholder="optional" />
               </div>
             </div>
           )}
@@ -417,6 +417,17 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
               </div>
             </div>
           )}
+
+          {/* Tags last: full-width so the chips have the whole dialog to grow into. */}
+          <div className="space-y-2">
+            <Label htmlFor={`tags-${item.id}`}>Tags</Label>
+            <TagInput
+              id={`tags-${item.id}`}
+              value={tags}
+              onChange={setTags}
+              placeholder="anime, rpg, co-op…"
+            />
+          </div>
 
           {error && <FormBanner message={error} variant="error" />}
 

@@ -213,10 +213,11 @@ export interface MediaItem {
   updated_at: string;
 }
 
-/** MediaItem with its consumption records and adder's nickname */
+/** MediaItem with its consumption records, comments and adder's nickname */
 export interface MediaItemWithDetails extends MediaItem {
   added_by_profile?: Pick<Profile, 'nickname'>;
   consumption_records?: ConsumptionRecord[];
+  comments?: Comment[];
 }
 
 // ── Consumption Records ──────────────────────────────────────────────────────
@@ -231,6 +232,35 @@ export interface ConsumptionRecord {
   updated_at: string;
   profile?: Pick<Profile, 'nickname'>;
 }
+
+// ── Comments ──────────────────────────────────────────────────────────────────
+
+/**
+ * A shared comment on a media item. Stored in the `comments` table — NOT on the
+ * media item and NOT in consumption_records. Many comments per item, each with
+ * its own author. The author's NAME is never stored here: it is derived by
+ * joining author_id -> profiles.nickname (exposed via the optional `author`).
+ *
+ * Read access mirrors the parent item: group members for any group, plus any
+ * authenticated viewer for items in a public group (read-only). Only members can
+ * write; a comment is editable by its author and deletable by its author or the
+ * group owner. See DATA_MODEL § 3.8 / § 6.8.
+ */
+export interface Comment {
+  id: string;
+  media_item_id: string;
+  /** UUID of the author. Join to profiles for the display name. */
+  author_id: string;
+  /** Comment text, 1–2000 chars (CHECK constraint in the DB). */
+  body: string;
+  created_at: string;
+  updated_at: string;
+  /** Author's nickname, joined from profiles!comments_author_id_fkey. */
+  author?: Pick<Profile, 'nickname'>;
+}
+
+/** Max length of a comment body, mirrored by the DB CHECK constraint. */
+export const COMMENT_MAX_LENGTH = 2000;
 
 // ── Filters ──────────────────────────────────────────────────────────────────
 

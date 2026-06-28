@@ -6,6 +6,7 @@ import { AddMediaDialog } from './AddMediaDialog';
 import { MediaTable } from './MediaTable';
 import { Input } from '@/components/ui/input';
 import { Search, X } from 'lucide-react';
+import { getItemTags } from '@/lib/utils';
 import type { MediaItemWithDetails, MediaType } from '@/types';
 
 type MediaFilterType = 'all' | MediaType;
@@ -18,6 +19,7 @@ interface Props {
   userId: string;
   currentUserNickname: string | null;
   isMember: boolean;
+  isOwner: boolean;
   initialItems: MediaItemWithDetails[];
   initialConsumedSet: Set<string>;
   initialActiveType: MediaFilterType;
@@ -51,6 +53,7 @@ export function GroupMediaSection({
   userId,
   currentUserNickname,
   isMember,
+  isOwner,
   initialItems,
   initialConsumedSet,
   initialActiveType,
@@ -58,28 +61,50 @@ export function GroupMediaSection({
 }: Props) {
   const [activeType, setActiveType] = useState<MediaFilterType>(initialActiveType);
   const [activeStatus, setActiveStatus] = useState<StatusFilter>('all');
+  const [activeTags, setActiveTags] = useState<string[]>([]);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(Math.max(1, initialPage));
   const [items, setItems] = useState<MediaItemWithDetails[]>(initialItems);
 
-  // Filter pipeline: type → status → search
+  // Filter pipeline: type → status → tags → search
   const filteredItems = useMemo(() => {
     let result = items;
     if (activeType !== 'all') result = result.filter((item) => item.type === activeType);
     if (activeStatus !== 'all') result = result.filter((item) => item.status === activeStatus);
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
+    if (activeTags.length > 0) {
       result = result.filter((item) => {
-        if (item.title.toLowerCase().includes(q)) return true;
-        const meta = item.metadata as Record<string, unknown> | null;
-        if (!meta) return false;
-        return ['director', 'creator', 'author', 'developer', 'publisher', 'platform'].some(
-          (key) => typeof meta[key] === 'string' && (meta[key] as string).toLowerCase().includes(q)
-        );
+        const itemTags = new Set(getItemTags(item));
+        return activeTags.every((tag) => itemTags.has(tag));
       });
     }
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      // Score 2 = title match (highest priority), 1 = tag match (tags already
+      // include the metadata fields like director/platform via getItemTags),
+      // 0 = no match. Sort keeps title hits first; Array.sort is stable so
+      // original (recency) order is preserved within each tier.
+      result = result
+        .map((item) => {
+          const score = item.title.toLowerCase().includes(q)
+            ? 2
+            : getItemTags(item).some((tag) => tag.toLowerCase().includes(q))
+              ? 1
+              : 0;
+          return { item, score };
+        })
+        .filter((entry) => entry.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .map((entry) => entry.item);
+    }
     return result;
-  }, [items, activeType, activeStatus, search]);
+  }, [items, activeType, activeStatus, activeTags, search]);
+
+  function toggleTag(tag: string) {
+    setActiveTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+    );
+    setPage(1);
+  }
 
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -126,72 +151,79 @@ export function GroupMediaSection({
     window.history.replaceState({}, '', query ? `${window.location.pathname}?${query}` : window.location.pathname);
   }
 
-  const hasActiveFilter = search.trim() || activeStatus !== 'all' || activeType !== 'all';
+  const hasActiveFilter =
+    search.trim() || activeStatus !== 'all' || activeType !== 'all' || activeTags.length > 0;
 
   return (
-    <div className="space-y-0">
+    <div className="space-y-0 pb-28">
+      {/* Add item — fixed bottom-right FAB (members only). */}
+      {isMember && (
+        <AddMediaDialog
+          groupId={groupId}
+          userId={userId}
+          activeType={activeType}
+          onAdded={(item) => {
+            const optimistic = {
+              ...item,
+              added_by_profile: currentUserNickname ? { nickname: currentUserNickname } : undefined,
+              consumption_records: [],
+            } satisfies MediaItemWithDetails;
+            handleAddedItem(optimistic);
+          }}
+        />
+      )}
+
       {/* ── Sticky control bar ────────────────────────────────────────── */}
       <div className="sticky top-[56px] z-20 bg-stone-950/96 backdrop-blur-sm border-b border-stone-900 -mx-6 px-6 pb-0">
 
-        {/* Type filter tabs */}
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex gap-0 overflow-x-auto scrollbar-hide" style={{ marginBottom: '-1px' }}>
-            {typeFilters.map(({ value, label }) => {
-              const isActive = activeType === value;
-              const count = getCountForType(value);
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => switchType(value)}
-                  className={`cursor-pointer min-h-[44px] px-3 sm:px-4 py-2 text-xs sm:text-sm font-mono uppercase tracking-wider transition-colors border-b-2 whitespace-nowrap
-                    ${isActive
-                      ? 'text-amber-500 border-amber-500'
-                      : 'text-stone-500 border-transparent hover:text-stone-300'
-                    }`}
-                >
-                  {label}
-                  <span className={`ml-1.5 text-[10px] ${isActive ? 'opacity-70' : 'opacity-40'}`}>
+        {/* Type filter tabs — all five always visible (no scroll): an equal
+            5-column grid on mobile, inline on desktop. The Add action is a
+            fixed bottom-right FAB (rendered below), so this row is tabs only. */}
+        <div
+          className="grid grid-cols-5 md:flex md:gap-0"
+          style={{ marginBottom: '-1px' }}
+        >
+          {typeFilters.map(({ value, label }) => {
+            const isActive = activeType === value;
+            const count = getCountForType(value);
+            return (
+              <button
+                key={value}
+                type="button"
+                onClick={() => switchType(value)}
+                className={`cursor-pointer min-h-[44px] px-1 sm:px-4 py-2 text-[11px] sm:text-sm font-mono uppercase tracking-wide sm:tracking-wider transition-colors border-b-2
+                  ${isActive
+                    ? 'text-amber-500 border-amber-500'
+                    : 'text-stone-500 border-transparent hover:text-stone-300'
+                  }`}
+              >
+                <span className="flex flex-col items-center leading-tight md:flex-row md:gap-1.5">
+                  <span className="truncate max-w-full">{label}</span>
+                  <span className={`text-[9px] sm:text-[10px] ${isActive ? 'opacity-70' : 'opacity-40'}`}>
                     {count}
                   </span>
-                </button>
-              );
-            })}
-          </div>
-
-          {isMember && (
-            <div className="shrink-0 pb-1">
-              <AddMediaDialog
-                groupId={groupId}
-                userId={userId}
-                activeType={activeType}
-                onAdded={(item) => {
-                  const optimistic = {
-                    ...item,
-                    added_by_profile: currentUserNickname ? { nickname: currentUserNickname } : undefined,
-                    consumption_records: [],
-                  } satisfies MediaItemWithDetails;
-                  handleAddedItem(optimistic);
-                }}
-              />
-            </div>
-          )}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
-        {/* Search + status filter row — stacks on mobile */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 py-2.5">
-          {/* Search */}
-          <div className="relative w-full sm:flex-1 sm:max-w-xs">
+        {/* Search + status filters. Stacks on mobile (search on top, status
+            grid below); on desktop they share one row — search left (constrained
+            width), status pills to its right. */}
+        <div className="flex flex-col gap-2 py-2.5 md:flex-row md:items-center md:justify-between">
+          {/* Search — constrained on desktop so the status filters sit to its right */}
+          <div className="relative w-full md:w-72 md:shrink-0">
             <Search
               className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 pointer-events-none"
               style={{ color: 'oklch(0.42 0.005 60)' }}
             />
             <Input
               type="search"
-              placeholder="Search titles..."
+              placeholder="Search titles or tags..."
               value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-              className="h-9 pl-9 pr-9 text-sm font-light w-full"
+              className="h-11 md:h-9 pl-9 pr-9 text-sm font-light w-full"
               style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
             />
             {search && (
@@ -200,20 +232,22 @@ export function GroupMediaSection({
                 onClick={() => setSearch('')}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 cursor-pointer"
                 style={{ color: 'oklch(0.42 0.005 60)' }}
+                aria-label="Clear search"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
             )}
           </div>
 
-          {/* Status filter — scrollable row */}
-          <div className="flex gap-1 overflow-x-auto scrollbar-hide w-full sm:w-auto pb-0.5 sm:pb-0">
+          {/* Status filter — all four always visible (no scroll): equal
+              4-column grid on mobile, inline on desktop (right side of the row). */}
+          <div className="grid grid-cols-4 gap-1.5 pb-0.5 md:flex md:shrink-0 md:pb-0">
             {statusFilters.map(({ value, label }) => (
               <button
                 key={value}
                 type="button"
                 onClick={() => { setActiveStatus(value); setPage(1); }}
-                className={`cursor-pointer min-h-9 px-3 text-[11px] font-mono uppercase tracking-wider whitespace-nowrap border transition-colors
+                className={`cursor-pointer min-h-11 md:min-h-9 px-1 sm:px-3 text-center text-[10px] sm:text-[11px] font-mono uppercase tracking-wide sm:tracking-wider leading-tight border transition-colors
                   ${activeStatus === value
                     ? STATUS_ACTIVE_CLASSES[value]
                     : 'border-stone-800/60 text-stone-500 hover:text-stone-300 hover:border-stone-700'
@@ -230,26 +264,47 @@ export function GroupMediaSection({
       <AnimatePresence>
         {hasActiveFilter && (
           <motion.div
-            className="flex items-center justify-between px-0 py-3 mt-4"
+            className="flex flex-col gap-2 px-0 py-3 mt-4"
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.2 }}
           >
-            <p className="font-mono text-xs" style={{ color: 'oklch(0.42 0.005 60)' }}>
-              {filteredItems.length} result{filteredItems.length !== 1 ? 's' : ''}
-              {search && <span> matching <em className="not-italic text-stone-300">"{search}"</em></span>}
-            </p>
-            {hasActiveFilter && (
-              <button
-                type="button"
-                onClick={() => { setSearch(''); setActiveStatus('all'); setActiveType('all'); setPage(1); }}
-                className="font-mono text-xs cursor-pointer transition-colors"
-                style={{ color: 'oklch(0.72 0.12 65 / 0.65)' }}
-              >
-                Clear filters
-              </button>
+            {activeTags.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="font-mono text-[10px] uppercase tracking-wider text-stone-600">
+                  Tags:
+                </span>
+                {activeTags.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => toggleTag(tag)}
+                    className="inline-flex items-center gap-1 cursor-pointer border border-amber-700/60 bg-amber-950/30 px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wider text-amber-400 hover:border-amber-600 transition-colors"
+                    title={`Remove tag filter: ${tag}`}
+                  >
+                    {tag}
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                ))}
+              </div>
             )}
+            <div className="flex items-center justify-between">
+              <p className="font-mono text-xs" style={{ color: 'oklch(0.42 0.005 60)' }}>
+                {filteredItems.length} result{filteredItems.length !== 1 ? 's' : ''}
+                {search && <span> matching <em className="not-italic text-stone-300">"{search}"</em></span>}
+              </p>
+              {hasActiveFilter && (
+                <button
+                  type="button"
+                  onClick={() => { setSearch(''); setActiveStatus('all'); setActiveType('all'); setActiveTags([]); setPage(1); }}
+                  className="font-mono text-xs cursor-pointer transition-colors"
+                  style={{ color: 'oklch(0.72 0.12 65 / 0.65)' }}
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -261,8 +316,11 @@ export function GroupMediaSection({
           consumedSet={initialConsumedSet}
           activeType={activeType}
           isMember={isMember}
+          isOwner={isOwner}
           userId={userId}
           currentUserNickname={currentUserNickname}
+          activeTags={activeTags}
+          onToggleTag={toggleTag}
           onDeleted={handleDeletedItem}
           onUpdated={handleUpdatedItem}
         />

@@ -16,6 +16,7 @@ This document is the authoritative reference for the database schema of The Frie
    - [media_items](#35-media_items)
    - [consumption_records](#36-consumption_records)
    - [group_join_requests](#37-group_join_requests)
+   - [comments](#38-comments)
 4. [Relationships and Foreign Keys](#4-relationships-and-foreign-keys)
 5. [Indexes](#5-indexes)
 6. [Design Rationale](#6-design-rationale)
@@ -25,6 +26,7 @@ This document is the authoritative reference for the database schema of The Frie
    - [Why item_status is three values not six](#64-why-item_status-is-three-values-not-six)
    - [Why added_by is immutable](#65-why-added_by-is-immutable)
    - [Why joining requires an approved request](#66-why-joining-requires-an-approved-request)
+   - [Why comments are a separate table](#68-why-comments-are-a-separate-table)
 7. [Row Level Security Matrix](#7-row-level-security-matrix)
 8. [Metadata Field Reference](#8-metadata-field-reference)
 
@@ -51,17 +53,18 @@ subscriptions                                           │
                      ▼                 ▼                 ▼
               group_members   group_join_requests   media_items
                                                         │
-                                                     1:many
-                                                        │
-                                                        ▼
-                                              consumption_records
+                                              ┌─────────┴─────────┐
+                                           1:many              1:many
+                                              │                   │
+                                              ▼                   ▼
+                                    consumption_records       comments
 ```
 
-The seven tables form three logical layers:
+The eight tables form three logical layers:
 
 1. **Identity layer** — `profiles`, `subscriptions`
 2. **Organisation layer** — `groups`, `group_members`, `group_join_requests`
-3. **Content layer** — `media_items`, `consumption_records`
+3. **Content layer** — `media_items`, `consumption_records`, `comments`
 
 ---
 
@@ -314,7 +317,7 @@ A single media item within a group. The `type` field determines which keys are m
 | `title`      | `TEXT`        | NOT NULL | —                   | Display title. 1–500 chars.                                   |
 | `type`       | `media_type`  | NOT NULL | —                   | One of: `movie`, `tv_series`, `book`, `video_game`.           |
 | `status`     | `item_status` | NOT NULL | `'plan_to_consume'` | The group's progress status.                                  |
-| `genre`      | `TEXT`        | NULL     | `NULL`              | Optional genre or category tag. Max 100 chars.                |
+| `genre`      | `TEXT`        | NULL     | `NULL`              | Comma-separated **tag list** (genres + enrichment/user tags, e.g. `Action, Anime, Co-op`). Max 255 chars. Legacy column name; semantically the item's tag set. |
 | `added_by`   | `UUID`        | NOT NULL | —                   | FK to `profiles.id`. Set server-side; immutable after insert. |
 | `metadata`   | `JSONB`       | NOT NULL | `'{}'`              | Type-specific fields. Schema varies by `type`.                |
 | `external_id`     | `TEXT`   | NULL     | `NULL`              | Namespaced provider-stable id (e.g. `tmdb:movie:693134`). Identical across all groups for the same work. NULL = manual entry. |
@@ -329,7 +332,7 @@ A single media item within a group. The `type` field determines which keys are m
 | ------------------ | ----------- | -------------------------------------------- |
 | `media_items_pkey`       | PRIMARY KEY | `id`                                                 |
 | `title_length`           | CHECK       | `char_length(title) BETWEEN 1 AND 500`               |
-| `genre_length`           | CHECK       | `genre IS NULL OR char_length(genre) <= 100`         |
+| `genre_length`           | CHECK       | `genre IS NULL OR char_length(genre) <= 255`         |
 | `external_source_valid`  | CHECK       | `external_source IS NULL OR external_source IN ('tmdb','openlibrary','rawg')` |
 | `external_id_with_source`| CHECK       | `(external_id IS NULL) = (external_source IS NULL)`   |
 
@@ -411,6 +414,39 @@ An access request from a user to a group. One row per (group, user) pair for the
 
 ---
 
+### 3.8 `comments`
+
+Per-item discussion. One row per comment written by a group member on a single `media_items` row. Comments are deliberately **not** stored on `media_items` — an item can carry many comments from many authors, each with its own text and timestamps. The author's name is **not** stored here; it is derived by joining `author_id` → `profiles.nickname`, exactly like `media_items.added_by`.
+
+| Column          | Type          | Nullable | Default             | Description                                                       |
+| --------------- | ------------- | -------- | ------------------- | ----------------------------------------------------------------- |
+| `id`            | `UUID`        | NOT NULL | `gen_random_uuid()` | Primary key.                                                      |
+| `media_item_id` | `UUID`        | NOT NULL | —                   | FK to `media_items.id`. The item the comment is attached to.      |
+| `author_id`     | `UUID`        | NOT NULL | —                   | FK to `profiles.id`. Who wrote it. Join for the nickname/name.    |
+| `body`          | `TEXT`        | NOT NULL | —                   | Comment text. 1–2000 chars.                                       |
+| `created_at`    | `TIMESTAMPTZ` | NOT NULL | `NOW()`             | Row creation time.                                                |
+| `updated_at`    | `TIMESTAMPTZ` | NOT NULL | `NOW()`             | Last updated. Maintained by trigger.                              |
+
+**Constraints:**
+
+| Name                  | Type        | Expression                                  |
+| --------------------- | ----------- | ------------------------------------------- |
+| `comments_pkey`       | PRIMARY KEY | `id`                                        |
+| `comment_body_length` | CHECK       | `char_length(body) BETWEEN 1 AND 2000`      |
+
+**Foreign keys:**
+
+| Column          | References                          |
+| --------------- | ----------------------------------- |
+| `media_item_id` | `media_items(id) ON DELETE CASCADE` |
+| `author_id`     | `profiles(id) ON DELETE CASCADE`    |
+
+> **Read access mirrors the item.** A comment is readable by anyone who can read the parent group's content: group members for any group, plus any authenticated user for items in a **public** group (read-only). Writing requires membership. See [§ 6.8](#68-why-comments-are-a-separate-table) and the RLS matrix in [§ 7](#comments).
+
+> **Note vs comment.** A `consumption_records.note` is the author's *private* per-item note (one per user/item). A `comments` row is a *shared* message visible to everyone who can read the group — many per item, threaded by `created_at`.
+
+---
+
 ## 4. Relationships and Foreign Keys
 
 ```
@@ -424,8 +460,10 @@ auth.users
     ├── group_members (user_id → profiles.id, CASCADE)
     ├── group_join_requests (user_id → profiles.id, CASCADE; resolved_by → profiles.id, SET NULL)
     ├── media_items (added_by → profiles.id, RESTRICT)
-    │   └── consumption_records (media_item_id → media_items.id, CASCADE)
-    └── consumption_records (user_id → profiles.id, CASCADE)
+    │   ├── consumption_records (media_item_id → media_items.id, CASCADE)
+    │   └── comments (media_item_id → media_items.id, CASCADE)
+    ├── consumption_records (user_id → profiles.id, CASCADE)
+    └── comments (author_id → profiles.id, CASCADE)
 ```
 
 ### Deletion Cascade Summary
@@ -433,9 +471,9 @@ auth.users
 | If you delete...  | Effect on...                                                                                                                        |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `auth.users` row  | Cascade deletes `profiles` row                                                                                                      |
-| `profiles` row    | Cascade deletes `subscriptions`, `group_members`, `group_join_requests`, `consumption_records`. Blocked (RESTRICT) if user owns groups or has added items. |
+| `profiles` row    | Cascade deletes `subscriptions`, `group_members`, `group_join_requests`, `consumption_records`, `comments`. Blocked (RESTRICT) if user owns groups or has added items. |
 | `groups` row      | Cascade deletes `group_members`, `group_join_requests`, `media_items`                                                              |
-| `media_items` row | Cascade deletes `consumption_records`                                                                                               |
+| `media_items` row | Cascade deletes `consumption_records`, `comments`                                                                                  |
 
 ---
 
@@ -457,8 +495,11 @@ auth.users
 | `idx_media_items_status`                | `media_items`         | `status`        | Status filter                         |
 | `idx_media_items_added_by`              | `media_items`         | `added_by`      | "Added by" filter                     |
 | `idx_media_items_external_id`           | `media_items`         | `external_id`   | Future cross-group rollups (most-added works) |
+| `idx_media_items_genre_trgm`            | `media_items`         | `genre` (GIN trigram) | Fast tag substring matching when filtering by tag |
 | `idx_consumption_records_user_id`       | `consumption_records` | `user_id`       | "What has user X consumed?"           |
 | `idx_consumption_records_media_item_id` | `consumption_records` | `media_item_id` | "Who has consumed item X?"            |
+| `idx_comments_media_item_id`            | `comments`            | `media_item_id` | Load the comment thread for an item   |
+| `idx_comments_author_id`                | `comments`            | `author_id`     | "What has user X written?" / cascade  |
 
 No full-text search indexes are in scope for the initial version. If title search performance becomes an issue, add a GIN index with `to_tsvector` on `media_items.title`.
 
@@ -664,6 +705,22 @@ provider abstraction and the search/autocomplete flow live in `lib/providers/` a
 
 ---
 
+### 6.8 Why comments are a separate table
+
+**The decision:** Discussion on a media item lives in a dedicated `comments` table keyed by `media_item_id`, not in a column on `media_items` and not in `consumption_records`.
+
+**Why not a column on `media_items`:** A `JSONB[]` or text column on the item would have no per-comment identity, no per-comment author FK, no per-comment timestamps, and no way to apply row-level permissions to a single comment (edit/delete your own). Threaded discussion is inherently 1:many — one item, many comments by many people — which is a child table, not a field.
+
+**Why not reuse `consumption_records.note`:** the `note` is **private** (one per user/item, the author's own reminder). A comment is **shared** — every member, and any viewer of a public group, reads it. Different audience, different cardinality (many comments per item), different lifecycle. Overloading `note` would conflate the two.
+
+**Why the name is not stored:** `comments` stores only `author_id` (FK to `profiles`). The display name comes from a join to `profiles.nickname`, identical to how `media_items.added_by` is resolved. Storing the nickname inline would duplicate data and go stale if a user renames. "The id and name of who made the comment" = `author_id` + the joined `nickname`.
+
+**Read access is inherited from the item, not stored on the comment:** the RLS SELECT policy walks `comment → media_items → groups` and allows a read when the group is public **or** the reader is a member — the exact same rule as `consumption_records`. So "other members of the group, or anyone who can read the group's content" get comments for free, with no per-comment visibility flag to keep in sync.
+
+**Writing requires membership; moderation is owner-or-author:** only group members can post (non-members viewing a public group stay read-only). A comment can be edited only by its author, and deleted by its author **or** the group owner (basic moderation) — mirroring the `media_items` delete rule.
+
+---
+
 ## 7. Row Level Security Matrix
 
 For each table and operation, this matrix shows what is permitted for each actor type.
@@ -749,6 +806,20 @@ For each table and operation, this matrix shows what is permitted for each actor
 | INSERT (own record)    | ✗    | ✗                 | ✅            | ✅            | —            | ✅           |
 | UPDATE (own record)    | ✗    | ✗                 | ✅ (own only) | ✅ (own only) | ✅           | ✅           |
 | DELETE (own record)    | ✗    | ✗                 | ✅ (own only) | ✅ (own only) | ✅           | ✅           |
+
+### `comments`
+
+- **Author** — Authenticated user who wrote the specific `comments` row.
+
+| Operation              | Anon | Auth / Non-member | Member        | Owner         | Author        | Service role |
+| ---------------------- | ---- | ----------------- | ------------- | ------------- | ------------- | ------------ |
+| SELECT (public group)  | ✗    | ✅ (read-only)    | ✅            | ✅            | ✅            | ✅           |
+| SELECT (private group) | ✗    | ✗                 | ✅            | ✅            | ✅            | ✅           |
+| INSERT (own comment)   | ✗    | ✗                 | ✅            | ✅            | —             | ✅           |
+| UPDATE (own comment)   | ✗    | ✗                 | ✅ (own only) | ✅ (own only) | ✅            | ✅           |
+| DELETE                 | ✗    | ✗                 | ✅ (own only) | ✅ (any in group) | ✅ (own)   | ✅           |
+
+> `author_id` is set to `auth.uid()` on insert and cannot be reassigned on update (the UPDATE `WITH CHECK` requires `author_id = auth.uid()`). Delete is allowed for the comment's author or the group owner (moderation).
 
 ---
 

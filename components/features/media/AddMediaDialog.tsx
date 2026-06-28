@@ -24,9 +24,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { TagInput } from '@/components/ui/tag-input';
 import { Plus, Link2, Search, X } from 'lucide-react';
 import type { ExternalWork, MediaType, ItemStatus, MediaItem } from '@/types';
 import { getStatusOptions } from '@/types';
+import { parseTags, serializeTags } from '@/lib/utils';
 
 interface Props {
   groupId: string;
@@ -62,7 +64,7 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
   const [seasons, setSeasons] = useState('');
   const [durationMinutes, setDurationMinutes] = useState('');
   const [platform, setPlatform] = useState('');
-  const [genre, setGenre] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
 
   // Person/company links (director_url, author_url, …) captured from the enrich
   // call — not form fields, so they're tracked separately and merged on save.
@@ -128,6 +130,7 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
   async function selectWork(work: ExternalWork) {
     setTitle(work.title);
     applyMetadata(work.metadata as Record<string, unknown>); // search-derived fields
+    if (work.genre) setTags(parseTags(work.genre)); // search-derived tags
     setExternalId(work.external_id);
     setExternalSource(work.external_source);
     setExternalUrl(work.external_url);
@@ -135,18 +138,22 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
     // Linking disables the search hook (enabled = open && !externalId),
     // so no further search calls fire and the dropdown hides.
 
-    // Enrich with full details (director/duration, developer, etc.) the search
-    // list can't return. Merges over the search metadata; failures are silent.
+    // Enrich with full details (director/duration, developer, genre, …) the
+    // search list can't return. Merges over the search metadata; failures silent.
     setEnriching(true);
     try {
       const res = await fetch(
         `/api/external-details?id=${encodeURIComponent(work.external_id)}`
       );
       if (res.ok) {
-        const { metadata } = (await res.json()) as { metadata: Record<string, unknown> | null };
+        const { metadata, genre } = (await res.json()) as {
+          metadata: Record<string, unknown> | null;
+          genre: string | null;
+        };
         if (metadata) {
           applyMetadata({ ...(work.metadata as Record<string, unknown>), ...metadata });
         }
+        if (genre) setTags(parseTags(genre));
       }
     } catch {
       // keep the search-derived fields; user can fill the rest manually
@@ -212,7 +219,7 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
     setSeasons('');
     setDurationMinutes('');
     setPlatform('');
-    setGenre('');
+    setTags([]);
     setStatus('plan_to_consume');
     resetSearch();
     resetExternalLink();
@@ -232,7 +239,7 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
         title: title.trim(),
         type,
         status,
-        genre: genre.trim() || null,
+        genre: serializeTags(tags) || null,
         metadata: buildMetadata(),
         external_id: externalId,
         external_source: externalSource,
@@ -282,9 +289,14 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
       }}
     >
       <DialogTrigger asChild>
-        <Button size="sm" className="gap-2">
-          <Plus className="h-4 w-4" />
-          Add item
+        {/* Fixed FAB, bottom-right of the screen. Round icon on mobile, a
+            labelled pill on desktop. */}
+        <Button
+          aria-label="Add item"
+          className="gap-2 fixed bottom-5 right-5 z-30 h-14 w-14 rounded-full p-0 shadow-xl shadow-black/40 md:h-10 md:w-auto md:rounded-none md:px-4"
+        >
+          <Plus className="h-5 w-5" />
+          <span className="hidden md:inline">Add item</span>
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-md sm:max-w-md w-full">
@@ -311,7 +323,7 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
                 setSeasons('');
                 setDurationMinutes('');
                 setPlatform('');
-                setGenre('');
+                setTags([]);
                 resetExternalLink();
               }}
             >
@@ -434,15 +446,12 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="genre">Genre</Label>
-              <Input
-                id="genre"
-                value={genre}
-                onChange={(e) => setGenre(e.target.value)}
-                placeholder="optional"
-              />
-            </div>
+            {type === 'movie' && (
+              <div className="space-y-2">
+                <Label htmlFor="duration">Duration (min)</Label>
+                <Input id="duration" type="number" inputMode="numeric" value={durationMinutes} onChange={(e) => setDurationMinutes(e.target.value)} placeholder="optional" min="1" />
+              </div>
+            )}
           </div>
 
           {/* Type-specific metadata */}
@@ -455,10 +464,6 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
               <div className="space-y-2">
                 <Label htmlFor="year">Year</Label>
                 <Input id="year" type="number" inputMode="numeric" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} placeholder="2024" min="1888" max="2099" />
-              </div>
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="duration">Duration (min)</Label>
-                <Input id="duration" type="number" inputMode="numeric" value={durationMinutes} onChange={(e) => setDurationMinutes(e.target.value)} placeholder="optional" min="1" />
               </div>
             </div>
           )}
@@ -509,6 +514,12 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
               </div>
             </div>
           )}
+
+          {/* Tags last: full-width so the chips have the whole dialog to grow into. */}
+          <div className="space-y-2">
+            <Label htmlFor="tags">Tags</Label>
+            <TagInput id="tags" value={tags} onChange={setTags} placeholder="anime, rpg, co-op…" />
+          </div>
 
           {error && <FormBanner message={error} variant="error" />}
 

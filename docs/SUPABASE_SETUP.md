@@ -18,6 +18,9 @@ This document is the complete, authoritative guide to configuring Supabase for T
 5. [Free Tier Optimisation](#5-free-tier-optimisation)
 6. [Verifying the Setup](#6-verifying-the-setup)
 7. [Migration — Request-to-Join Flow](#7-migration--request-to-join-flow)
+8. [Migration — External Identification Layer](#8-migration--external-identification-layer)
+9. [Migration — Comments](#9-migration--comments)
+10. [Migration — Tags](#10-migration--tags)
 
 ---
 
@@ -252,7 +255,9 @@ CREATE TABLE public.media_items (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
   CONSTRAINT title_length CHECK (char_length(title) BETWEEN 1 AND 500),
-  CONSTRAINT genre_length CHECK (genre IS NULL OR char_length(genre) <= 100)
+  -- genre stores a comma-separated TAG list (genres + enrichment/user tags such
+  -- as "Anime", "RPG", "Co-op"). The column name is legacy.
+  CONSTRAINT genre_length CHECK (genre IS NULL OR char_length(genre) <= 255)
 );
 
 COMMENT ON TABLE public.media_items IS
@@ -326,7 +331,35 @@ COMMENT ON COLUMN public.group_join_requests.resolved_by IS
 
 **Expected result:** `Success. No rows returned` — `group_join_requests` table appears in **Database → Tables**.
 
-At this point all 7 tables should be visible under **Database → Tables**: `profiles`, `subscriptions`, `groups`, `group_members`, `group_join_requests`, `media_items`, `consumption_records`.
+#### 2h-bis — comments
+
+```sql
+-- Per-item discussion. One row per comment written by a group member on a
+-- single media item. Comments are NOT stored on media_items — an item can carry
+-- many comments from many authors. The author's name is NOT stored here; it is
+-- derived by joining author_id -> profiles.nickname (same rule as added_by).
+CREATE TABLE public.comments (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  media_item_id  UUID NOT NULL REFERENCES public.media_items(id) ON DELETE CASCADE,
+  author_id      UUID NOT NULL REFERENCES public.profiles(id)    ON DELETE CASCADE,
+  body           TEXT NOT NULL,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  CONSTRAINT comment_body_length CHECK (char_length(body) BETWEEN 1 AND 2000)
+);
+
+COMMENT ON TABLE public.comments IS
+  'Per-item shared discussion. Readable by anyone who can read the parent group content (members, or anyone for a public group). Author name is derived from author_id -> profiles.nickname.';
+COMMENT ON COLUMN public.comments.author_id IS
+  'UUID of the profile who wrote the comment. Join to profiles for the nickname/name.';
+COMMENT ON COLUMN public.comments.body IS
+  'Comment text. 1-2000 chars (CHECK constraint).';
+```
+
+**Expected result:** `Success. No rows returned` — `comments` table appears in **Database → Tables**.
+
+At this point all 8 tables should be visible under **Database → Tables**: `profiles`, `subscriptions`, `groups`, `group_members`, `group_join_requests`, `media_items`, `consumption_records`, `comments`.
 
 #### 2h — Grant table access to Supabase API roles
 
@@ -381,9 +414,13 @@ CREATE INDEX idx_media_items_added_by ON public.media_items (added_by);
 -- consumption_records: lookup by user (all items a user consumed) and by item (all consumers)
 CREATE INDEX idx_consumption_records_user_id ON public.consumption_records (user_id);
 CREATE INDEX idx_consumption_records_media_item_id ON public.consumption_records (media_item_id);
+
+-- comments: load the thread for an item, and "what has user X written?" / cascade
+CREATE INDEX idx_comments_media_item_id ON public.comments (media_item_id);
+CREATE INDEX idx_comments_author_id ON public.comments (author_id);
 ```
 
-**Expected result:** `Success. No rows returned` — all 11 index creation statements succeed. You can verify under **Database → Indexes** in the sidebar.
+**Expected result:** `Success. No rows returned` — all 13 index creation statements succeed. You can verify under **Database → Indexes** in the sidebar.
 
 ---
 
@@ -428,9 +465,13 @@ CREATE TRIGGER trg_consumption_records_updated_at
 CREATE TRIGGER trg_group_join_requests_updated_at
   BEFORE UPDATE ON public.group_join_requests
   FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+CREATE TRIGGER trg_comments_updated_at
+  BEFORE UPDATE ON public.comments
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 ```
 
-**Expected result:** `Success. No rows returned` — the function and all six triggers are created. You can verify under **Database → Functions** (look for `handle_updated_at`) and **Database → Triggers**.
+**Expected result:** `Success. No rows returned` — the function and all seven triggers are created. You can verify under **Database → Functions** (look for `handle_updated_at`) and **Database → Triggers**.
 
 #### 4b — Auto-create profile and subscription on registration
 
@@ -802,9 +843,10 @@ ALTER TABLE public.group_members     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.group_join_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.media_items       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.consumption_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.comments          ENABLE ROW LEVEL SECURITY;
 ```
 
-**Expected result:** `Success. No rows returned` — all seven `ALTER TABLE` statements succeed. You can verify by going to **Database → Tables**, clicking any table, then checking **RLS enabled** in the table’s settings panel.
+**Expected result:** `Success. No rows returned` — all eight `ALTER TABLE` statements succeed. You can verify by going to **Database → Tables**, clicking any table, then checking **RLS enabled** in the table’s settings panel.
 
 #### 5a — profiles policies
 
@@ -1080,7 +1122,68 @@ CREATE POLICY "Requesters and group owners can read join requests"
 
 **Expected result:** `Success. No rows returned` — one policy appears under **Authentication → Policies → group_join_requests**.
 
-All five steps are now complete. Proceed to [Section 4 — Auth Configuration](#4-auth-configuration) to finish the setup, then run the verification queries in [Section 6](#6-verifying-the-setup) to confirm everything is correct before starting development.
+#### 5h — comments policies
+
+```sql
+-- SELECT: same visibility as the parent item. Group members see comments in
+-- their groups; any authenticated user sees comments on items in a PUBLIC group
+-- (read access to the group's content). Mirrors the consumption_records rule.
+CREATE POLICY "Members and public viewers can read comments"
+  ON public.comments FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.media_items mi
+      JOIN public.groups g ON g.id = mi.group_id
+      WHERE mi.id = media_item_id
+      AND (
+        g.visibility = 'public'
+        OR EXISTS (
+          SELECT 1 FROM public.group_members gm
+          WHERE gm.group_id = g.id AND gm.user_id = auth.uid()
+        )
+      )
+    )
+  );
+
+-- INSERT: only a group member can comment, and only as themselves. Non-members
+-- viewing a public group stay read-only.
+CREATE POLICY "Group members can add comments"
+  ON public.comments FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    author_id = auth.uid()
+    AND EXISTS (
+      SELECT 1 FROM public.media_items mi
+      JOIN public.group_members gm ON gm.group_id = mi.group_id
+      WHERE mi.id = media_item_id AND gm.user_id = auth.uid()
+    )
+  );
+
+-- UPDATE: a user may edit only their own comment, and may not reassign authorship.
+CREATE POLICY "Authors can edit their own comments"
+  ON public.comments FOR UPDATE
+  TO authenticated
+  USING (author_id = auth.uid())
+  WITH CHECK (author_id = auth.uid());
+
+-- DELETE: the comment's author OR the group owner (moderation) can delete it.
+CREATE POLICY "Author or group owner can delete comments"
+  ON public.comments FOR DELETE
+  TO authenticated
+  USING (
+    author_id = auth.uid()
+    OR EXISTS (
+      SELECT 1 FROM public.media_items mi
+      JOIN public.group_members gm ON gm.group_id = mi.group_id
+      WHERE mi.id = media_item_id AND gm.user_id = auth.uid() AND gm.role = 'owner'
+    )
+  );
+```
+
+**Expected result:** `Success. No rows returned` — four policies appear under **Authentication → Policies → comments**.
+
+All steps are now complete. Proceed to [Section 4 — Auth Configuration](#4-auth-configuration) to finish the setup, then run the verification queries in [Section 6](#6-verifying-the-setup) to confirm everything is correct before starting development.
 
 ---
 
@@ -1224,7 +1327,7 @@ SELECT typname FROM pg_type WHERE typname IN (
 SELECT table_name, COUNT(column_name) AS col_count
 FROM information_schema.columns
 WHERE table_schema = 'public'
-  AND table_name IN ('profiles', 'subscriptions', 'groups', 'group_members', 'group_join_requests', 'media_items', 'consumption_records')
+  AND table_name IN ('profiles', 'subscriptions', 'groups', 'group_members', 'group_join_requests', 'media_items', 'consumption_records', 'comments')
 GROUP BY table_name
 ORDER BY table_name;
 
@@ -1232,7 +1335,7 @@ ORDER BY table_name;
 SELECT tablename, rowsecurity
 FROM pg_tables
 WHERE schemaname = 'public'
-  AND tablename IN ('profiles', 'subscriptions', 'groups', 'group_members', 'group_join_requests', 'media_items', 'consumption_records');
+  AND tablename IN ('profiles', 'subscriptions', 'groups', 'group_members', 'group_join_requests', 'media_items', 'consumption_records', 'comments');
 
 -- 4. All triggers exist
 SELECT trigger_name, event_object_table
@@ -1393,3 +1496,157 @@ RAWG_API_KEY=
 
 If a key is missing or a provider is unreachable, search degrades gracefully to
 manual entry — it never blocks adding an item.
+
+---
+
+## 9. Migration — Comments
+
+If your database was created **before** the comments feature, run this single
+block in the SQL Editor to add the `comments` table, its indexes, its
+`updated_at` trigger and its four RLS policies. Fresh setups that followed the
+steps above already include everything here — skip this section.
+
+What it adds:
+
+- A `comments` table: shared, per-item discussion. One row per comment, keyed by
+  `media_item_id`, authored by `author_id` (FK to `profiles`).
+- Read access that mirrors the parent item — group members for any group, plus
+  any authenticated user for items in a **public** group (read-only). This is
+  exactly the `consumption_records` visibility rule.
+- Write = members only; edit your own; delete your own or (as group owner) any
+  comment in your group.
+
+It depends on `media_items`, `profiles`, `group_members`, `groups` and the
+generic `handle_updated_at()` function (Step 4a). The full ready-to-paste script
+also lives at `docs/migrations/2026-06-27_comments.sql`.
+
+```sql
+-- 1. Table
+CREATE TABLE IF NOT EXISTS public.comments (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  media_item_id  UUID NOT NULL REFERENCES public.media_items(id) ON DELETE CASCADE,
+  author_id      UUID NOT NULL REFERENCES public.profiles(id)    ON DELETE CASCADE,
+  body           TEXT NOT NULL,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT comment_body_length CHECK (char_length(body) BETWEEN 1 AND 2000)
+);
+
+-- 2. Indexes
+CREATE INDEX IF NOT EXISTS idx_comments_media_item_id ON public.comments (media_item_id);
+CREATE INDEX IF NOT EXISTS idx_comments_author_id     ON public.comments (author_id);
+
+-- 3. updated_at trigger (reuses handle_updated_at from Step 4a)
+DROP TRIGGER IF EXISTS trg_comments_updated_at ON public.comments;
+CREATE TRIGGER trg_comments_updated_at
+  BEFORE UPDATE ON public.comments
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+-- 4. RLS
+ALTER TABLE public.comments ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Members and public viewers can read comments"
+  ON public.comments FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.media_items mi
+      JOIN public.groups g ON g.id = mi.group_id
+      WHERE mi.id = media_item_id
+      AND (
+        g.visibility = 'public'
+        OR EXISTS (
+          SELECT 1 FROM public.group_members gm
+          WHERE gm.group_id = g.id AND gm.user_id = auth.uid()
+        )
+      )
+    )
+  );
+
+CREATE POLICY "Group members can add comments"
+  ON public.comments FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    author_id = auth.uid()
+    AND EXISTS (
+      SELECT 1 FROM public.media_items mi
+      JOIN public.group_members gm ON gm.group_id = mi.group_id
+      WHERE mi.id = media_item_id AND gm.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Authors can edit their own comments"
+  ON public.comments FOR UPDATE
+  TO authenticated
+  USING (author_id = auth.uid())
+  WITH CHECK (author_id = auth.uid());
+
+CREATE POLICY "Author or group owner can delete comments"
+  ON public.comments FOR DELETE
+  TO authenticated
+  USING (
+    author_id = auth.uid()
+    OR EXISTS (
+      SELECT 1 FROM public.media_items mi
+      JOIN public.group_members gm ON gm.group_id = mi.group_id
+      WHERE mi.id = media_item_id AND gm.user_id = auth.uid() AND gm.role = 'owner'
+    )
+  );
+
+-- 5. Privileges (covered by the Step 2h ALTER DEFAULT PRIVILEGES; safe to repeat)
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.comments TO authenticated;
+```
+
+### Reading and writing comments from the app
+
+The author's name is **not** stored on the comment — join to `profiles` for it
+(disambiguating the FK like everywhere else):
+
+```typescript
+// Load a thread for one item, oldest first, with each author's nickname.
+const { data } = await supabase
+  .from("comments")
+  .select("id, body, author_id, created_at, profile:profiles!comments_author_id_fkey(nickname)")
+  .eq("media_item_id", itemId)
+  .order("created_at", { ascending: true });
+
+// Post a comment (author_id is enforced = auth.uid() by RLS).
+await supabase
+  .from("comments")
+  .insert({ media_item_id: itemId, author_id: user.id, body });
+```
+
+---
+
+## 10. Migration — Tags
+
+Tags are stored in the existing `media_items.genre` column as a comma-separated
+list (the column name is legacy; it holds the item's tag set — genres plus
+enrichment/user tags like `Anime`, `RPG`, `Co-op`). No new table or column is
+needed. This migration only **widens the length cap** from 100 to 255 chars so
+several tags fit, and adds a trigram index so tag filtering stays fast. Fresh
+setups that used the 255 check in §2e already have the width — they only need the
+index. The full script also lives at `docs/migrations/2026-06-27_tags.sql`.
+
+```sql
+-- Widen the length check (was <= 100).
+ALTER TABLE public.media_items DROP CONSTRAINT IF EXISTS genre_length;
+ALTER TABLE public.media_items
+  ADD CONSTRAINT genre_length CHECK (genre IS NULL OR char_length(genre) <= 255);
+
+COMMENT ON COLUMN public.media_items.genre IS
+  'Comma-separated tag list (genres + enrichment/user tags, e.g. "Action, Anime, Co-op"). Max 255 chars. Legacy column name; semantically the item tag set.';
+
+-- Trigram index for fast tag substring matching.
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX IF NOT EXISTS idx_media_items_genre_trgm
+  ON public.media_items USING gin (genre gin_trgm_ops);
+```
+
+**App side:** tags are edited with a chip editor (`components/ui/tag-input.tsx`)
+in the Add/Edit dialogs, serialized to the comma string on save and split back on
+load (`parseTags` / `serializeTags` in `lib/utils.ts`). On external link, the
+provider enrichment fills the tags (TMDB/RAWG genres + a few RAWG gameplay tags
+like Co-op/Anime); otherwise the user types their own. The media table renders
+each tag as a toggle chip and the group page filters items by the selected tags
+(`getItemTags` in `lib/utils.ts`).

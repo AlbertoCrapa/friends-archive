@@ -24,6 +24,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ metadata: null }, { status: 400 });
   }
 
-  const metadata = await getExternalDetails(id);
-  return NextResponse.json({ metadata });
+  const details = await getExternalDetails(id);
+  return NextResponse.json({
+    metadata: details?.metadata ?? null,
+    genre: details?.genre ?? null,
+  });
 }

@@ -5,10 +5,11 @@
 // abstraction the rest of the app speaks).
 // ============================================
 
-import type { ExternalWork, MediaMetadata, MediaType } from '@/types';
+import type { ExternalWork, MediaType } from '@/types';
 import { searchTmdb, getTmdbDetails } from './tmdb';
 import { searchOpenLibrary } from './openlibrary';
 import { searchRawg, getRawgDetails } from './rawg';
+import type { ExternalDetails } from './types';
 
 /** Provider assignment per media category. */
 export const PROVIDER_FOR_TYPE: Record<MediaType, 'tmdb' | 'openlibrary' | 'rawg'> = {
@@ -45,14 +46,15 @@ export async function searchExternal(
 }
 
 /**
- * Fetch full metadata for a single work by its namespaced external_id, to
- * auto-fill fields the search list can't return (director/runtime for movies,
- * developer for games, creator/seasons/platform for TV). Books are already fully
- * covered by search, so they need no detail call. Returns null on any failure.
+ * Fetch full metadata (and a genre hint) for a single work by its namespaced
+ * external_id, to auto-fill fields the search list can't return (director/runtime
+ * for movies, developer for games, creator/seasons/platform for TV, plus genre).
+ * Books are already fully covered by search, so they need no detail call.
+ * Returns null on any failure.
  */
 export async function getExternalDetails(
   externalId: string
-): Promise<MediaMetadata | null> {
+): Promise<ExternalDetails | null> {
   const [source, kind, ...rest] = externalId.split(':');
   const id = rest.join(':');
   if (!id) return null;
