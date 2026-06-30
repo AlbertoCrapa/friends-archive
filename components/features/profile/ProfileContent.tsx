@@ -229,6 +229,24 @@ export function ProfileContent({
           </div>
         )}
       </section>
+
+      {/* Open source notice */}
+      <motion.div
+        className="border-t border-stone-800/40 pt-6 text-center space-y-1"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.4, delay: 0.3 }}
+      >
+        <p
+          className="font-mono text-[10px] uppercase tracking-[0.3em]"
+          style={{ color: 'oklch(0.72 0.12 65 / 0.5)' }}
+        >
+          Free &amp; open source
+        </p>
+        <p className="font-mono text-[11px]" style={{ color: 'oklch(0.36 0.005 60)' }}>
+          The Friend Archive is a free hobby project — no paid plans, no commercial use intended.
+        </p>
+      </motion.div>
     </div>
   );
 }

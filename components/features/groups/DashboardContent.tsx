@@ -91,12 +91,10 @@ export function DashboardContent({
         </div>
         <div className="flex items-center gap-3">
           {atLimit ? (
-            <Link href="/pricing">
-              <Button variant="outline" size="sm" className="gap-2">
-                <Plus className="h-3.5 w-3.5" />
-                Upgrade for more groups
-              </Button>
-            </Link>
+            <Button variant="outline" size="sm" className="gap-2" disabled>
+              <Plus className="h-3.5 w-3.5" />
+              Group limit reached
+            </Button>
           ) : (
             <Link href="/groups/new">
               <Button size="sm" className="gap-2">
@@ -206,7 +204,7 @@ export function DashboardContent({
                   </div>
                   {atLimit && (
                     <p className="font-mono text-[10px] text-stone-600">
-                      Limit reached. <Link href="/pricing" className="hover:underline">See plans</Link>
+                      Limit reached for your plan.
                     </p>
                   )}
                 </div>

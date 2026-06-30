@@ -55,7 +55,7 @@ export function LandingPageContent({ isSignedIn, nickname }: Props) {
       <SharedCatalogueSection />
       <PersonalTrackingSection />
       <MediaCategoriesSection />
-      <PricingTeaserSection />
+      <OpenSourceSection />
       <FinalCtaSection isSignedIn={isSignedIn} />
       <LandingFooter />
     </main>
@@ -72,12 +72,6 @@ function LandingNav({ isSignedIn, nickname }: Props) {
           The Friend Archive
         </span>
         <nav className="flex items-center gap-2 sm:gap-3 shrink-0">
-          <Link
-            href="/pricing"
-            className="hidden sm:block font-mono text-xs uppercase tracking-wider text-stone-500 hover:text-stone-300 transition-colors"
-          >
-            Pricing
-          </Link>
           {isSignedIn ? (
             <>
               <Link href="/dashboard">
@@ -778,48 +772,9 @@ function MediaCategoriesSection() {
   );
 }
 
-// ─── Pricing teaser ───────────────────────────────────────────────────────────
+// ─── Open source notice ───────────────────────────────────────────────────────
 
-const PRICING_PLANS = [
-  {
-    id: 'free',
-    name: 'Free',
-    price: '€0',
-    period: 'forever',
-    features: ['2 groups created', '5 total groups', 'Unlimited media items', 'Personal notes'],
-    cta: 'Get started',
-    ctaHref: '/register',
-    highlight: false,
-  },
-  {
-    id: 'premium',
-    name: 'Premium',
-    price: '€3',
-    period: 'per month',
-    features: [
-      '10 groups created',
-      'Unlimited groups joined',
-      'Unlimited media items',
-      'Personal notes',
-      'Priority support',
-    ],
-    cta: 'Upgrade',
-    ctaHref: '/upgrade',
-    highlight: true,
-  },
-  {
-    id: 'enterprise',
-    name: 'Enterprise',
-    price: 'Custom',
-    period: 'contact us',
-    features: ['Unlimited groups', 'Everything in Premium', 'Custom onboarding'],
-    cta: 'Contact us',
-    ctaHref: 'mailto:hello@thefriendarchive.com',
-    highlight: false,
-  },
-] as const;
-
-function PricingTeaserSection() {
+function OpenSourceSection() {
   const { ref, isInView } = useScrollReveal();
 
   return (
@@ -828,120 +783,40 @@ function PricingTeaserSection() {
       className="border-t border-stone-800/50 py-16 sm:py-24 lg:py-32"
       style={{ backgroundColor: 'var(--color-surface)' }}
     >
-      <div className="max-w-6xl mx-auto px-6">
+      <div className="max-w-3xl mx-auto px-6">
         <motion.div
           variants={staggerContainer()}
           initial="hidden"
           animate={isInView ? 'visible' : 'hidden'}
-          className="space-y-12"
+          className="space-y-6 text-center"
         >
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
-            <div className="space-y-4">
-              <motion.p
-                variants={fadeUp}
-                className="font-mono text-xs uppercase tracking-[0.3em]"
-                style={{ color: 'oklch(0.72 0.12 65 / 0.65)' }}
-              >
-                Pricing
-              </motion.p>
-              <motion.h2
-                variants={fadeUp}
-                className="font-serif text-3xl sm:text-4xl lg:text-5xl text-stone-100 font-light leading-[1.05] max-w-xl"
-              >
-                Start free. Upgrade when you need more.
-              </motion.h2>
-            </div>
-            <motion.div variants={fadeUp} className="shrink-0">
-              <Link href="/pricing">
-                <Button variant="ghost" size="sm">
-                  Full pricing details
-                </Button>
-              </Link>
-            </motion.div>
-          </div>
-
-          <motion.div
-            variants={staggerContainer(0.07)}
-            className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4"
-          >
-            {PRICING_PLANS.map((plan) => (
-              <motion.div
-                key={plan.id}
-                variants={fadeUp}
-                className="border p-6 space-y-5"
-                style={{
-                  borderColor: plan.highlight ? 'oklch(0.55 0.12 60 / 0.5)' : 'var(--color-border)',
-                  backgroundColor: plan.highlight
-                    ? 'oklch(0.14 0.04 60 / 0.2)'
-                    : 'var(--color-background)',
-                  boxShadow: plan.highlight ? 'var(--shadow-2)' : 'none',
-                }}
-              >
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <p
-                      className="font-mono text-xs uppercase tracking-wider"
-                      style={{ color: 'var(--color-text-muted)' }}
-                    >
-                      {plan.name}
-                    </p>
-                    {plan.highlight && (
-                      <span
-                        className="font-mono text-[10px] uppercase tracking-wider px-2 py-0.5"
-                        style={{
-                          backgroundColor: 'oklch(0.55 0.12 60 / 0.12)',
-                          color: 'var(--color-accent)',
-                        }}
-                      >
-                        Popular
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="font-serif text-3xl text-stone-100">{plan.price}</span>
-                    <span
-                      className="font-mono text-xs"
-                      style={{ color: 'oklch(0.38 0.005 60)' }}
-                    >
-                      / {plan.period}
-                    </span>
-                  </div>
-                </div>
-
-                <ul className="space-y-2.5">
-                  {plan.features.map((f) => (
-                    <li
-                      key={f}
-                      className="flex items-start gap-2.5 text-xs font-mono"
-                      style={{ color: 'var(--color-text-secondary)' }}
-                    >
-                      <span style={{ color: 'var(--color-accent)' }} className="shrink-0 mt-0.5">
-                        ◆
-                      </span>
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-
-                <Link href={plan.ctaHref}>
-                  <Button
-                    variant={plan.highlight ? 'default' : 'outline'}
-                    className="w-full"
-                    size="sm"
-                  >
-                    {plan.cta}
-                  </Button>
-                </Link>
-              </motion.div>
-            ))}
-          </motion.div>
-
           <motion.p
             variants={fadeUp}
-            className="font-mono text-xs text-center"
+            className="font-mono text-xs uppercase tracking-[0.3em]"
+            style={{ color: 'oklch(0.72 0.12 65 / 0.65)' }}
+          >
+            Free &amp; open source
+          </motion.p>
+          <motion.h2
+            variants={fadeUp}
+            className="font-serif text-3xl sm:text-4xl lg:text-5xl text-stone-100 font-light leading-[1.05]"
+          >
+            Free forever. No catch.
+          </motion.h2>
+          <motion.p
+            variants={fadeUp}
+            className="text-stone-400 text-base leading-relaxed font-light max-w-xl mx-auto"
+          >
+            The Friend Archive is a free, open-source hobby project. There are no paid plans,
+            no ads, and no commercial use intended — just a place to keep track of what you and
+            your friends want to experience together.
+          </motion.p>
+          <motion.p
+            variants={fadeUp}
+            className="font-mono text-xs"
             style={{ color: 'oklch(0.38 0.005 60)' }}
           >
-            No credit card required to start. Cancel or upgrade at any time.
+            Built for fun, not for profit.
           </motion.p>
         </motion.div>
       </div>
@@ -1022,15 +897,22 @@ function LandingFooter() {
       style={{ backgroundColor: 'var(--color-surface)' }}
     >
       <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <span
-          className="font-mono uppercase tracking-widest text-xs"
-          style={{ color: 'oklch(0.38 0.005 60)' }}
-        >
-          The Friend Archive
-        </span>
+        <div className="flex flex-col items-center sm:items-start gap-1">
+          <span
+            className="font-mono uppercase tracking-widest text-xs"
+            style={{ color: 'oklch(0.38 0.005 60)' }}
+          >
+            The Friend Archive
+          </span>
+          <span
+            className="font-mono text-[10px]"
+            style={{ color: 'oklch(0.32 0.005 60)' }}
+          >
+            Free &amp; open source · no commercial use intended
+          </span>
+        </div>
         <div className="flex gap-6">
           {[
-            { href: '/pricing', label: 'Pricing' },
             { href: '/discover', label: 'Discover' },
             { href: '/register', label: 'Get started' },
           ].map(({ href, label }) => (

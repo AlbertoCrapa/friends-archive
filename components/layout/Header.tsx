@@ -13,7 +13,7 @@ import {
 import { JoinRequestsBell } from '@/components/features/groups/JoinRequestsBell';
 import { PrimaryNavButton } from '@/components/layout/PrimaryNavButton';
 import { SignOutMenuItem } from '@/components/layout/SignOutMenuItem';
-import { User, Settings } from 'lucide-react';
+import { User } from 'lucide-react';
 import type { PendingJoinRequest, AcceptedJoinRequest } from '@/types';
 
 // How long an "accepted" notification stays in the bell after the owner
@@ -122,12 +122,6 @@ export async function Header() {
                     </Link>
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuItem asChild>
-                  <Link href="/pricing" className="flex items-center gap-2">
-                    <Settings className="h-3 w-3" />
-                    Subscription
-                  </Link>
-                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <SignOutMenuItem action={signOut} />
               </DropdownMenuContent>
