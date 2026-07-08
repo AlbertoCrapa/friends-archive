@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { GroupMediaSection } from './GroupMediaSection';
-import type { ConsumptionRecord, MediaItemWithDetails, MediaType } from '@/types';
+import type { ConsumptionRecord, ItemStatus, MediaItemWithDetails, MediaType } from '@/types';
 
 interface Props {
   groupId: string;
@@ -24,19 +24,21 @@ export async function GroupMediaLoader({
   const [
     { data: currentProfile },
     { data: items },
+    { data: memberRows },
   ] = await Promise.all([
     supabase.from('profiles').select('nickname').eq('id', userId).single(),
     supabase
       .from('media_items')
-      .select('id, group_id, title, type, status, genre, metadata, added_by, external_id, external_source, external_url, created_at, updated_at')
+      .select('id, group_id, title, type, genre, metadata, added_by, external_id, external_source, external_url, created_at, updated_at')
       .eq('group_id', groupId)
       .order('created_at', { ascending: false }),
+    supabase.from('group_members').select('user_id').eq('group_id', groupId),
   ]);
 
   const itemIds = (items ?? []).map((item) => item.id);
   const adderIds = Array.from(new Set((items ?? []).map((item) => item.added_by)));
 
-  const [{ data: adders }, { data: consumptionRows }] = await Promise.all([
+  const [{ data: adders }, { data: consumptionRows }, { data: statusRows }] = await Promise.all([
     adderIds.length > 0
       ? supabase.from('profiles').select('id, nickname').in('id', adderIds)
       : Promise.resolve({ data: [] as Array<{ id: string; nickname: string }> }),
@@ -56,6 +58,16 @@ export async function GroupMediaLoader({
             updated_at: string;
             profiles: { nickname: string } | null;
           }>,
+        }),
+    // The viewer's OWN per-item statuses. Missing row = 'plan_to_consume'.
+    itemIds.length > 0
+      ? supabase
+          .from('item_statuses')
+          .select('media_item_id, status')
+          .eq('user_id', userId)
+          .in('media_item_id', itemIds)
+      : Promise.resolve({
+          data: [] as Array<{ media_item_id: string; status: ItemStatus }>,
         }),
   ]);
 
@@ -85,13 +97,20 @@ export async function GroupMediaLoader({
     consumptionByItemId.set(row.media_item_id, list);
   }
 
+  const statusByItemId = new Map<string, ItemStatus>(
+    (statusRows ?? []).map((row) => [row.media_item_id, row.status as ItemStatus])
+  );
+
   const enrichedItems: MediaItemWithDetails[] = (items ?? []).map((item) => ({
     ...item,
+    status: statusByItemId.get(item.id) ?? 'plan_to_consume',
     added_by_profile: addersById.get(item.added_by)
       ? { nickname: addersById.get(item.added_by)! }
       : undefined,
     consumption_records: consumptionByItemId.get(item.id) ?? [],
   }));
+
+  const memberIds = (memberRows ?? []).map((row) => row.user_id);
 
   return (
     <GroupMediaSection
@@ -100,6 +119,7 @@ export async function GroupMediaLoader({
       currentUserNickname={currentProfile?.nickname ?? null}
       isMember={isMember}
       isOwner={isOwner}
+      memberIds={memberIds}
       initialItems={enrichedItems}
       initialConsumedSet={consumedSet}
       initialActiveType={initialActiveType}

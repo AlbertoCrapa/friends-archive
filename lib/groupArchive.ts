@@ -27,6 +27,7 @@ export const METADATA_FIELDS: Record<MediaType, Record<string, MetadataFieldKind
 export interface ArchiveItem {
   title: string;
   type: MediaType;
+  /** Personal status: the exporter's own on export; sets the importer's own on import. */
   status: ItemStatus;
   genre: string | null;
   metadata: Record<string, unknown>;

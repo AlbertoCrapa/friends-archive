@@ -155,7 +155,8 @@ All table names use `snake_case`. The full schema is in `docs/DATA_MODEL.md`. Th
 | `subscriptions`       | One row per user recording their current plan and status                 |
 | `groups`              | A media-tracking group; has a name, visibility, and owner                |
 | `group_members`       | Junction table: which users belong to which group, and in what role      |
-| `media_items`         | A media item (movie, TV series, book, or video game) within a group      |
+| `media_items`         | A media item (movie, TV series, book, or video game) within a group. No status column — status is per-member |
+| `item_statuses`       | Per-member progress status: one row per (item, user); missing row = `plan_to_consume` |
 | `consumption_records` | A per-user record of having consumed a specific item, with optional note |
 | `comments`            | Shared per-item discussion; one row per comment, authored by `author_id` |
 
@@ -207,20 +208,23 @@ Status values are defined as a PostgreSQL enum:
 CREATE TYPE item_status AS ENUM ('plan_to_consume', 'consuming', 'completed');
 ```
 
-UI display mapping (used in all labels, never stored in the database):
+**Status is per-member.** It lives in the `item_statuses` table — one row per (item, user), `UNIQUE (media_item_id, user_id)` — never on the shared `media_items` row (which has **no status column**). A missing row means `plan_to_consume`. Each member sees and edits only their own status; RLS restricts every write to `user_id = auth.uid()`.
 
-| Database value    | UI label (movies/TV) | UI label (books) | UI label (games) |
-| ----------------- | -------------------- | ---------------- | ---------------- |
-| `plan_to_consume` | Plan to Watch        | Plan to Read     | Plan to Play     |
-| `consuming`       | Watching             | Reading          | Playing          |
-| `completed`       | Watched              | Read             | Played           |
+UI display mapping — **one uniform vocabulary for every media type and every surface** (filter pills, dropdown selectors, badges); never stored in the database:
 
-UI behavior rule:
+| Database value    | UI label    |
+| ----------------- | ----------- |
+| `plan_to_consume` | Planned     |
+| `consuming`       | In progress |
+| `completed`       | Completed   |
 
-- Status is treated as personal progress in the table UI.
-- Setting status to `completed` automatically marks the current user as consumed (creates/keeps `consumption_records` row).
-- Setting status away from `completed` removes the current user's consumption row.
+UI behavior rules:
+
+- Status is personal progress: changing yours never affects any other member.
+- Setting your status to `completed` automatically marks the current user as consumed (creates/keeps `consumption_records` row).
+- Setting your status away from `completed` removes the current user's consumption row.
 - The `Consumed By` table text is derived from `consumption_records` and is not manually edited inline.
+- When **every current member** of the group has completed an item, a small star is shown next to the item's title ("Completed by everyone in the group").
 
 ---
 
@@ -249,7 +253,7 @@ Consumption is tracked in the `consumption_records` table — **not** on the med
 
 Status linkage:
 
-- The table status selector is the source of truth for current-user consumed/not-consumed state in the app UI.
+- The table status selector (the member's own `item_statuses` row) is the source of truth for current-user consumed/not-consumed state in the app UI.
 - A manual consumed toggle is intentionally not shown in the item row.
 
 ---
@@ -520,3 +524,4 @@ Media items support **shared discussion** stored in a dedicated `comments` table
 | 2026-06-25 | Added external identification layer (TMDB/Open Library/RAWG) + search autocomplete; moved media search into scope |
 | 2026-06-27 | Added `comments` table (shared per-item discussion, members write / public read); moved item comments into scope |
 | 2026-06-27 | Tags: `media_items.genre` now a comma-separated tag list (widened to 255), chip editor in Add/Edit, enrichment-filled tags (incl. RAWG gameplay tags), clickable tag chips + tag filtering on the group page |
+| 2026-07-08 | Status is per-member: new `item_statuses` table (one row per item+user, missing row = `plan_to_consume`), `media_items.status` dropped, uniform status vocabulary Planned / In progress / Completed everywhere, "everyone completed" star next to the item title |

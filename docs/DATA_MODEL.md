@@ -17,6 +17,7 @@ This document is the authoritative reference for the database schema of The Frie
    - [consumption_records](#36-consumption_records)
    - [group_join_requests](#37-group_join_requests)
    - [comments](#38-comments)
+   - [item_statuses](#39-item_statuses)
 4. [Relationships and Foreign Keys](#4-relationships-and-foreign-keys)
 5. [Indexes](#5-indexes)
 6. [Design Rationale](#6-design-rationale)
@@ -27,6 +28,7 @@ This document is the authoritative reference for the database schema of The Frie
    - [Why added_by is immutable](#65-why-added_by-is-immutable)
    - [Why joining requires an approved request](#66-why-joining-requires-an-approved-request)
    - [Why comments are a separate table](#68-why-comments-are-a-separate-table)
+   - [Why status is per-member](#69-why-status-is-per-member)
 7. [Row Level Security Matrix](#7-row-level-security-matrix)
 8. [Metadata Field Reference](#8-metadata-field-reference)
 
@@ -53,18 +55,18 @@ subscriptions                                           │
                      ▼                 ▼                 ▼
               group_members   group_join_requests   media_items
                                                         │
-                                              ┌─────────┴─────────┐
-                                           1:many              1:many
-                                              │                   │
-                                              ▼                   ▼
-                                    consumption_records       comments
+                                    ┌───────────────────┼───────────────────┐
+                                 1:many              1:many              1:many
+                                    │                   │                   │
+                                    ▼                   ▼                   ▼
+                          consumption_records     item_statuses         comments
 ```
 
-The eight tables form three logical layers:
+The nine tables form three logical layers:
 
 1. **Identity layer** — `profiles`, `subscriptions`
 2. **Organisation layer** — `groups`, `group_members`, `group_join_requests`
-3. **Content layer** — `media_items`, `consumption_records`, `comments`
+3. **Content layer** — `media_items`, `item_statuses`, `consumption_records`, `comments`
 
 ---
 
@@ -91,25 +93,28 @@ CREATE TYPE media_type AS ENUM ('movie', 'tv_series', 'book', 'video_game');
 
 ### `item_status`
 
-The per-user progress selector used by the UI for each media item.
+The **per-member** progress state for a media item. Stored in the `item_statuses` table — one row per (item, user) — **never** on the shared `media_items` row.
 
 ```sql
 CREATE TYPE item_status AS ENUM ('plan_to_consume', 'consuming', 'completed');
 ```
 
-| Value             | Movies/TV display | Books display | Games display |
-| ----------------- | ----------------- | ------------- | ------------- |
-| `plan_to_consume` | Plan to Watch     | Plan to Read  | Plan to Play  |
-| `consuming`       | Watching          | Reading       | Playing       |
-| `completed`       | Watched           | Read          | Played        |
+| Value             | UI label (every media type) |
+| ----------------- | --------------------------- |
+| `plan_to_consume` | Planned                     |
+| `consuming`       | In progress                 |
+| `completed`       | Completed                   |
 
-The UI maps these three database values to context-sensitive labels based on the item's `type`. The database stores only the three enum values.
+The UI uses **one uniform vocabulary** — Planned / In progress / Completed — for all four media types, in every surface: the status filter pills, the status dropdown selectors, and the read-only badges. The database stores only the three enum values (`getStatusLabel()` in `types/index.ts` maps them).
 
-UI behavior rule:
+UI behavior rules:
 
+- Each member sees and edits **only their own** status for an item. Changing it never affects any other member.
+- A missing `item_statuses` row means `plan_to_consume` — new items and new members start as "Planned" with no writes needed.
 - When the current user sets status to `completed`, the app automatically creates/keeps their `consumption_records` row for that item.
 - When the current user sets status to `plan_to_consume` or `consuming`, the app removes their `consumption_records` row for that item.
 - The `Consumed By` text is derived from `consumption_records` (with the current user's status reflected immediately in UI) and is not manually edited in the table row.
+- When **every current member** of the group has completed an item, the UI shows a small star next to the item's title ("Completed by everyone in the group").
 
 ---
 
@@ -310,13 +315,14 @@ Junction table. One row per (group, user) pair. Records the user's role and when
 
 A single media item within a group. The `type` field determines which keys are meaningful in the `metadata` JSONB column. See § 8 for the per-type metadata specification.
 
+> **No status column.** Progress status is per-member and lives in `item_statuses` (§ 3.9). Everything on this row is shared by the whole group.
+
 | Column       | Type          | Nullable | Default             | Description                                                   |
 | ------------ | ------------- | -------- | ------------------- | ------------------------------------------------------------- |
 | `id`         | `UUID`        | NOT NULL | `gen_random_uuid()` | Primary key.                                                  |
 | `group_id`   | `UUID`        | NOT NULL | —                   | FK to `groups.id`. The group this item belongs to.            |
 | `title`      | `TEXT`        | NOT NULL | —                   | Display title. 1–500 chars.                                   |
 | `type`       | `media_type`  | NOT NULL | —                   | One of: `movie`, `tv_series`, `book`, `video_game`.           |
-| `status`     | `item_status` | NOT NULL | `'plan_to_consume'` | The group's progress status.                                  |
 | `genre`      | `TEXT`        | NULL     | `NULL`              | Comma-separated **tag list** (genres + enrichment/user tags, e.g. `Action, Anime, Co-op`). Max 255 chars. Legacy column name; semantically the item's tag set. |
 | `added_by`   | `UUID`        | NOT NULL | —                   | FK to `profiles.id`. Set server-side; immutable after insert. |
 | `metadata`   | `JSONB`       | NOT NULL | `'{}'`              | Type-specific fields. Schema varies by `type`.                |
@@ -447,6 +453,41 @@ Per-item discussion. One row per comment written by a group member on a single `
 
 ---
 
+### 3.9 `item_statuses`
+
+**Per-member progress status** for a media item. One row per (item, user) pair. This is where an item's status lives — the shared `media_items` row carries no status at all, so every member of a group tracks the same shared item independently.
+
+**A missing row means `plan_to_consume`** ("Planned"). The app therefore only writes a row when a member's status actually diverges from the default, and new members automatically see every item as "Planned" without any backfill.
+
+| Column          | Type          | Nullable | Default             | Description                                            |
+| --------------- | ------------- | -------- | ------------------- | ------------------------------------------------------ |
+| `id`            | `UUID`        | NOT NULL | `gen_random_uuid()` | Primary key.                                           |
+| `media_item_id` | `UUID`        | NOT NULL | —                   | FK to `media_items.id`.                                |
+| `user_id`       | `UUID`        | NOT NULL | —                   | FK to `profiles.id`. Whose status this is.             |
+| `status`        | `item_status` | NOT NULL | `'plan_to_consume'` | The member's own progress state.                       |
+| `created_at`    | `TIMESTAMPTZ` | NOT NULL | `NOW()`             | Row creation time.                                     |
+| `updated_at`    | `TIMESTAMPTZ` | NOT NULL | `NOW()`             | Last updated. Maintained by trigger.                   |
+
+**Constraints:**
+
+| Name                 | Type        | Expression                 |
+| -------------------- | ----------- | -------------------------- |
+| `item_statuses_pkey` | PRIMARY KEY | `id`                       |
+| `unique_item_status` | UNIQUE      | `(media_item_id, user_id)` |
+
+**Foreign keys:**
+
+| Column          | References                          |
+| --------------- | ----------------------------------- |
+| `media_item_id` | `media_items(id) ON DELETE CASCADE` |
+| `user_id`       | `profiles(id) ON DELETE CASCADE`    |
+
+> **Read is group-wide, write is strictly personal.** Anyone who can read the group's content can read every member's status (same visibility rule as `consumption_records` — it feeds the "everyone completed" star and mirrors what `Consumed By` already reveals). But INSERT/UPDATE/DELETE are limited to `user_id = auth.uid()`: no member, not even the group owner, can change another member's status. See the RLS matrix in [§ 7](#item_statuses).
+
+> **Status ⇄ consumption invariant.** The app keeps a member's `completed` status and their `consumption_records` row in lockstep: setting `completed` upserts the consumption row; leaving `completed` deletes it. Rows of users who later leave the group are kept (like consumption records) but ignored by the "everyone completed" star, which only counts **current** members.
+
+---
+
 ## 4. Relationships and Foreign Keys
 
 ```
@@ -460,8 +501,10 @@ auth.users
     ├── group_members (user_id → profiles.id, CASCADE)
     ├── group_join_requests (user_id → profiles.id, CASCADE; resolved_by → profiles.id, SET NULL)
     ├── media_items (added_by → profiles.id, RESTRICT)
+    │   ├── item_statuses (media_item_id → media_items.id, CASCADE)
     │   ├── consumption_records (media_item_id → media_items.id, CASCADE)
     │   └── comments (media_item_id → media_items.id, CASCADE)
+    ├── item_statuses (user_id → profiles.id, CASCADE)
     ├── consumption_records (user_id → profiles.id, CASCADE)
     └── comments (author_id → profiles.id, CASCADE)
 ```
@@ -471,9 +514,9 @@ auth.users
 | If you delete...  | Effect on...                                                                                                                        |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `auth.users` row  | Cascade deletes `profiles` row                                                                                                      |
-| `profiles` row    | Cascade deletes `subscriptions`, `group_members`, `group_join_requests`, `consumption_records`, `comments`. Blocked (RESTRICT) if user owns groups or has added items. |
+| `profiles` row    | Cascade deletes `subscriptions`, `group_members`, `group_join_requests`, `item_statuses`, `consumption_records`, `comments`. Blocked (RESTRICT) if user owns groups or has added items. |
 | `groups` row      | Cascade deletes `group_members`, `group_join_requests`, `media_items`                                                              |
-| `media_items` row | Cascade deletes `consumption_records`, `comments`                                                                                  |
+| `media_items` row | Cascade deletes `item_statuses`, `consumption_records`, `comments`                                                                 |
 
 ---
 
@@ -492,8 +535,9 @@ auth.users
 | `idx_group_join_requests_status`        | `group_join_requests` | `status`        | Pending-request notification badge    |
 | `idx_media_items_group_id`              | `media_items`         | `group_id`      | Group detail page: all items in group |
 | `idx_media_items_type`                  | `media_items`         | `type`          | Type tab filtering                    |
-| `idx_media_items_status`                | `media_items`         | `status`        | Status filter                         |
 | `idx_media_items_added_by`              | `media_items`         | `added_by`      | "Added by" filter                     |
+| `idx_item_statuses_media_item_id`       | `item_statuses`       | `media_item_id` | "Who has which status for item X?"    |
+| `idx_item_statuses_user_id`             | `item_statuses`       | `user_id`       | "User X's statuses" (group page, dashboard breakdown) |
 | `idx_media_items_external_id`           | `media_items`         | `external_id`   | Future cross-group rollups (most-added works) |
 | `idx_media_items_genre_trgm`            | `media_items`         | `genre` (GIN trigram) | Fast tag substring matching when filtering by tag |
 | `idx_consumption_records_user_id`       | `consumption_records` | `user_id`       | "What has user X consumed?"           |
@@ -561,7 +605,7 @@ Rejected because:
 
 Current UI linkage:
 
-- Status and consumption are intentionally linked for the current user. Setting status to `completed` marks consumed; setting status away from `completed` removes consumed.
+- A member's own status (in `item_statuses`) and their consumption are intentionally linked. Setting your status to `completed` marks you consumed; setting it away from `completed` removes your consumption row. Other members' rows are never touched.
 
 ---
 
@@ -585,22 +629,19 @@ The `profiles.id` column is a foreign key to `auth.users.id`, maintaining a stri
 
 **The problem:** These six values encode both the progress state and the media type in the same field. "Plan to Watch" and "Plan to Read" are semantically identical — the verb changes only because of the media type. This coupling makes filtering and querying awkward.
 
-**The new design:** Three enum values (`plan_to_consume`, `consuming`, `completed`) represent the pure progress state. The UI derives the appropriate label by combining the status with the item's `type`:
+**The new design:** Three enum values (`plan_to_consume`, `consuming`, `completed`) represent the pure progress state, and the UI shows them with **one uniform vocabulary for every media type**: Planned / In progress / Completed. The same three labels appear in the filter pills, the status dropdowns and the read-only badges — no per-type verb variants anywhere.
 
 ```typescript
-function getStatusLabel(status: ItemStatus, type: MediaType): string {
-  if (status === "plan_to_consume") {
-    return type === "book"
-      ? "Plan to Read"
-      : type === "video_game"
-        ? "Plan to Play"
-        : "Plan to Watch";
+function getStatusLabel(status: ItemStatus): string {
+  switch (status) {
+    case "plan_to_consume": return "Planned";
+    case "consuming":       return "In progress";
+    case "completed":       return "Completed";
   }
-  // ...
 }
 ```
 
-This makes filtering by status work correctly across all types with a single condition.
+This makes filtering by status work correctly across all types with a single condition, and keeps the vocabulary identical everywhere in the app.
 
 ---
 
@@ -721,6 +762,24 @@ provider abstraction and the search/autocomplete flow live in `lib/providers/` a
 
 ---
 
+### 6.9 Why status is per-member
+
+**The decision:** An item's progress status lives in the `item_statuses` table, one row per (item, user) — not on the shared `media_items` row.
+
+**The problem with the old design:** `media_items.status` was a single shared field that any member could update. When one member marked *Dune* as completed, it flipped to "Completed" for the entire group — even for members who hadn't started it. Status is inherently personal progress, but the schema stored it as group state, so members constantly overwrote each other.
+
+**Why a dedicated join table (and not the alternatives):**
+
+- *A `status` column on `consumption_records`* was rejected because a consumption row's existence **means** "completed" — the UI and the `Consumed By` list depend on that. Planned/in-progress states would force rows whose presence no longer means anything, breaking that invariant and all existing queries.
+- *An array/JSONB map on `media_items`* was rejected for the same reasons as `consumed_by UUID[]` (§ 6.2): no FK integrity, no per-entry timestamps, unindexable lookups, and RLS could not restrict writes to one member's entry — any member could still clobber everyone's status in a single UPDATE.
+- *A join table* gives each status its own row, FK integrity, an `updated_at` audit trail, and — decisively — **row-level security**: `user_id = auth.uid()` on writes makes "you can only change your own status" a database guarantee instead of a UI convention.
+
+**Why a missing row means `plan_to_consume`:** every member has a status for every item in their groups; materialising all of them would mean `members × items` rows that are almost all "Planned". Treating absence as the default keeps the table proportional to actual activity and makes new items and new members correct with zero writes.
+
+**What stayed shared:** everything else on `media_items` (title, type, tags, metadata, external link) is still one row co-edited by the whole group, and `consumption_records` still records who finished what. The "everyone completed" star is derived in the UI: an item earns it when every **current** `group_members` row has a matching completion.
+
+---
+
 ## 7. Row Level Security Matrix
 
 For each table and operation, this matrix shows what is permitted for each actor type.
@@ -806,6 +865,20 @@ For each table and operation, this matrix shows what is permitted for each actor
 | INSERT (own record)    | ✗    | ✗                 | ✅            | ✅            | —            | ✅           |
 | UPDATE (own record)    | ✗    | ✗                 | ✅ (own only) | ✅ (own only) | ✅           | ✅           |
 | DELETE (own record)    | ✗    | ✗                 | ✅ (own only) | ✅ (own only) | ✅           | ✅           |
+
+### `item_statuses`
+
+- **Status owner** — Authenticated user whose `user_id` is on the specific `item_statuses` row.
+
+| Operation              | Anon | Auth / Non-member | Member        | Owner         | Status owner | Service role |
+| ---------------------- | ---- | ----------------- | ------------- | ------------- | ------------ | ------------ |
+| SELECT (public group)  | ✗    | ✅                | ✅            | ✅            | ✅           | ✅           |
+| SELECT (private group) | ✗    | ✗                 | ✅            | ✅            | ✅           | ✅           |
+| INSERT (own status)    | ✗    | ✗                 | ✅            | ✅            | —            | ✅           |
+| UPDATE (own status)    | ✗    | ✗                 | ✅ (own only) | ✅ (own only) | ✅           | ✅           |
+| DELETE (own status)    | ✗    | ✗                 | ✅ (own only) | ✅ (own only) | ✅           | ✅           |
+
+> Statuses are **readable group-wide** (same rule as `consumption_records`) but **writable only by their owner** — not even the group owner can change another member's status. `user_id = auth.uid()` is enforced on every write.
 
 ### `comments`
 

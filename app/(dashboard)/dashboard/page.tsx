@@ -22,22 +22,36 @@ export default async function DashboardPage() {
     .eq('user_id', user!.id)
     .order('created_at', { referencedTable: 'groups', ascending: false });
 
-  // Fetch item rows per group in one query (counts + type/status breakdown)
+  // Fetch item rows per group in one query (counts + type breakdown)
   const groupIds = (memberships ?? []).map((m) => (m.groups as unknown as Group)?.id).filter(Boolean);
   const { data: itemCountRows } = groupIds.length
     ? await supabase
         .from('media_items')
-        .select('group_id, type, status')
+        .select('group_id, type')
         .in('group_id', groupIds)
-    : { data: [] as Array<{ group_id: string; type: MediaType; status: ItemStatus }> };
+    : { data: [] as Array<{ group_id: string; type: MediaType }> };
 
   const itemCountMap = new Map<string, number>();
   const typeCounts: Record<MediaType, number> = { movie: 0, tv_series: 0, book: 0, video_game: 0 };
-  const statusCounts: Record<ItemStatus, number> = { plan_to_consume: 0, consuming: 0, completed: 0 };
   for (const row of itemCountRows ?? []) {
     itemCountMap.set(row.group_id, (itemCountMap.get(row.group_id) ?? 0) + 1);
     if (row.type in typeCounts) typeCounts[row.type as MediaType] += 1;
-    if (row.status in statusCounts) statusCounts[row.status as ItemStatus] += 1;
+  }
+
+  // Status breakdown is PERSONAL: the current user's own item_statuses rows for
+  // items in their groups. Items without a row count as 'plan_to_consume'.
+  const { data: myStatusRows } = groupIds.length
+    ? await supabase
+        .from('item_statuses')
+        .select('status, media_items!inner(group_id)')
+        .eq('user_id', user!.id)
+        .in('media_items.group_id', groupIds)
+    : { data: [] as Array<{ status: ItemStatus }> };
+
+  const statusCounts: Record<ItemStatus, number> = { plan_to_consume: 0, consuming: 0, completed: 0 };
+  for (const row of myStatusRows ?? []) {
+    const status = row.status as ItemStatus;
+    if (status in statusCounts) statusCounts[status] += 1;
   }
 
   // Fetch member counts per group
@@ -88,6 +102,12 @@ export default async function DashboardPage() {
   const atLimit = ownedCount >= maxOwned;
   const plan = subscription?.plan ?? 'free';
   const totalItems = Array.from(itemCountMap.values()).reduce((sum, n) => sum + n, 0);
+  // No item_statuses row = 'plan_to_consume' by definition, so derive planned
+  // from the total instead of expecting a stored row per item.
+  statusCounts.plan_to_consume = Math.max(
+    0,
+    totalItems - statusCounts.consuming - statusCounts.completed
+  );
 
   const groupNames = new Map(groups.map((g) => [g.id, g.name]));
   const recentItems = (recentRows ?? []).map((row) => ({

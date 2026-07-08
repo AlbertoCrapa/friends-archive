@@ -20,6 +20,8 @@ interface Props {
   currentUserNickname: string | null;
   isMember: boolean;
   isOwner: boolean;
+  /** user_ids of the group's CURRENT members — drives the "everyone completed" star */
+  memberIds: string[];
   initialItems: MediaItemWithDetails[];
   initialConsumedSet: Set<string>;
   initialActiveType: MediaFilterType;
@@ -54,6 +56,7 @@ export function GroupMediaSection({
   currentUserNickname,
   isMember,
   isOwner,
+  memberIds,
   initialItems,
   initialConsumedSet,
   initialActiveType,
@@ -319,6 +322,7 @@ export function GroupMediaSection({
           isOwner={isOwner}
           userId={userId}
           currentUserNickname={currentUserNickname}
+          memberIds={memberIds}
           activeTags={activeTags}
           onToggleTag={toggleTag}
           onDeleted={handleDeletedItem}

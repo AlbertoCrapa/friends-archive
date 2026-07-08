@@ -21,6 +21,7 @@ This document is the complete, authoritative guide to configuring Supabase for T
 8. [Migration — External Identification Layer](#8-migration--external-identification-layer)
 9. [Migration — Comments](#9-migration--comments)
 10. [Migration — Tags](#10-migration--tags)
+11. [Migration — Per-Member Item Status](#11-migration--per-member-item-status)
 
 ---
 
@@ -113,7 +114,10 @@ If you have never used the Supabase SQL Editor before, here is exactly what to d
 -- The word 'film' or 'films' must never appear here or anywhere in the codebase.
 CREATE TYPE media_type AS ENUM ('movie', 'tv_series', 'book', 'video_game');
 
--- Item status: per-user progress selection used by the UI.
+-- Item status: PER-MEMBER progress state. Lives in the item_statuses table
+-- (one row per item + user) — never on the shared media_items row. The UI
+-- shows one uniform vocabulary for every media type:
+-- Planned / In progress / Completed.
 CREATE TYPE item_status AS ENUM ('plan_to_consume', 'consuming', 'completed');
 
 -- Group visibility: determines discoverability.
@@ -241,13 +245,14 @@ COMMENT ON COLUMN public.group_members.role IS
 ```sql
 -- A single media item (movie, TV series, book, or video game) within a group.
 -- Type-specific metadata is stored in the JSONB `metadata` column.
+-- NOTE: there is NO status column here — progress status is per-member and
+-- lives in item_statuses (step 2f-ter).
 -- See DATA_MODEL.md for the full rationale and per-type field specification.
 CREATE TABLE public.media_items (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   group_id    UUID NOT NULL REFERENCES public.groups(id) ON DELETE CASCADE,
   title       TEXT NOT NULL,
   type        media_type NOT NULL,
-  status      item_status NOT NULL DEFAULT 'plan_to_consume',
   genre       TEXT,
   added_by    UUID NOT NULL REFERENCES public.profiles(id) ON DELETE RESTRICT,
   metadata    JSONB NOT NULL DEFAULT '{}',
@@ -296,12 +301,39 @@ COMMENT ON COLUMN public.consumption_records.note IS
 
 Application behavior note:
 
-- The UI auto-syncs personal consumption from status changes:
+- The UI auto-syncs personal consumption from the member's OWN status changes
+  (in `item_statuses`):
   - `completed` => create/keep current user's `consumption_records` row.
   - `plan_to_consume` or `consuming` => remove current user's row.
 - `Consumed By` in the table is display-only and derived from `consumption_records`.
 
 **Expected result:** `Success. No rows returned` — `consumption_records` table appears in **Database → Tables**.
+
+#### 2f-ter — item_statuses
+
+```sql
+-- PER-MEMBER progress status for a media item. One row per (item, user);
+-- a MISSING row means 'plan_to_consume' ("Planned"), so rows exist only when
+-- a member's status diverges from the default. The shared media_items row
+-- carries no status at all — each member tracks the same item independently.
+CREATE TABLE public.item_statuses (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  media_item_id  UUID NOT NULL REFERENCES public.media_items(id) ON DELETE CASCADE,
+  user_id        UUID NOT NULL REFERENCES public.profiles(id)    ON DELETE CASCADE,
+  status         item_status NOT NULL DEFAULT 'plan_to_consume',
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  CONSTRAINT unique_item_status UNIQUE (media_item_id, user_id)
+);
+
+COMMENT ON TABLE public.item_statuses IS
+  'Per-member progress status for a media item. One row per (item, user); a missing row means plan_to_consume. Status is personal — the shared media_items row carries no status.';
+COMMENT ON COLUMN public.item_statuses.status IS
+  'The member''s own progress: plan_to_consume (Planned) | consuming (In progress) | completed (Completed).';
+```
+
+**Expected result:** `Success. No rows returned` — `item_statuses` table appears in **Database → Tables**.
 
 #### 2g — group_join_requests
 
@@ -359,7 +391,7 @@ COMMENT ON COLUMN public.comments.body IS
 
 **Expected result:** `Success. No rows returned` — `comments` table appears in **Database → Tables**.
 
-At this point all 8 tables should be visible under **Database → Tables**: `profiles`, `subscriptions`, `groups`, `group_members`, `group_join_requests`, `media_items`, `consumption_records`, `comments`.
+At this point all 9 tables should be visible under **Database → Tables**: `profiles`, `subscriptions`, `groups`, `group_members`, `group_join_requests`, `media_items`, `item_statuses`, `consumption_records`, `comments`.
 
 #### 2h — Grant table access to Supabase API roles
 
@@ -405,11 +437,15 @@ CREATE INDEX idx_group_join_requests_group_id ON public.group_join_requests (gro
 CREATE INDEX idx_group_join_requests_user_id ON public.group_join_requests (user_id);
 CREATE INDEX idx_group_join_requests_status ON public.group_join_requests (status);
 
--- media_items: lookup by group, by type, by status, and by added_by
+-- media_items: lookup by group, by type, and by added_by
 CREATE INDEX idx_media_items_group_id ON public.media_items (group_id);
 CREATE INDEX idx_media_items_type ON public.media_items (type);
-CREATE INDEX idx_media_items_status ON public.media_items (status);
 CREATE INDEX idx_media_items_added_by ON public.media_items (added_by);
+
+-- item_statuses: lookup by item (all members' statuses for the star) and by
+-- user (my statuses on the group page / dashboard breakdown)
+CREATE INDEX idx_item_statuses_media_item_id ON public.item_statuses (media_item_id);
+CREATE INDEX idx_item_statuses_user_id ON public.item_statuses (user_id);
 
 -- consumption_records: lookup by user (all items a user consumed) and by item (all consumers)
 CREATE INDEX idx_consumption_records_user_id ON public.consumption_records (user_id);
@@ -420,7 +456,7 @@ CREATE INDEX idx_comments_media_item_id ON public.comments (media_item_id);
 CREATE INDEX idx_comments_author_id ON public.comments (author_id);
 ```
 
-**Expected result:** `Success. No rows returned` — all 13 index creation statements succeed. You can verify under **Database → Indexes** in the sidebar.
+**Expected result:** `Success. No rows returned` — all index creation statements succeed. You can verify under **Database → Indexes** in the sidebar.
 
 ---
 
@@ -458,6 +494,10 @@ CREATE TRIGGER trg_media_items_updated_at
   BEFORE UPDATE ON public.media_items
   FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
+CREATE TRIGGER trg_item_statuses_updated_at
+  BEFORE UPDATE ON public.item_statuses
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
 CREATE TRIGGER trg_consumption_records_updated_at
   BEFORE UPDATE ON public.consumption_records
   FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
@@ -471,7 +511,7 @@ CREATE TRIGGER trg_comments_updated_at
   FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 ```
 
-**Expected result:** `Success. No rows returned` — the function and all seven triggers are created. You can verify under **Database → Functions** (look for `handle_updated_at`) and **Database → Triggers**.
+**Expected result:** `Success. No rows returned` — the function and all eight triggers are created. You can verify under **Database → Functions** (look for `handle_updated_at`) and **Database → Triggers**.
 
 #### 4b — Auto-create profile and subscription on registration
 
@@ -842,11 +882,12 @@ ALTER TABLE public.groups            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.group_members     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.group_join_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.media_items       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.item_statuses     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.consumption_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.comments          ENABLE ROW LEVEL SECURITY;
 ```
 
-**Expected result:** `Success. No rows returned` — all eight `ALTER TABLE` statements succeed. You can verify by going to **Database → Tables**, clicking any table, then checking **RLS enabled** in the table’s settings panel.
+**Expected result:** `Success. No rows returned` — all nine `ALTER TABLE` statements succeed. You can verify by going to **Database → Tables**, clicking any table, then checking **RLS enabled** in the table’s settings panel.
 
 #### 5a — profiles policies
 
@@ -1012,7 +1053,8 @@ CREATE POLICY "Group members can add items"
     )
   );
 
--- Group members can update item metadata, status, genre — but NOT added_by.
+-- Group members can update item metadata, title, genre — but NOT added_by.
+-- (Status is NOT here: it is per-member and lives in item_statuses.)
 -- The added_by column is protected by a separate check below.
 CREATE POLICY "Group members can update items"
   ON public.media_items FOR UPDATE
@@ -1100,6 +1142,60 @@ CREATE POLICY "Users can delete their own consumption records"
 ```
 
 **Expected result:** `Success. No rows returned` — four policies appear under **Authentication → Policies → consumption_records**.
+
+#### 5f-bis — item_statuses policies
+
+Read access mirrors `consumption_records` (group-wide, plus public groups read-only). Writes are **strictly personal** — a member can only ever create, change or delete **their own** status row. Not even the group owner can touch another member's status.
+
+```sql
+-- Group members can read all statuses for items in their groups (feeds the
+-- "everyone completed" star). Non-members can read them in public groups.
+CREATE POLICY "Members see item statuses in their groups"
+  ON public.item_statuses FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.media_items mi
+      JOIN public.groups g ON g.id = mi.group_id
+      WHERE mi.id = media_item_id
+      AND (
+        g.visibility = 'public'
+        OR EXISTS (
+          SELECT 1 FROM public.group_members gm
+          WHERE gm.group_id = g.id AND gm.user_id = auth.uid()
+        )
+      )
+    )
+  );
+
+-- A user can only insert their own status, and only for items in groups they belong to.
+CREATE POLICY "Users can set their own item status"
+  ON public.item_statuses FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    user_id = auth.uid()
+    AND EXISTS (
+      SELECT 1 FROM public.media_items mi
+      JOIN public.group_members gm ON gm.group_id = mi.group_id
+      WHERE mi.id = media_item_id AND gm.user_id = auth.uid()
+    )
+  );
+
+-- A user can only update their own status row.
+CREATE POLICY "Users can update their own item status"
+  ON public.item_statuses FOR UPDATE
+  TO authenticated
+  USING (user_id = auth.uid())
+  WITH CHECK (user_id = auth.uid());
+
+-- A user can only delete their own status row (falls back to "Planned").
+CREATE POLICY "Users can delete their own item status"
+  ON public.item_statuses FOR DELETE
+  TO authenticated
+  USING (user_id = auth.uid());
+```
+
+**Expected result:** `Success. No rows returned` — four policies appear under **Authentication → Policies → item_statuses**.
 
 #### 5g — group_join_requests policies
 
@@ -1327,7 +1423,7 @@ SELECT typname FROM pg_type WHERE typname IN (
 SELECT table_name, COUNT(column_name) AS col_count
 FROM information_schema.columns
 WHERE table_schema = 'public'
-  AND table_name IN ('profiles', 'subscriptions', 'groups', 'group_members', 'group_join_requests', 'media_items', 'consumption_records', 'comments')
+  AND table_name IN ('profiles', 'subscriptions', 'groups', 'group_members', 'group_join_requests', 'media_items', 'item_statuses', 'consumption_records', 'comments')
 GROUP BY table_name
 ORDER BY table_name;
 
@@ -1335,7 +1431,7 @@ ORDER BY table_name;
 SELECT tablename, rowsecurity
 FROM pg_tables
 WHERE schemaname = 'public'
-  AND tablename IN ('profiles', 'subscriptions', 'groups', 'group_members', 'group_join_requests', 'media_items', 'consumption_records', 'comments');
+  AND tablename IN ('profiles', 'subscriptions', 'groups', 'group_members', 'group_join_requests', 'media_items', 'item_statuses', 'consumption_records', 'comments');
 
 -- 4. All triggers exist
 SELECT trigger_name, event_object_table
@@ -1650,3 +1746,164 @@ provider enrichment fills the tags (TMDB/RAWG genres + a few RAWG gameplay tags
 like Co-op/Anime); otherwise the user types their own. The media table renders
 each tag as a toggle chip and the group page filters items by the selected tags
 (`getItemTags` in `lib/utils.ts`).
+
+---
+
+## 11. Migration — Per-Member Item Status
+
+If your database was created **before** statuses became per-member (i.e.
+`media_items` still has a `status` column), run this migration. Fresh setups
+that followed the steps above already include everything here — skip this
+section.
+
+What it changes:
+
+- **Status moves off the shared item.** A new `item_statuses` table holds one
+  row per (item, user). Each member of a group now has their **own independent**
+  status for the same shared item — one member completing an item no longer
+  changes anything for anyone else.
+- **A missing row means `plan_to_consume`** ("Planned"), so rows exist only
+  where a member's status diverges from the default, and new members see every
+  item as Planned with zero writes.
+- **Existing data is preserved per member:** every current member is seeded
+  with `'completed'` where they personally have a `consumption_records` row,
+  otherwise with the item's old shared status — i.e. exactly what they saw
+  before the migration. Consumption rows of ex-members are mirrored to
+  `'completed'` too, keeping the completed ⇄ consumed invariant global.
+- **`media_items.status` is dropped**, together with its index. Everything else
+  about the item (title, type, tags, metadata, external link) stays shared.
+- **RLS:** statuses are readable by whoever can read the group's content (same
+  rule as `consumption_records`; it also feeds the "everyone completed" star in
+  the UI), but writable **only by their owner** (`user_id = auth.uid()`).
+
+Deploy the matching frontend together with this migration — the old code writes
+`media_items.status`, which this migration removes. The full ready-to-paste
+script also lives at `docs/migrations/2026-07-08_per_member_status.sql`; the
+same SQL follows here. Run it as **one** query in the SQL Editor.
+
+```sql
+-- 1. Table
+CREATE TABLE IF NOT EXISTS public.item_statuses (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  media_item_id  UUID NOT NULL REFERENCES public.media_items(id) ON DELETE CASCADE,
+  user_id        UUID NOT NULL REFERENCES public.profiles(id)    ON DELETE CASCADE,
+  status         item_status NOT NULL DEFAULT 'plan_to_consume',
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  CONSTRAINT unique_item_status UNIQUE (media_item_id, user_id)
+);
+
+COMMENT ON TABLE public.item_statuses IS
+  'Per-member progress status for a media item. One row per (item, user); a missing row means plan_to_consume. Status is personal — the shared media_items row carries no status.';
+COMMENT ON COLUMN public.item_statuses.status IS
+  'The member''s own progress: plan_to_consume (Planned) | consuming (In progress) | completed (Completed).';
+
+-- 2. Indexes
+CREATE INDEX IF NOT EXISTS idx_item_statuses_media_item_id ON public.item_statuses (media_item_id);
+CREATE INDEX IF NOT EXISTS idx_item_statuses_user_id       ON public.item_statuses (user_id);
+
+-- 3. updated_at trigger (reuses handle_updated_at from Step 4a)
+DROP TRIGGER IF EXISTS trg_item_statuses_updated_at ON public.item_statuses;
+CREATE TRIGGER trg_item_statuses_updated_at
+  BEFORE UPDATE ON public.item_statuses
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+-- 4. RLS (read = group-wide like consumption_records; write = own rows only)
+ALTER TABLE public.item_statuses ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Members see item statuses in their groups"
+  ON public.item_statuses FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.media_items mi
+      JOIN public.groups g ON g.id = mi.group_id
+      WHERE mi.id = media_item_id
+      AND (
+        g.visibility = 'public'
+        OR EXISTS (
+          SELECT 1 FROM public.group_members gm
+          WHERE gm.group_id = g.id AND gm.user_id = auth.uid()
+        )
+      )
+    )
+  );
+
+CREATE POLICY "Users can set their own item status"
+  ON public.item_statuses FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    user_id = auth.uid()
+    AND EXISTS (
+      SELECT 1 FROM public.media_items mi
+      JOIN public.group_members gm ON gm.group_id = mi.group_id
+      WHERE mi.id = media_item_id AND gm.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Users can update their own item status"
+  ON public.item_statuses FOR UPDATE
+  TO authenticated
+  USING (user_id = auth.uid())
+  WITH CHECK (user_id = auth.uid());
+
+CREATE POLICY "Users can delete their own item status"
+  ON public.item_statuses FOR DELETE
+  TO authenticated
+  USING (user_id = auth.uid());
+
+-- 5. Privileges (covered by the Step 2h ALTER DEFAULT PRIVILEGES; safe to repeat)
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.item_statuses TO authenticated;
+
+-- 6a. Seed every CURRENT member with the status they effectively see today:
+--     'completed' when they personally consumed the item, otherwise the item's
+--     old shared status. Default-valued rows are skipped (no row = Planned).
+INSERT INTO public.item_statuses (media_item_id, user_id, status)
+SELECT
+  mi.id,
+  gm.user_id,
+  CASE WHEN cr.id IS NOT NULL THEN 'completed'::item_status ELSE mi.status END
+FROM public.media_items mi
+JOIN public.group_members gm ON gm.group_id = mi.group_id
+LEFT JOIN public.consumption_records cr
+  ON cr.media_item_id = mi.id AND cr.user_id = gm.user_id
+WHERE cr.id IS NOT NULL OR mi.status <> 'plan_to_consume'
+ON CONFLICT (media_item_id, user_id) DO NOTHING;
+
+-- 6b. Mirror any remaining consumption records (e.g. ex-members) so status
+--     'completed' and a consumption row always travel together.
+INSERT INTO public.item_statuses (media_item_id, user_id, status)
+SELECT cr.media_item_id, cr.user_id, 'completed'::item_status
+FROM public.consumption_records cr
+ON CONFLICT (media_item_id, user_id) DO NOTHING;
+
+-- 7. Drop the shared status from media_items
+DROP INDEX IF EXISTS idx_media_items_status;
+ALTER TABLE public.media_items DROP COLUMN IF EXISTS status;
+```
+
+### Reading and writing statuses from the app
+
+```typescript
+// The viewer's OWN statuses for a set of items (missing row = 'plan_to_consume').
+const { data } = await supabase
+  .from("item_statuses")
+  .select("media_item_id, status")
+  .eq("user_id", userId)
+  .in("media_item_id", itemIds);
+
+// Change MY status for one item (RLS guarantees user_id = auth.uid()).
+await supabase
+  .from("item_statuses")
+  .upsert(
+    { media_item_id: itemId, user_id: userId, status: nextStatus },
+    { onConflict: "media_item_id,user_id" }
+  );
+```
+
+The UI vocabulary for the three values is uniform across every media type and
+every surface (filter pills, dropdowns, badges): **Planned / In progress /
+Completed** (`getStatusLabel()` in `types/index.ts`). The "everyone completed"
+star on an item row is derived in the UI: it appears when every **current**
+group member has completed the item.

@@ -90,19 +90,41 @@ export function GroupArchiveData({ group, userId }: Props) {
     setExporting(true);
 
     const supabase = createClient();
-    const { data: items, error } = await supabase
-      .from('media_items')
-      .select('title, type, status, genre, metadata')
-      .eq('group_id', group.id)
-      .order('created_at', { ascending: true });
+    // Status is per-member, so the export carries the EXPORTER'S OWN statuses
+    // (missing item_statuses row = 'plan_to_consume').
+    const [{ data: items, error }, { data: statusRows, error: statusError }] = await Promise.all([
+      supabase
+        .from('media_items')
+        .select('id, title, type, genre, metadata')
+        .eq('group_id', group.id)
+        .order('created_at', { ascending: true }),
+      supabase
+        .from('item_statuses')
+        .select('media_item_id, status, media_items!inner(group_id)')
+        .eq('user_id', userId)
+        .eq('media_items.group_id', group.id),
+    ]);
 
-    if (error) {
+    if (error || statusError) {
       setBanner({ variant: 'error', message: 'Could not load the group data. Please try again.' });
       setExporting(false);
       return;
     }
 
-    const archive = buildArchive(group, items ?? []);
+    const statusByItemId = new Map(
+      (statusRows ?? []).map((row) => [row.media_item_id, row.status as ItemStatus])
+    );
+
+    const archive = buildArchive(
+      group,
+      (items ?? []).map((item) => ({
+        title: item.title,
+        type: item.type as MediaType,
+        status: statusByItemId.get(item.id) ?? 'plan_to_consume',
+        genre: item.genre,
+        metadata: item.metadata,
+      }))
+    );
     const blob = new Blob([JSON.stringify(archive, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -156,10 +178,12 @@ export function GroupArchiveData({ group, userId }: Props) {
         added_by: string;
         title: string;
         type: MediaType;
-        status: ItemStatus;
         genre: string | null;
         metadata: Record<string, unknown>;
       }> = [];
+      // The archive's status becomes the IMPORTER'S personal status for each
+      // newly created item (per-member model). Aligned by index with toInsert.
+      const insertStatuses: ItemStatus[] = [];
       const toUpdate: Array<{ id: string; patch: MergePatch }> = [];
       let unchanged = 0;
 
@@ -171,10 +195,10 @@ export function GroupArchiveData({ group, userId }: Props) {
             added_by: userId,
             title: item.title,
             type: item.type,
-            status: item.status,
             genre: item.genre,
             metadata: item.metadata,
           });
+          insertStatuses.push(item.status);
           continue;
         }
         const patch = mergeNewInfo(match, item);
@@ -186,10 +210,35 @@ export function GroupArchiveData({ group, userId }: Props) {
       }
 
       if (toInsert.length > 0) {
-        const { error: insertError } = await supabase.from('media_items').insert(toInsert);
+        const { data: insertedRows, error: insertError } = await supabase
+          .from('media_items')
+          .insert(toInsert)
+          .select('id');
         if (insertError) {
           setBanner({ variant: 'error', message: 'Could not add the new items. Please try again.' });
           return;
+        }
+
+        // Personal statuses for the new items (rows come back in insert order).
+        // No row needed for 'plan_to_consume' — that's the default meaning.
+        const statusUpserts = (insertedRows ?? []).flatMap((row, i) =>
+          insertStatuses[i] && insertStatuses[i] !== 'plan_to_consume'
+            ? [{ media_item_id: row.id, user_id: userId, status: insertStatuses[i] }]
+            : []
+        );
+        if (statusUpserts.length > 0) {
+          await supabase
+            .from('item_statuses')
+            .upsert(statusUpserts, { onConflict: 'media_item_id,user_id' });
+          // Keep the completed ⇄ consumed invariant for the importer.
+          const consumedUpserts = statusUpserts
+            .filter((row) => row.status === 'completed')
+            .map((row) => ({ media_item_id: row.media_item_id, user_id: userId }));
+          if (consumedUpserts.length > 0) {
+            await supabase
+              .from('consumption_records')
+              .upsert(consumedUpserts, { onConflict: 'media_item_id,user_id' });
+          }
         }
       }
 
@@ -288,10 +337,12 @@ export function GroupArchiveData({ group, userId }: Props) {
                     <code className="text-stone-200">book</code>, <code className="text-stone-200">video_game</code>.
                   </li>
                   <li>
-                    <code className="text-stone-200">status</code> is optional:{' '}
-                    <code className="text-stone-200">plan_to_consume</code>,{' '}
-                    <code className="text-stone-200">consuming</code> or{' '}
-                    <code className="text-stone-200">completed</code>. Missing or invalid values fall back to{' '}
+                    <code className="text-stone-200">status</code> is optional and personal:{' '}
+                    <code className="text-stone-200">plan_to_consume</code> (Planned),{' '}
+                    <code className="text-stone-200">consuming</code> (In progress) or{' '}
+                    <code className="text-stone-200">completed</code> (Completed). It sets{' '}
+                    <em className="not-italic text-stone-200">your own</em> status for the imported
+                    item — never other members&apos;. Missing or invalid values fall back to{' '}
                     <code className="text-stone-200">plan_to_consume</code>.
                   </li>
                   <li>
@@ -327,7 +378,8 @@ export function GroupArchiveData({ group, userId }: Props) {
                 <p className="text-sm text-stone-400 font-light leading-relaxed">
                   An imported item with the same title (case-insensitive) and the same type as an existing one is never
                   duplicated. Instead, it fills in details the existing item is missing: an empty genre or absent
-                  metadata keys. Values already present, the status, and the title itself are never overwritten.
+                  metadata keys. Values already present, everyone&apos;s statuses, and the title itself are never
+                  overwritten.
                 </p>
               </section>
 

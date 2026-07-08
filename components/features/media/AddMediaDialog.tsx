@@ -34,11 +34,12 @@ interface Props {
   groupId: string;
   userId: string;
   activeType: MediaType | 'all';
-  onAdded?: (item: MediaItem) => void;
+  /** Receives the inserted item plus the creator's own (per-member) status. */
+  onAdded?: (item: MediaItem & { status: ItemStatus }) => void;
 }
 
 const SELECT_COLUMNS =
-  'id, group_id, title, type, status, genre, metadata, added_by, external_id, external_source, external_url, created_at, updated_at';
+  'id, group_id, title, type, genre, metadata, added_by, external_id, external_source, external_url, created_at, updated_at';
 
 export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) {
   const router = useRouter();
@@ -238,7 +239,6 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
         added_by: userId,
         title: title.trim(),
         type,
-        status,
         genre: serializeTags(tags) || null,
         metadata: buildMetadata(),
         external_id: externalId,
@@ -254,6 +254,17 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
       return;
     }
 
+    // Status is per-member (item_statuses), never on the shared item. A missing
+    // row already means 'plan_to_consume', so only write when it differs.
+    if (insertedItem && status !== 'plan_to_consume') {
+      await supabase
+        .from('item_statuses')
+        .upsert(
+          { media_item_id: insertedItem.id, user_id: userId, status },
+          { onConflict: 'media_item_id,user_id' }
+        );
+    }
+
     if (insertedItem && status === 'completed') {
       await supabase
         .from('consumption_records')
@@ -267,7 +278,7 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
     setOpen(false);
 
     if (insertedItem) {
-      onAdded?.(insertedItem as MediaItem);
+      onAdded?.({ ...(insertedItem as MediaItem), status });
     }
 
     if (!onAdded) {
@@ -277,7 +288,7 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
     setLoading(false);
   }
 
-  const statusOptions = getStatusOptions(type);
+  const statusOptions = getStatusOptions();
 
   return (
     <Dialog

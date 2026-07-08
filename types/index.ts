@@ -11,8 +11,10 @@
 export type MediaType = 'movie' | 'tv_series' | 'book' | 'video_game';
 
 /**
- * The group's collective progress on a media item.
- * Three database values map to context-sensitive UI labels via getStatusLabel().
+ * A member's personal progress on a media item. Stored per (item, user) in the
+ * item_statuses table — NEVER on the shared media_items row. A missing row
+ * means 'plan_to_consume'. The three values map to one uniform UI vocabulary
+ * via getStatusLabel(): Planned / In progress / Completed, for every type.
  */
 export type ItemStatus = 'plan_to_consume' | 'consuming' | 'completed';
 
@@ -201,7 +203,6 @@ export interface MediaItem {
   group_id: string;
   title: string;
   type: MediaType;
-  status: ItemStatus;
   genre: string | null;
   added_by: string;
   metadata: MediaMetadata;
@@ -213,11 +214,32 @@ export interface MediaItem {
   updated_at: string;
 }
 
-/** MediaItem with its consumption records, comments and adder's nickname */
+/**
+ * MediaItem enriched for display: the VIEWER'S OWN status (from item_statuses;
+ * missing row = 'plan_to_consume'), consumption records, comments and the
+ * adder's nickname. `status` is personal — never shared across members.
+ */
 export interface MediaItemWithDetails extends MediaItem {
+  status: ItemStatus;
   added_by_profile?: Pick<Profile, 'nickname'>;
   consumption_records?: ConsumptionRecord[];
   comments?: Comment[];
+}
+
+// ── Item Statuses (per member) ───────────────────────────────────────────────
+
+/**
+ * A member's personal status for one media item. One row per (item, user);
+ * absence of a row means 'plan_to_consume'. Everything else about the item
+ * stays shared — only this progress state is per-member.
+ */
+export interface ItemStatusRecord {
+  id: string;
+  media_item_id: string;
+  user_id: string;
+  status: ItemStatus;
+  created_at: string;
+  updated_at: string;
 }
 
 // ── Consumption Records ──────────────────────────────────────────────────────
@@ -280,31 +302,27 @@ export interface SortConfig {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
- * Returns the UI label for a status value, appropriate for the given media type.
+ * Returns the UI label for a status value. One vocabulary for every media
+ * type, everywhere in the app (filters, dropdowns, badges):
+ * Planned / In progress / Completed.
  */
-export function getStatusLabel(status: ItemStatus, type: MediaType): string {
+export function getStatusLabel(status: ItemStatus): string {
   switch (status) {
     case 'plan_to_consume':
-      if (type === 'book') return 'Plan to Read';
-      if (type === 'video_game') return 'Plan to Play';
-      return 'Plan to Watch';
+      return 'Planned';
     case 'consuming':
-      if (type === 'book') return 'Reading';
-      if (type === 'video_game') return 'Playing';
-      return 'Watching';
+      return 'In progress';
     case 'completed':
-      if (type === 'book') return 'Read';
-      if (type === 'video_game') return 'Played';
-      return 'Watched';
+      return 'Completed';
   }
 }
 
-/** All status values for select menus, with their label for a given type */
-export function getStatusOptions(type: MediaType): { value: ItemStatus; label: string }[] {
+/** All status values for select menus, with the uniform label */
+export function getStatusOptions(): { value: ItemStatus; label: string }[] {
   return [
-    { value: 'plan_to_consume', label: getStatusLabel('plan_to_consume', type) },
-    { value: 'consuming', label: getStatusLabel('consuming', type) },
-    { value: 'completed', label: getStatusLabel('completed', type) },
+    { value: 'plan_to_consume', label: getStatusLabel('plan_to_consume') },
+    { value: 'consuming', label: getStatusLabel('consuming') },
+    { value: 'completed', label: getStatusLabel('completed') },
   ];
 }
 

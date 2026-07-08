@@ -16,7 +16,7 @@ import {
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { ExternalLink, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { ExternalLink, MoreHorizontal, Pencil, Star, Trash2 } from 'lucide-react';
 import { getStatusLabel, getStatusOptions } from '@/types';
 import { getStatusColor, getItemTags } from '@/lib/utils';
 import type { ItemStatus, MediaItem, MediaItemWithDetails, MediaType } from '@/types';
@@ -32,6 +32,9 @@ interface Props {
   isOwner: boolean;
   userId: string;
   currentUserNickname: string | null;
+  /** user_ids of the group's CURRENT members. When every one of them has
+   *  completed an item, the item shows the "everyone finished" star. */
+  memberIds?: string[];
   activeTags?: string[];
   onToggleTag?: (tag: string) => void;
   onDeleted?: (itemId: string) => void;
@@ -48,6 +51,7 @@ export function MediaTable({
   isOwner,
   userId,
   currentUserNickname,
+  memberIds = [],
   activeTags = [],
   onToggleTag,
   onDeleted,
@@ -90,10 +94,14 @@ export function MediaTable({
 
     setPendingStatusId(item.id);
     const supabase = createClient();
+    // Status is per-member: write only the current user's row in item_statuses.
+    // The shared media_items row is never touched by a status change.
     const { error } = await supabase
-      .from('media_items')
-      .update({ status: nextStatus })
-      .eq('id', item.id);
+      .from('item_statuses')
+      .upsert(
+        { media_item_id: item.id, user_id: userId, status: nextStatus },
+        { onConflict: 'media_item_id,user_id' }
+      );
 
     if (!error) {
       if (willBeConsumed) {
@@ -176,13 +184,23 @@ export function MediaTable({
       {items.map((item, index) => {
         const effectiveStatus = optimisticStatus[item.id] ?? item.status;
         const consumed = optimisticConsumed.has(item.id) || effectiveStatus === 'completed';
-        const statusLabel = getStatusLabel(effectiveStatus, item.type);
+        const statusLabel = getStatusLabel(effectiveStatus);
         const statusClasses = getStatusColor(effectiveStatus);
         const consumedUsers = getConsumedUsers(item, currentUserNickname, consumed, userId);
         const isCurrentUserConsumed = currentUserNickname
           ? consumedUsers.includes(currentUserNickname)
           : consumed;
         const tagChips = getItemTags(item);
+        // Everyone-finished star: every CURRENT member has completed the item
+        // (completion ≡ having a consumption record; the viewer's own state uses
+        // the optimistic value so the star appears/disappears immediately).
+        const completedByAll =
+          memberIds.length > 0 &&
+          memberIds.every((memberId) =>
+            memberId === userId
+              ? consumed
+              : (item.consumption_records ?? []).some((record) => record.user_id === memberId)
+          );
 
         return (
           <Fragment key={item.id}>
@@ -195,6 +213,17 @@ export function MediaTable({
             <div className="space-y-1 min-w-0">
               <div className="flex items-center gap-1.5 min-w-0">
                 <p className="text-stone-100 font-light leading-snug truncate">{item.title}</p>
+                {completedByAll && (
+                  <span
+                    className="shrink-0 inline-flex"
+                    title="Completed by everyone in the group"
+                  >
+                    <Star
+                      className="h-3 w-3 fill-amber-400/90 text-amber-400/90"
+                      aria-label="Completed by everyone in the group"
+                    />
+                  </span>
+                )}
                 {item.external_url && (
                   <a
                     href={item.external_url}
@@ -227,7 +256,7 @@ export function MediaTable({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {getStatusOptions(item.type).map((statusOption) => (
+                    {getStatusOptions().map((statusOption) => (
                       <SelectItem key={statusOption.value} value={statusOption.value}>
                         {statusOption.label}
                       </SelectItem>
@@ -331,6 +360,17 @@ export function MediaTable({
               <div className="min-w-0 space-y-1">
                 <div className="flex items-start gap-1.5">
                   <p className="text-base text-stone-100 leading-snug break-words">{item.title}</p>
+                  {completedByAll && (
+                    <span
+                      className="shrink-0 mt-1 inline-flex"
+                      title="Completed by everyone in the group"
+                    >
+                      <Star
+                        className="h-3.5 w-3.5 fill-amber-400/90 text-amber-400/90"
+                        aria-label="Completed by everyone in the group"
+                      />
+                    </span>
+                  )}
                   {item.external_url && (
                     <a
                       href={item.external_url}
@@ -356,7 +396,7 @@ export function MediaTable({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {getStatusOptions(item.type).map((statusOption) => (
+                      {getStatusOptions().map((statusOption) => (
                         <SelectItem key={`${item.id}-mobile-${statusOption.value}`} value={statusOption.value}>
                           {statusOption.label}
                         </SelectItem>

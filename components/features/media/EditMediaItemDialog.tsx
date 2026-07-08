@@ -90,7 +90,7 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
   const [loading, setLoading] = useState(false);
   const [enriching, setEnriching] = useState(false);
 
-  const statusOptions = useMemo(() => getStatusOptions(item.type), [item.type]);
+  const statusOptions = useMemo(() => getStatusOptions(), []);
 
   function applyWorkMetadata(m: Record<string, unknown>) {
     if (m.release_year != null) setReleaseYear(String(m.release_year));
@@ -199,7 +199,6 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
       .from('media_items')
       .update({
         title: title.trim(),
-        status,
         genre: serializeTags(tags) || null,
         metadata: buildMetadata(item.type),
         external_id: externalId,
@@ -207,7 +206,7 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
         external_url: externalUrl,
       })
       .eq('id', item.id)
-      .select('id, group_id, title, type, status, genre, metadata, added_by, external_id, external_source, external_url, created_at, updated_at')
+      .select('id, group_id, title, type, genre, metadata, added_by, external_id, external_source, external_url, created_at, updated_at')
       .single();
 
     if (updateError) {
@@ -215,6 +214,14 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
       setLoading(false);
       return;
     }
+
+    // Status is per-member: only the editor's own item_statuses row changes.
+    await supabase
+      .from('item_statuses')
+      .upsert(
+        { media_item_id: item.id, user_id: userId, status },
+        { onConflict: 'media_item_id,user_id' }
+      );
 
     if (status === 'completed') {
       await supabase
@@ -232,7 +239,8 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
     }
 
     const merged: MediaItemWithDetails = {
-      ...(data as MediaItemWithDetails),
+      ...(data as Omit<MediaItemWithDetails, 'status'>),
+      status,
       added_by_profile: item.added_by_profile,
       consumption_records: item.consumption_records,
     };
