@@ -16,7 +16,8 @@ import {
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { ExternalLink, MoreHorizontal, Pencil, Star, Trash2 } from 'lucide-react';
+import { BookOpen, Clapperboard, ExternalLink, Gamepad2, MoreHorizontal, Pencil, Trash2, Tv } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { getStatusLabel, getStatusOptions } from '@/types';
 import { getStatusColor, getItemTags } from '@/lib/utils';
 import type { ItemStatus, MediaItem, MediaItemWithDetails, MediaType } from '@/types';
@@ -33,7 +34,7 @@ interface Props {
   userId: string;
   currentUserNickname: string | null;
   /** user_ids of the group's CURRENT members. When every one of them has
-   *  completed an item, the item shows the "everyone finished" star. */
+   *  completed an item, its row gets the "everyone finished" green wash. */
   memberIds?: string[];
   activeTags?: string[];
   onToggleTag?: (tag: string) => void;
@@ -42,6 +43,23 @@ interface Props {
 }
 
 const TAG_DISPLAY_LIMIT = 6;
+
+// One glyph per media type — the label lives in the tooltip / aria-label.
+const TYPE_ICONS: Record<MediaType, LucideIcon> = {
+  movie: Clapperboard,
+  tv_series: Tv,
+  book: BookOpen,
+  video_game: Gamepad2,
+};
+
+function TypeIcon({ type, className }: { type: MediaType; className?: string }) {
+  const Icon = TYPE_ICONS[type] ?? Clapperboard;
+  return (
+    <span title={getTypeLabel(type)} className="inline-flex">
+      <Icon className={className} aria-label={getTypeLabel(type)} />
+    </span>
+  );
+}
 
 export function MediaTable({
   items,
@@ -171,9 +189,11 @@ export function MediaTable({
 
   return (
     <div className="space-y-0 border border-stone-800/50">
-      <div className="hidden md:grid md:grid-cols-[2.2fr_1fr_1fr_1.6fr_1fr_1.4fr_76px] gap-4 px-4 py-4 border-b border-stone-800/60 text-xs font-mono uppercase tracking-wider text-stone-500">
+      <div className="hidden md:grid md:grid-cols-[16px_2.4fr_1fr_1.8fr_1fr_1.4fr_76px] gap-4 px-4 py-4 border-b border-stone-800/60 text-xs font-mono uppercase tracking-wider text-stone-500">
+        <span>
+          <span className="sr-only">Type</span>
+        </span>
         <span>Title</span>
-        <span>Category</span>
         <span>Status</span>
         <span>Tags</span>
         <span>Added By</span>
@@ -191,9 +211,9 @@ export function MediaTable({
           ? consumedUsers.includes(currentUserNickname)
           : consumed;
         const tagChips = getItemTags(item);
-        // Everyone-finished star: every CURRENT member has completed the item
+        // Everyone-finished marker: every CURRENT member has completed the item
         // (completion ≡ having a consumption record; the viewer's own state uses
-        // the optimistic value so the star appears/disappears immediately).
+        // the optimistic value so the marker appears/disappears immediately).
         const completedByAll =
           memberIds.length > 0 &&
           memberIds.every((memberId) =>
@@ -205,25 +225,22 @@ export function MediaTable({
         return (
           <Fragment key={item.id}>
             <motion.div
-              className="hidden md:grid md:grid-cols-[2.2fr_1fr_1fr_1.6fr_1fr_1.4fr_76px] gap-4 px-4 py-4 border-b border-stone-800/50 items-start hover:bg-stone-900/20 transition-colors"
+              className={cn(
+                'hidden md:grid md:grid-cols-[16px_2.4fr_1fr_1.8fr_1fr_1.4fr_76px] gap-4 px-4 py-4 border-b border-stone-800/50 items-start hover:bg-stone-900/20 transition-colors',
+                // Whole-group completion reads as a wash over the row, not a badge.
+                completedByAll && 'bg-gradient-to-br from-emerald-900/25 via-emerald-950/10 via-40% to-transparent'
+              )}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.2, delay: Math.min(0.012 * index, 0.2) }}
             >
+            <div className="pt-0.5 text-stone-400">
+              <TypeIcon type={item.type} className="h-4 w-4" />
+            </div>
+
             <div className="space-y-1 min-w-0">
               <div className="flex items-center gap-1.5 min-w-0">
                 <p className="text-stone-100 font-light leading-snug truncate">{item.title}</p>
-                {completedByAll && (
-                  <span
-                    className="shrink-0 inline-flex"
-                    title="Completed by everyone in the group"
-                  >
-                    <Star
-                      className="h-3 w-3 fill-amber-400/90 text-amber-400/90"
-                      aria-label="Completed by everyone in the group"
-                    />
-                  </span>
-                )}
                 {item.external_url && (
                   <a
                     href={item.external_url}
@@ -243,8 +260,6 @@ export function MediaTable({
                 </p>
               )}
             </div>
-
-            <div className="text-stone-300 text-sm font-light pt-0.5">{getTypeLabel(item.type)}</div>
 
             <div className="shrink-0">
               {isMember ? (
@@ -288,6 +303,13 @@ export function MediaTable({
             <div className="min-w-0 pt-0.5">
               {consumedUsers.length === 0 ? (
                 <span className="text-xs font-mono" style={{ color: 'oklch(0.32 0.005 60)' }}>Nobody</span>
+              ) : completedByAll ? (
+                <span
+                  className="inline-flex items-center gap-1 font-mono text-[10px] px-1.5 py-0.5 border border-emerald-700/50 bg-emerald-900/30 text-emerald-300"
+                  title={consumedUsers.join(', ')}
+                >
+                  Everyone ({consumedUsers.length})
+                </span>
               ) : (
                 <div className="flex flex-wrap gap-1">
                   {consumedUsers.slice(0, 3).map((name) => (
@@ -350,7 +372,10 @@ export function MediaTable({
             </motion.div>
 
             <motion.div
-              className="md:hidden border-b border-stone-800/50 p-4 space-y-3"
+              className={cn(
+                'md:hidden border-b border-stone-800/50 p-4 space-y-3',
+                completedByAll && 'bg-gradient-to-br from-emerald-900/25 via-emerald-950/10 via-40% to-transparent'
+              )}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.2, delay: Math.min(0.012 * index, 0.2) }}
@@ -360,17 +385,6 @@ export function MediaTable({
               <div className="min-w-0 space-y-1">
                 <div className="flex items-start gap-1.5">
                   <p className="text-base text-stone-100 leading-snug break-words">{item.title}</p>
-                  {completedByAll && (
-                    <span
-                      className="shrink-0 mt-1 inline-flex"
-                      title="Completed by everyone in the group"
-                    >
-                      <Star
-                        className="h-3.5 w-3.5 fill-amber-400/90 text-amber-400/90"
-                        aria-label="Completed by everyone in the group"
-                      />
-                    </span>
-                  )}
                   {item.external_url && (
                     <a
                       href={item.external_url}
@@ -383,7 +397,10 @@ export function MediaTable({
                     </a>
                   )}
                 </div>
-                <p className="text-[11px] font-mono text-stone-500">{getTypeLabel(item.type)}</p>
+                <p className="flex items-center gap-1 text-[11px] font-mono text-stone-500">
+                  <TypeIcon type={item.type} className="h-3 w-3" />
+                  {getTypeLabel(item.type)}
+                </p>
                 {item.metadata && (
                   <p className="text-[11px] font-mono text-stone-600"><MetaSummary item={item} /></p>
                 )}
@@ -432,6 +449,10 @@ export function MediaTable({
                 <p className="text-[10px] font-mono uppercase tracking-wider text-stone-600 mb-1">Consumed by</p>
                 {consumedUsers.length === 0 ? (
                   <p className="text-xs font-mono text-stone-600">Nobody yet</p>
+                ) : completedByAll ? (
+                  <span className="inline-flex items-center gap-1 font-mono text-[11px] px-1.5 py-0.5 border border-emerald-700/50 bg-emerald-900/30 text-emerald-300">
+                    Everyone ({consumedUsers.length})
+                  </span>
                 ) : (
                   <div className="flex flex-wrap gap-1">
                     {consumedUsers.slice(0, 4).map((name) => (
