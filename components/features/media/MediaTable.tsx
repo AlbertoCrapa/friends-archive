@@ -22,6 +22,7 @@ import { getStatusLabel, getStatusOptions } from '@/types';
 import { getStatusColor, getItemTags } from '@/lib/utils';
 import type { ItemStatus, MediaItem, MediaItemWithDetails, MediaType } from '@/types';
 import { cn } from '@/lib/utils';
+import { SimpleTooltip, TooltipProvider } from '@/components/ui/tooltip';
 import { CommentsDialog } from './CommentsDialog';
 import { EditMediaItemDialog } from './EditMediaItemDialog';
 
@@ -55,9 +56,11 @@ const TYPE_ICONS: Record<MediaType, LucideIcon> = {
 function TypeIcon({ type, className }: { type: MediaType; className?: string }) {
   const Icon = TYPE_ICONS[type] ?? Clapperboard;
   return (
-    <span title={getTypeLabel(type)} className="inline-flex">
-      <Icon className={className} aria-label={getTypeLabel(type)} />
-    </span>
+    <SimpleTooltip label={getTypeLabel(type)} side="top">
+      <span className="inline-flex">
+        <Icon className={className} aria-label={getTypeLabel(type)} />
+      </span>
+    </SimpleTooltip>
   );
 }
 
@@ -188,6 +191,7 @@ export function MediaTable({
   }
 
   return (
+    <TooltipProvider delayDuration={150}>
     <div className="space-y-0 border border-stone-800/50">
       <div className="hidden md:grid md:grid-cols-[16px_2.4fr_1fr_1.8fr_1fr_1.4fr_76px] gap-4 px-4 py-4 border-b border-stone-800/60 text-xs font-mono uppercase tracking-wider text-stone-500">
         <span>
@@ -228,7 +232,7 @@ export function MediaTable({
               className={cn(
                 'hidden md:grid md:grid-cols-[16px_2.4fr_1fr_1.8fr_1fr_1.4fr_76px] gap-4 px-4 py-4 border-b border-stone-800/50 items-start hover:bg-stone-900/20 transition-colors',
                 // Whole-group completion reads as a wash over the row, not a badge.
-                completedByAll && 'bg-gradient-to-br from-emerald-900/25 via-emerald-950/10 via-40% to-transparent'
+                completedByAll && 'bg-gradient-to-br from-emerald-700/35 via-emerald-900/15 via-40% to-transparent'
               )}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
@@ -374,7 +378,7 @@ export function MediaTable({
             <motion.div
               className={cn(
                 'md:hidden border-b border-stone-800/50 p-4 space-y-3',
-                completedByAll && 'bg-gradient-to-br from-emerald-900/25 via-emerald-950/10 via-40% to-transparent'
+                completedByAll && 'bg-gradient-to-br from-emerald-700/35 via-emerald-900/15 via-40% to-transparent'
               )}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -528,6 +532,7 @@ export function MediaTable({
         />
       ) : null}
     </div>
+    </TooltipProvider>
   );
 }
 
