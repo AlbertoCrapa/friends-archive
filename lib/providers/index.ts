@@ -29,7 +29,7 @@ export async function searchExternal(
   query: string
 ): Promise<ExternalWork[]> {
   const trimmed = query.trim();
-  if (trimmed.length < 2) return [];
+  if (trimmed.length < 1) return [];
 
   switch (type) {
     case 'movie':

@@ -6,7 +6,8 @@
 // The whole app shares ONE free quota per provider (RAWG is only 20k req/MONTH
 // for ALL users combined), so this hook is deliberately stingy:
 //
-//  • DEBOUNCE  — waits until the user stops typing before any call fires.
+//  • DEBOUNCE  — waits until the user stops typing before any call fires; a
+//                single-character query waits even longer.
 //  • COOLDOWN  — enforces a minimum gap between two real network calls.
 //  • CACHE     — identical queries are served from memory, never re-fetched.
 //  • SESSION CAP — each "add/edit item" session can make only N calls; games
@@ -19,8 +20,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ExternalWork, MediaType } from '@/types';
 
-const MIN_QUERY = 2;
+const MIN_QUERY = 1;
 const DEBOUNCE_MS = 1200; // wait after the last keystroke
+// A 1-char query is almost always the user still typing, and it burns a call for
+// a near-useless result set — make it wait noticeably longer before firing.
+const SHORT_QUERY_LENGTH = 2;
+const SHORT_QUERY_DEBOUNCE_MS = 2200;
 const COOLDOWN_MS = 2000; // minimum gap between two real network calls
 
 // Per add/edit-item session (resets each time the dialog opens).
@@ -113,7 +118,9 @@ export function useExternalSearch(
     // larger of the debounce window and the remaining cooldown.
     setIsSearching(true);
     const sinceLast = Date.now() - lastCallAtRef.current;
-    const wait = Math.max(DEBOUNCE_MS, COOLDOWN_MS - sinceLast);
+    const debounce =
+      q.length < SHORT_QUERY_LENGTH ? SHORT_QUERY_DEBOUNCE_MS : DEBOUNCE_MS;
+    const wait = Math.max(debounce, COOLDOWN_MS - sinceLast);
 
     const controller = new AbortController();
     const timer = setTimeout(async () => {

@@ -428,7 +428,7 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
             ) : searching ? (
               <p className="text-[11px] font-mono text-stone-500">Searching…</p>
             ) : (
-              title.trim().length >= 2 &&
+              title.trim().length >= 1 &&
               suggestions.length === 0 && (
                 <p className="text-[11px] font-mono text-stone-500">
                   No matches — fill the details below to add it manually.
