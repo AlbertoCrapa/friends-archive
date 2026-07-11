@@ -92,8 +92,18 @@ export async function Header() {
   return (
     <header className="sticky top-0 z-40 border-b border-stone-800/50 bg-stone-950/80 backdrop-blur-sm">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
-        <Link href="/dashboard" className="font-serif text-base sm:text-lg tracking-[0.18em] text-stone-100 uppercase hover:text-amber-500 transition-colors whitespace-nowrap leading-none">
-          The Friend Archive
+        <Link href="/dashboard" className="font-serif text-base sm:text-lg tracking-[0.18em] text-stone-100 uppercase hover:text-amber-500 transition-colors whitespace-nowrap leading-none shrink-0">
+          {/* Mobile: the wordmark plus nav buttons can overflow, so the brand
+              collapses to the two-friends logo (same mark as the favicon). */}
+          <svg viewBox="0 0 64 64" className="h-8 w-8 sm:hidden" aria-hidden="true">
+            <rect width="64" height="64" rx="13" fill="#0c0a09" />
+            <rect x="0.75" y="0.75" width="62.5" height="62.5" rx="12.25" fill="none" stroke="#2c2926" strokeWidth="1.5" />
+            <circle cx="24" cy="32" r="13.5" fill="none" stroke="#d97706" strokeWidth="4.5" />
+            <circle cx="40" cy="32" r="13.5" fill="none" stroke="#f59e0b" strokeWidth="4.5" />
+            <path d="M35.06 39.74 A13.5 13.5 0 0 1 27.49 45.04" fill="none" stroke="#d97706" strokeWidth="4.5" />
+            <path d="M32 27.75 L36.25 32 L32 36.25 L27.75 32 Z" fill="#fbbf24" />
+          </svg>
+          <span className="sr-only sm:not-sr-only">The Friend Archive</span>
         </Link>
 
         <nav className="flex items-center gap-1 sm:gap-2">

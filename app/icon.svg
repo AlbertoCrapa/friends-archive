@@ -1,11 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <!-- The Friend Archive — archive drawer with diamond handle -->
+  <!-- The Friend Archive — two friends as interlocking rings; the diamond
+       (the original brand mark) sits in the overlap: the archive is the
+       thing they share. Geometry: rings r 13.5 stroke 4.5 at (24,32) and
+       (40,32) — symmetric, 8.25 from each edge. The rings weave: the right
+       ring crosses over at the top, the left ring over at the bottom (the
+       final arc segment repaints it on top). Diamond half-diagonal 4.25
+       leaves air to the arcs on every side. -->
   <rect width="64" height="64" rx="13" fill="#0c0a09"/>
   <rect x="0.75" y="0.75" width="62.5" height="62.5" rx="12.25" fill="none" stroke="#2c2926" stroke-width="1.5"/>
-  <!-- lid, slightly lifted -->
-  <rect x="10" y="12" width="44" height="11" rx="1.5" fill="none" stroke="#d97706" stroke-width="4"/>
-  <!-- box body -->
-  <rect x="14" y="28" width="36" height="23" rx="1.5" fill="none" stroke="#d97706" stroke-width="4"/>
-  <!-- diamond handle, the brand mark -->
-  <path d="M32 34.5 L37 39.5 L32 44.5 L27 39.5 Z" fill="#f59e0b"/>
+  <circle cx="24" cy="32" r="13.5" fill="none" stroke="#d97706" stroke-width="4.5"/>
+  <circle cx="40" cy="32" r="13.5" fill="none" stroke="#f59e0b" stroke-width="4.5"/>
+  <path d="M35.06 39.74 A13.5 13.5 0 0 1 27.49 45.04" fill="none" stroke="#d97706" stroke-width="4.5"/>
+  <path d="M32 27.75 L36.25 32 L32 36.25 L27.75 32 Z" fill="#fbbf24"/>
 </svg>
