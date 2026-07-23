@@ -60,7 +60,7 @@ export function RegisterForm() {
     });
 
     if (authError) {
-      setError(mapRegisterError(authError.message));
+      setError(mapRegisterError(authError));
       setLoading(false);
       return;
     }
@@ -139,8 +139,20 @@ export function RegisterForm() {
   );
 }
 
-function mapRegisterError(message: string): string {
-  const normalized = message.toLowerCase();
+function mapRegisterError(error: { message: string; status?: number }): string {
+  const normalized = error.message.toLowerCase();
+
+  // Blocked by the signup email allowlist (the "Before User Created" hook
+  // returns http_code 403 with an "invite list" message). Check both the
+  // status and the text so a wrapped message still resolves to this case.
+  if (
+    error.status === 403 ||
+    normalized.includes('invite list') ||
+    normalized.includes('not on the') ||
+    normalized.includes('not authorized')
+  ) {
+    return 'This email is not authorized to register. Please ask an admin to add you to the invite list, then try again.';
+  }
   if (normalized.includes('already registered')) {
     return 'An account with this email already exists. Try signing in instead.';
   }

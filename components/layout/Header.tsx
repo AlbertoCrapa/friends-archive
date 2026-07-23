@@ -6,7 +6,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -120,13 +119,9 @@ export async function Header() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuLabel>
-                  <span className="text-stone-400">{nickname}</span>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
                 {nickname && (
                   <DropdownMenuItem asChild>
-                    <Link href={`/profile/${nickname}`} className="flex items-center gap-2">
+                    <Link href={`/profile/${nickname}`} className="flex items-center gap-2 cursor-pointer">
                       <User className="h-3 w-3" />
                       Profile
                     </Link>

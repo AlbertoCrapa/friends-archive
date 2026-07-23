@@ -40,6 +40,28 @@ const MAX_CALLS_PER_SESSION: Record<MediaType, number> = {
 const RAWG_TAB_SESSION_CAP = 50;
 let rawgTabSessionCalls = 0;
 
+// Browser-session-wide ceiling across ALL providers and dialogs. Unlike the
+// module-level counters above (which reset on any page reload), this lives in
+// sessionStorage: it survives reloads and navigation within the same browser
+// session, but is wiped when the browser/tab is closed and reopened.
+const MAX_SEARCHES_PER_BROWSER_SESSION = 100;
+const BROWSER_SESSION_KEY = 'externalSearch:browserSessionCalls';
+
+function getBrowserSessionCalls(): number {
+  if (typeof window === 'undefined') return 0;
+  const raw = window.sessionStorage.getItem(BROWSER_SESSION_KEY);
+  const n = raw ? parseInt(raw, 10) : 0;
+  return Number.isFinite(n) ? n : 0;
+}
+
+function incrementBrowserSessionCalls(): void {
+  if (typeof window === 'undefined') return;
+  window.sessionStorage.setItem(
+    BROWSER_SESSION_KEY,
+    String(getBrowserSessionCalls() + 1),
+  );
+}
+
 // In-memory cache shared across the tab. Key: `${type}:${query}`.
 const responseCache = new Map<string, ExternalWork[]>();
 
@@ -108,7 +130,8 @@ export function useExternalSearch(
     // Quota gate — refuse to call past the caps.
     const sessionCapHit = callsMadeRef.current >= MAX_CALLS_PER_SESSION[type];
     const rawgCapHit = type === 'video_game' && rawgTabSessionCalls >= RAWG_TAB_SESSION_CAP;
-    if (sessionCapHit || rawgCapHit) {
+    const browserCapHit = getBrowserSessionCalls() >= MAX_SEARCHES_PER_BROWSER_SESSION;
+    if (sessionCapHit || rawgCapHit || browserCapHit) {
       setLimitReached(true);
       setIsSearching(false);
       return;
@@ -128,6 +151,7 @@ export function useExternalSearch(
       callsMadeRef.current += 1;
       setCallsMade(callsMadeRef.current);
       if (type === 'video_game') rawgTabSessionCalls += 1;
+      incrementBrowserSessionCalls();
 
       try {
         const res = await fetch(

@@ -22,6 +22,9 @@ This document is the complete, authoritative guide to configuring Supabase for T
 9. [Migration — Comments](#9-migration--comments)
 10. [Migration — Tags](#10-migration--tags)
 11. [Migration — Per-Member Item Status](#11-migration--per-member-item-status)
+12. [Migration — RLS Hardening](#12-migration--rls-hardening)
+13. [Migration — Signup Email Allowlist](#13-migration--signup-email-allowlist)
+14. [Migration — Item-Delete Notifications](#14-migration--item-delete-notifications)
 
 ---
 
@@ -992,27 +995,29 @@ CREATE POLICY "Members see group_members for their groups; anyone sees public gr
 --   2. approve_join_request() — inserts the requester when the owner approves.
 -- Both are SECURITY DEFINER and bypass RLS. Self-joining is impossible.
 
--- A group owner can update member roles within their group.
+-- A group owner can update member roles within THEIR group.
+-- NOTE: the group ownership check is passed as a FUNCTION ARGUMENT
+-- (`is_group_owner(group_id, ...)`) rather than a bare `group_id` inside a
+-- subquery over group_members. A bare `group_id` there would bind to the
+-- subquery's own gm.group_id (name shadowing) and degrade the check to
+-- "owner of ANY group". See §12 — RLS Hardening.
 CREATE POLICY "Group owner can update member roles"
   ON public.group_members FOR UPDATE
   TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.group_members gm
-      WHERE gm.group_id = group_id AND gm.user_id = auth.uid() AND gm.role = 'owner'
-    )
-  );
+  USING      (public.is_group_owner(group_id, auth.uid()))
+  WITH CHECK (public.is_group_owner(group_id, auth.uid()));
 
--- A group owner can remove members. A user can also remove themselves (leave group).
+-- Removals:
+--   * a NON-OWNER member removes their own row (leave the group)
+--   * the owner removes SOMEONE ELSE (never themselves — an owner who wants out
+--     deletes the whole group; leaving would orphan it). This mirrors the UI,
+--     which shows owners "Delete group" and members "Leave".
 CREATE POLICY "Owner can remove members; users can leave"
   ON public.group_members FOR DELETE
   TO authenticated
   USING (
-    user_id = auth.uid()
-    OR EXISTS (
-      SELECT 1 FROM public.group_members gm
-      WHERE gm.group_id = group_id AND gm.user_id = auth.uid() AND gm.role = 'owner'
-    )
+    (user_id = auth.uid() AND NOT public.is_group_owner(group_id, auth.uid()))
+    OR (public.is_group_owner(group_id, auth.uid()) AND user_id <> auth.uid())
   );
 ```
 
@@ -1040,53 +1045,41 @@ CREATE POLICY "Members see their group items; non-members see public group items
     )
   );
 
--- Only group members (any role) can add items.
--- added_by is set to the current user's ID automatically.
+-- Only members of THIS group (any role) can add items, and only as themselves.
+-- The membership check goes through is_group_member(group_id, ...) — passing
+-- group_id as a FUNCTION ARGUMENT so the bare column binds to the NEW row, not
+-- to a shadowing gm.group_id inside a subquery. See §12 — RLS Hardening.
 CREATE POLICY "Group members can add items"
   ON public.media_items FOR INSERT
   TO authenticated
   WITH CHECK (
     added_by = auth.uid()
-    AND EXISTS (
-      SELECT 1 FROM public.group_members gm
-      WHERE gm.group_id = group_id AND gm.user_id = auth.uid()
-    )
+    AND public.is_group_member(group_id, auth.uid())
   );
 
--- Group members can update item metadata, title, genre — but NOT added_by.
--- (Status is NOT here: it is per-member and lives in item_statuses.)
--- The added_by column is protected by a separate check below.
+-- Any member of THIS group can update item metadata, title, genre — but NOT
+-- added_by. (Status is NOT here: it is per-member and lives in item_statuses.)
 CREATE POLICY "Group members can update items"
   ON public.media_items FOR UPDATE
   TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.group_members gm
-      WHERE gm.group_id = group_id AND gm.user_id = auth.uid()
-    )
-  )
+  USING (public.is_group_member(group_id, auth.uid()))
   WITH CHECK (
-    -- Enforce added_by immutability: the new value must equal the old value.
-    -- This prevents any UPDATE from changing who originally added the item,
-    -- even if the request comes directly through the PostgREST API.
-    added_by = (SELECT added_by FROM public.media_items WHERE id = media_items.id)
-    AND EXISTS (
-      SELECT 1 FROM public.group_members gm
-      WHERE gm.group_id = group_id AND gm.user_id = auth.uid()
-    )
+    public.is_group_member(group_id, auth.uid())
+    -- Enforce added_by immutability: NEW.added_by must equal OLD.added_by.
+    -- The subquery is ALIASED (m) so `media_items.id` resolves to the row being
+    -- written and the read returns the OLD added_by from the statement snapshot.
+    -- (Writing it unaliased as `... WHERE id = media_items.id` self-references
+    -- the inner scan and does NOT compare against the old value.)
+    AND added_by = (SELECT m.added_by FROM public.media_items m WHERE m.id = media_items.id)
   );
 
--- The item creator or the group owner can delete an item.
-CREATE POLICY "Item creator or group owner can delete items"
+-- ANY member of THIS group can delete a shared item. The other members are
+-- told via a notification (see §14 — Item-Delete Notifications). Non-members
+-- and public-group viewers stay blocked (no membership row).
+CREATE POLICY "Group members can delete items"
   ON public.media_items FOR DELETE
   TO authenticated
-  USING (
-    added_by = auth.uid()
-    OR EXISTS (
-      SELECT 1 FROM public.group_members gm
-      WHERE gm.group_id = group_id AND gm.user_id = auth.uid() AND gm.role = 'owner'
-    )
-  );
+  USING (public.is_group_member(group_id, auth.uid()));
 ```
 
 **Expected result:** `Success. No rows returned` — four policies appear under **Authentication → Policies → media_items**.
@@ -1296,6 +1289,13 @@ All steps are now complete. Proceed to [Section 4 — Auth Configuration](#4-aut
 1. Go to **Authentication → Settings → Password and security**.
 2. Enable **Check for leaked passwords** — this checks passwords against HaveIBeenPwned.org on signup and login.
 3. Set **Minimum password length** to at least `8`.
+
+### Restricting who can sign up (email allowlist)
+
+By default anyone with any email can create an account. To gate registration to a
+pre-approved list of emails, run [Migration 13 — Signup Email Allowlist](#13-migration--signup-email-allowlist)
+and enable its **Before User Created** hook. This is enforced inside the database,
+so it cannot be bypassed by calling the API directly.
 
 ### Redirect URLs
 
@@ -1907,3 +1907,309 @@ every surface (filter pills, dropdowns, badges): **Planned / In progress /
 Completed** (`getStatusLabel()` in `types/index.ts`). The "everyone completed"
 star on an item row is derived in the UI: it appears when every **current**
 group member has completed the item.
+
+---
+
+## 12. Migration — RLS Hardening
+
+If your database was created **before 2026-07-23**, run this migration. It is a
+**security fix** with no data change. Fresh setups that followed the corrected
+policies in [Step 5d](#5d--group_members-policies) and
+[Step 5e](#5e--media_items-policies) above already include everything here —
+skip this section. The full ready-to-paste script also lives at
+`docs/migrations/2026-07-23_rls_hardening.sql`.
+
+### What was wrong
+
+Five write policies correlated a group-membership check with the **bare column
+name** `group_id`, inside a subquery that also selects from a table containing a
+`group_id` column:
+
+```sql
+EXISTS (SELECT 1 FROM public.group_members gm
+        WHERE gm.group_id = group_id          -- the bug
+          AND gm.user_id = auth.uid() ...)
+```
+
+PostgreSQL resolves the unqualified `group_id` against the **innermost** scope
+first. Because `gm` (group_members) has a `group_id` column, the bare `group_id`
+binds to `gm.group_id`, **not** to the outer row being written. The predicate
+becomes `gm.group_id = gm.group_id` — always true — so the whole `EXISTS`
+degrades from _"is the caller a member/owner of **this** group"_ to _"is the
+caller a member/owner of **any** group at all"_.
+
+The app UI never triggers this (it always sends the correct `group_id`), which
+is why it went unnoticed — but a direct PostgREST/API call could exploit it:
+
+| Policy                              | Broken behaviour (before)                                                             |
+| ----------------------------------- | ------------------------------------------------------------------------------------- |
+| `media_items` INSERT                | a member of **any** group could insert an item into a group they do **not** belong to |
+| `media_items` UPDATE                | a member of **any** group could edit items in a group they do **not** belong to; `added_by` immutability was also broken |
+| `media_items` DELETE                | an owner of **any** group could delete items in a group they do **not** own (incl. a public group they only view) |
+| `group_members` UPDATE / DELETE     | an owner of **any** group could change roles / kick members in a group they do **not** own |
+
+### The fix
+
+Every check is rewritten to use the `SECURITY DEFINER` helpers
+`is_group_member(group_id, uid)` / `is_group_owner(group_id, uid)`. Passing
+`group_id` as a **function argument** (at the top level of the policy, not inside
+a `FROM group_members` subquery) makes the bare column bind to the target row,
+eliminating the shadowing. Two intentional tightenings match the frontend
+exactly: `added_by` stays immutable on UPDATE (fixed with an alias so it compares
+NEW vs OLD), and a group **owner can no longer delete their own membership row**
+(they delete the group instead; the UI never offers an owner "Leave").
+
+```sql
+-- 1. group_members — role updates: only the owner of THIS group
+DROP POLICY IF EXISTS "Group owner can update member roles" ON public.group_members;
+CREATE POLICY "Group owner can update member roles"
+  ON public.group_members FOR UPDATE
+  TO authenticated
+  USING      (public.is_group_owner(group_id, auth.uid()))
+  WITH CHECK (public.is_group_owner(group_id, auth.uid()));
+
+-- 2. group_members — removals: a non-owner leaves; the owner removes someone else
+DROP POLICY IF EXISTS "Owner can remove members; users can leave" ON public.group_members;
+CREATE POLICY "Owner can remove members; users can leave"
+  ON public.group_members FOR DELETE
+  TO authenticated
+  USING (
+    (user_id = auth.uid() AND NOT public.is_group_owner(group_id, auth.uid()))
+    OR (public.is_group_owner(group_id, auth.uid()) AND user_id <> auth.uid())
+  );
+
+-- 3. media_items — INSERT: only a member of THIS group, only as themselves
+DROP POLICY IF EXISTS "Group members can add items" ON public.media_items;
+CREATE POLICY "Group members can add items"
+  ON public.media_items FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    added_by = auth.uid()
+    AND public.is_group_member(group_id, auth.uid())
+  );
+
+-- 4. media_items — UPDATE: any member of THIS group; added_by immutable
+DROP POLICY IF EXISTS "Group members can update items" ON public.media_items;
+CREATE POLICY "Group members can update items"
+  ON public.media_items FOR UPDATE
+  TO authenticated
+  USING (public.is_group_member(group_id, auth.uid()))
+  WITH CHECK (
+    public.is_group_member(group_id, auth.uid())
+    AND added_by = (SELECT m.added_by FROM public.media_items m WHERE m.id = media_items.id)
+  );
+
+-- 5. media_items — DELETE: ANY member of THIS group (others get a notification)
+DROP POLICY IF EXISTS "Item creator or group owner can delete items" ON public.media_items;
+DROP POLICY IF EXISTS "Group members can delete items" ON public.media_items;
+CREATE POLICY "Group members can delete items"
+  ON public.media_items FOR DELETE
+  TO authenticated
+  USING (public.is_group_member(group_id, auth.uid()));
+```
+
+> The DELETE rule was also **loosened** on 2026-07-23: previously the item's
+> creator or the group owner; now **any member** of the group may delete a shared
+> item, and the other members are notified (see [§14](#14-migration--item-delete-notifications)).
+
+**Expected result:** `Success. No rows returned`. Verify with:
+
+```sql
+SELECT tablename, policyname, cmd
+  FROM pg_policies
+  WHERE schemaname = 'public'
+    AND tablename IN ('group_members', 'media_items')
+  ORDER BY tablename, cmd, policyname;
+```
+
+---
+
+## 13. Migration — Signup Email Allowlist
+
+Optional hardening that gates account creation to a pre-approved list of email
+addresses. Registration is otherwise fully open — `RegisterForm.tsx` calls
+`supabase.auth.signUp()` in the browser with the public anon key, so any email
+can register, and a browser-only check would be trivially bypassable via the API.
+This migration enforces the allowlist **inside the database** using the
+[Before User Created](https://supabase.com/docs/guides/auth/auth-hooks/before-user-created-hook)
+auth hook, which Supabase runs before it writes any `auth.users` row. The full
+ready-to-paste script also lives at `docs/migrations/2026-07-23_signup_allowlist.sql`.
+
+### How it works
+
+Supabase calls `hook_restrict_signup_to_allowlist(event)` before creating each
+user. The function returns `'{}'` to allow the signup or an `{ error }` object to
+deny it, after checking the (lowercased) signup email against `public.allowed_emails`.
+Because it runs **before** user creation, a disallowed email is rejected
+immediately: no `auth.users` / `profiles` / `subscriptions` rows are created and
+no confirmation email is sent. `RegisterForm.tsx` maps the rejection to a friendly
+"not on the invite list" message.
+
+### Step 1 — Run the SQL
+
+```sql
+-- 1. The allowlist table
+CREATE TABLE IF NOT EXISTS public.allowed_emails (
+  email      TEXT PRIMARY KEY,            -- store lowercased
+  note       TEXT,                        -- optional: whose email
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- No client access. RLS on + zero policies => anon/authenticated cannot read or
+-- write it. The signup hook reads it via a SECURITY DEFINER function; the
+-- dashboard Table Editor (service role) can still manage rows.
+ALTER TABLE public.allowed_emails ENABLE ROW LEVEL SECURITY;
+
+-- 2. The Before-User-Created hook function
+CREATE OR REPLACE FUNCTION public.hook_restrict_signup_to_allowlist(event jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_email text;
+BEGIN
+  v_email := lower(event -> 'user' ->> 'email');
+
+  IF v_email IS NOT NULL AND EXISTS (
+    SELECT 1 FROM public.allowed_emails WHERE email = v_email
+  ) THEN
+    RETURN '{}'::jsonb;                   -- allow
+  END IF;
+
+  RETURN jsonb_build_object(              -- deny
+    'error', jsonb_build_object(
+      'http_code', 403,
+      'message', 'This email is not on the invite list. Ask an admin to add you.'
+    )
+  );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.hook_restrict_signup_to_allowlist(jsonb) TO supabase_auth_admin;
+REVOKE EXECUTE ON FUNCTION public.hook_restrict_signup_to_allowlist(jsonb) FROM authenticated, anon, public;
+
+-- 3. Seed the allowlist (EDIT THESE — use lowercase)
+INSERT INTO public.allowed_emails (email, note) VALUES
+  ('you@example.com',   'me'),
+  ('friend1@gmail.com', 'friend one')
+ON CONFLICT (email) DO NOTHING;
+```
+
+**Expected result:** `Success. No rows returned`.
+
+### Step 2 — Enable the hook (Dashboard)
+
+1. Go to **Authentication → Hooks → "Before User Created"**.
+2. **Enable** the hook.
+3. Type = **Postgres**, Schema = **public**, Function = **`hook_restrict_signup_to_allowlist`**.
+4. **Save**.
+
+### Managing the list
+
+- **Table Editor → `allowed_emails`** → add/remove rows (email must be lowercase), or
+- **SQL Editor:**
+  ```sql
+  INSERT INTO public.allowed_emails (email, note)
+    VALUES ('newfriend@gmail.com', 'someone') ON CONFLICT DO NOTHING;
+  DELETE FROM public.allowed_emails WHERE email = 'someone@gmail.com';
+  ```
+
+The allowlist blocks **new** registrations only; it does not affect anyone who
+already has an account, nor login.
+
+---
+
+## 14. Migration — Item-Delete Notifications
+
+Paired with the [RLS Hardening](#12-migration--rls-hardening) change that lets
+**any group member** delete a shared item: when a member deletes an item, the
+**other** members are told. Join-request notifications are *derived* (the request
+row still exists — DATA_MODEL §6.6), but a deleted item leaves nothing to query,
+so this is the app's one **stored** notification channel. The full ready-to-paste
+script lives at `docs/migrations/2026-07-23_item_delete_notifications.sql`.
+
+### What it adds
+
+- A `public.notifications` table (one row per recipient), written **only** by a
+  `SECURITY DEFINER` trigger — nobody can forge a notification via the API.
+- RLS so a user reads, marks-read, and dismisses **only their own** rows.
+- A `BEFORE DELETE` trigger on `media_items` that inserts one `item_deleted`
+  notification for every **other** current member of the group (never the
+  deleter). The item's title/type and the group name are copied into `payload`
+  so the notification still renders after the item is gone.
+
+```sql
+-- 1. Table
+CREATE TABLE IF NOT EXISTS public.notifications (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,  -- recipient
+  group_id    UUID REFERENCES public.groups(id)   ON DELETE CASCADE,
+  actor_id    UUID REFERENCES public.profiles(id) ON DELETE SET NULL,          -- who acted
+  type        TEXT NOT NULL,
+  payload     JSONB NOT NULL DEFAULT '{}',
+  read_at     TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT notification_type_valid CHECK (type IN ('item_deleted'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user_unread
+  ON public.notifications (user_id, created_at DESC) WHERE read_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_notifications_user
+  ON public.notifications (user_id, created_at DESC);
+
+-- 2. RLS — recipients manage only their own rows; NO insert policy (trigger only)
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users read their own notifications"
+  ON public.notifications FOR SELECT TO authenticated
+  USING (user_id = auth.uid());
+
+CREATE POLICY "Users update their own notifications"
+  ON public.notifications FOR UPDATE TO authenticated
+  USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+
+CREATE POLICY "Users delete their own notifications"
+  ON public.notifications FOR DELETE TO authenticated
+  USING (user_id = auth.uid());
+
+GRANT SELECT, UPDATE, DELETE ON public.notifications TO authenticated;
+
+-- 3. Trigger: notify the OTHER members on delete
+CREATE OR REPLACE FUNCTION public.notify_item_deleted()
+RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_actor      UUID := auth.uid();
+  v_group_name TEXT;
+BEGIN
+  SELECT name INTO v_group_name FROM public.groups WHERE id = OLD.group_id;
+  INSERT INTO public.notifications (user_id, group_id, actor_id, type, payload)
+  SELECT gm.user_id, OLD.group_id, v_actor, 'item_deleted',
+         jsonb_build_object('item_title', OLD.title, 'item_type', OLD.type, 'group_name', v_group_name)
+  FROM public.group_members gm
+  WHERE gm.group_id = OLD.group_id
+    AND gm.user_id IS DISTINCT FROM v_actor;   -- never notify the deleter
+  RETURN OLD;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_notify_item_deleted ON public.media_items;
+CREATE TRIGGER trg_notify_item_deleted
+  BEFORE DELETE ON public.media_items
+  FOR EACH ROW EXECUTE FUNCTION public.notify_item_deleted();
+
+REVOKE EXECUTE ON FUNCTION public.notify_item_deleted() FROM anon, authenticated;
+```
+
+**Expected result:** `Success. No rows returned`.
+
+**Frontend follow-up (not SQL):** a bell/list that reads `notifications` for
+`auth.uid()`, shows the unread count (`read_at IS NULL`), and stamps `read_at`
+when opened — the same derived-vs-stored bell pattern already used for join
+requests, but backed by this table. Deleting a whole group cascades its
+`media_items` (and any rows this trigger writes) away, so group deletion produces
+no "item deleted" spam.

@@ -659,12 +659,12 @@ The exact RLS `WITH CHECK` clause is:
 
 ```sql
 WITH CHECK (
-  added_by = (SELECT added_by FROM public.media_items WHERE id = media_items.id)
-  AND EXISTS ( ... member check ... )
+  public.is_group_member(group_id, auth.uid())
+  AND added_by = (SELECT m.added_by FROM public.media_items m WHERE m.id = media_items.id)
 )
 ```
 
-This compares the proposed `added_by` value against the existing value in the database — they must be equal for the update to succeed. Service role operations can bypass this if truly needed for administrative purposes.
+This compares the proposed `added_by` value against the existing value in the database — they must be equal for the update to succeed. The subquery **must be aliased** (`m`): the target table is referenced unaliased inside the policy, so `media_items.id` resolves to the row being written, while `m` scans the current (pre-update) snapshot to fetch the OLD `added_by`. Writing it as `SELECT added_by FROM public.media_items WHERE id = media_items.id` self-references the inner scan (`id = id`, always true) and does **not** compare against the old value — that was the pre-2026-07-23 bug fixed in [SUPABASE_SETUP.md §12](SUPABASE_SETUP.md#12-migration--rls-hardening). Service role operations bypass RLS entirely and can still rewrite `added_by` for administrative purposes.
 
 ---
 
@@ -825,16 +825,18 @@ For each table and operation, this matrix shows what is permitted for each actor
 
 ### `group_members`
 
-| Operation              | Anon | Auth / Non-member | Member       | Owner        | Service role |
-| ---------------------- | ---- | ----------------- | ------------ | ------------ | ------------ |
-| SELECT (public group)  | ✗    | ✅                | ✅           | ✅           | ✅           |
-| SELECT (private group) | ✗    | ✗                 | ✅           | ✅           | ✅           |
-| INSERT                 | ✗    | ✗ (RPC only)      | ✗ (RPC only) | ✗ (RPC only) | ✅           |
-| UPDATE (roles)         | ✗    | ✗                 | ✗            | ✅           | ✅           |
-| DELETE (self-leave)    | ✗    | —                 | ✅ (own row) | ✅ (own row) | ✅           |
-| DELETE (remove member) | ✗    | ✗                 | ✗            | ✅           | ✅           |
+| Operation              | Anon | Auth / Non-member | Member       | Owner              | Service role |
+| ---------------------- | ---- | ----------------- | ------------ | ------------------ | ------------ |
+| SELECT (public group)  | ✗    | ✅                | ✅           | ✅                 | ✅           |
+| SELECT (private group) | ✗    | ✗                 | ✅           | ✅                 | ✅           |
+| INSERT                 | ✗    | ✗ (RPC only)      | ✗ (RPC only) | ✗ (RPC only)       | ✅           |
+| UPDATE (roles)         | ✗    | ✗                 | ✗            | ✅ (own group)     | ✅           |
+| DELETE (self-leave)    | ✗    | —                 | ✅ (own row) | ✗ (delete group instead) | ✅     |
+| DELETE (remove member) | ✗    | ✗                 | ✗            | ✅ (others only)   | ✅           |
 
 > There is **no INSERT policy** on `group_members`. Rows are created only by the `handle_new_group()` trigger (owner on creation) and the `approve_join_request()` function (approved requester) — both `SECURITY DEFINER`.
+>
+> The owner/self checks use the `is_group_owner(group_id, …)` helper so they scope to **this** group. A group owner **cannot** delete their own membership row (it would orphan the group) — the UI offers owners "Delete group", never "Leave". See [SUPABASE_SETUP.md §12](SUPABASE_SETUP.md#12-migration--rls-hardening).
 
 ### `group_join_requests`
 
@@ -854,7 +856,11 @@ For each table and operation, this matrix shows what is permitted for each actor
 | INSERT                  | ✗    | ✗                 | ✅     | ✅    | ✅           | ✅           |
 | UPDATE (excl. added_by) | ✗    | ✗                 | ✅     | ✅    | ✅           | ✅           |
 | UPDATE (added_by)       | ✗    | ✗                 | ✗      | ✗     | ✗            | ✅           |
-| DELETE                  | ✗    | ✗                 | ✗      | ✅    | ✅           | ✅           |
+| DELETE                  | ✗    | ✗                 | ✅     | ✅    | ✅           | ✅           |
+
+> INSERT/UPDATE/DELETE scope to **this** group via `is_group_member(group_id, …)` / `is_group_owner(group_id, …)`. "Member" and "Owner" columns mean a member/owner **of the item's group** — a member or owner of some _other_ group has no rights here. See [SUPABASE_SETUP.md §12](SUPABASE_SETUP.md#12-migration--rls-hardening).
+>
+> **DELETE (2026-07-23):** any **member** of the group may delete a shared item — not only its creator or the owner. Each delete notifies the other members via the `notifications` table (a `BEFORE DELETE` trigger); see [SUPABASE_SETUP.md §14](SUPABASE_SETUP.md#14-migration--item-delete-notifications). `added_by` is still immutable on UPDATE.
 
 ### `consumption_records`
 
@@ -893,6 +899,19 @@ For each table and operation, this matrix shows what is permitted for each actor
 | DELETE                 | ✗    | ✗                 | ✅ (own only) | ✅ (any in group) | ✅ (own)   | ✅           |
 
 > `author_id` is set to `auth.uid()` on insert and cannot be reassigned on update (the UPDATE `WITH CHECK` requires `author_id = auth.uid()`). Delete is allowed for the comment's author or the group owner (moderation).
+
+### `notifications`
+
+- **Recipient** — Authenticated user whose `user_id` is on the specific `notifications` row.
+
+| Operation | Anon | Auth / Non-recipient | Recipient     | Service role |
+| --------- | ---- | -------------------- | ------------- | ------------ |
+| SELECT    | ✗    | ✗                    | ✅ (own only) | ✅           |
+| INSERT    | ✗    | ✗ (trigger only)     | ✗ (trigger only) | ✅        |
+| UPDATE    | ✗    | ✗                    | ✅ (own only, mark read) | ✅ |
+| DELETE    | ✗    | ✗                    | ✅ (own only, dismiss)   | ✅ |
+
+> Stored notifications (currently only `item_deleted`). There is **no INSERT policy** — rows are written solely by the `notify_item_deleted()` `SECURITY DEFINER` trigger when a member deletes a shared item, so notifications cannot be forged. Recipients read/mark-read/dismiss only their own. See [SUPABASE_SETUP.md §14](SUPABASE_SETUP.md#14-migration--item-delete-notifications).
 
 ---
 
