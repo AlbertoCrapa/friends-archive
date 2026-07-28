@@ -28,7 +28,15 @@ import { TagInput } from '@/components/ui/tag-input';
 import { Plus, Link2, Search, X } from 'lucide-react';
 import type { ExternalWork, MediaType, ItemStatus, MediaItem } from '@/types';
 import { getStatusOptions } from '@/types';
-import { parseTags, serializeTags } from '@/lib/utils';
+import {
+  parsePeople,
+  parseTags,
+  peopleFields,
+  peopleValue,
+  personLinksFrom,
+  serializeTags,
+} from '@/lib/utils';
+import type { PersonKey } from '@/lib/utils';
 
 interface Props {
   groupId: string;
@@ -67,9 +75,11 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
   const [platform, setPlatform] = useState('');
   const [tags, setTags] = useState<string[]>([]);
 
-  // Person/company links (director_url, author_url, …) captured from the enrich
-  // call — not form fields, so they're tracked separately and merged on save.
-  const [metaLinks, setMetaLinks] = useState<Record<string, string>>({});
+  // Person/company pages captured from the enrich call, keyed by lowercased
+  // name — not form fields, so they're tracked separately and re-attached on
+  // save. Keyed by NAME (not position) so editing a name away simply drops its
+  // link instead of leaving it pointing at somebody else.
+  const [personLinks, setPersonLinks] = useState<Record<string, string>>({});
 
   // External identification layer
   const [externalId, setExternalId] = useState<string | null>(null);
@@ -99,10 +109,8 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
     setExternalSource(null);
     setExternalUrl(null);
     setExternalTitle(null);
-    setMetaLinks({});
+    setPersonLinks({});
   }
-
-  const URL_KEYS = ['director_url', 'creator_url', 'author_url', 'developer_url'] as const;
 
   function applyMetadata(metadata: Record<string, unknown>) {
     const m = metadata;
@@ -113,19 +121,15 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
           ? String(m.publication_year)
           : ''
     );
-    setDirector(typeof m.director === 'string' ? m.director : '');
-    setCreator(typeof m.creator === 'string' ? m.creator : '');
-    setAuthor(typeof m.author === 'string' ? m.author : '');
-    setDeveloper(typeof m.developer === 'string' ? m.developer : '');
+    // People fields hold every credited name, comma-separated.
+    setDirector(peopleValue(m, 'director'));
+    setCreator(peopleValue(m, 'creator'));
+    setAuthor(peopleValue(m, 'author'));
+    setDeveloper(peopleValue(m, 'developer'));
     setSeasons(m.seasons != null ? String(m.seasons) : '');
     setDurationMinutes(m.duration_minutes != null ? String(m.duration_minutes) : '');
     setPlatform(typeof m.platform === 'string' ? m.platform : '');
-
-    const links: Record<string, string> = {};
-    for (const k of URL_KEYS) {
-      if (typeof m[k] === 'string') links[k] = m[k] as string;
-    }
-    setMetaLinks(links);
+    setPersonLinks(personLinksFrom(m));
   }
 
   async function selectWork(work: ExternalWork) {
@@ -171,38 +175,35 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
     }
   }
 
+  /** Names + their known pages for one credit role, ready to store. */
+  function credits(key: PersonKey, field: string): Record<string, unknown> {
+    return peopleFields(key, parsePeople(field), (name) => personLinks[name.toLowerCase()]);
+  }
+
   function buildMetadata(): Record<string, unknown> {
     const year = releaseYear ? parseInt(releaseYear, 10) : undefined;
-    // Only keep the link relevant to this type, and only if the matching name is
-    // still present (so editing the name away doesn't leave a dangling link).
-    const linkFor = (nameField: string, key: string) =>
-      nameField && metaLinks[key] ? { [key]: metaLinks[key] } : {};
     switch (type) {
       case 'movie':
         return {
-          ...(director ? { director } : {}),
-          ...linkFor(director, 'director_url'),
+          ...credits('director', director),
           ...(year ? { release_year: year } : {}),
           ...(durationMinutes ? { duration_minutes: parseInt(durationMinutes, 10) } : {}),
         };
       case 'tv_series':
         return {
-          ...(creator ? { creator } : {}),
-          ...linkFor(creator, 'creator_url'),
+          ...credits('creator', creator),
           ...(year ? { release_year: year } : {}),
           ...(seasons ? { seasons: parseInt(seasons, 10) } : {}),
           ...(platform ? { platform } : {}),
         };
       case 'book':
         return {
-          ...(author ? { author } : {}),
-          ...linkFor(author, 'author_url'),
+          ...credits('author', author),
           ...(year ? { publication_year: year } : {}),
         };
       case 'video_game':
         return {
-          ...(developer ? { developer } : {}),
-          ...linkFor(developer, 'developer_url'),
+          ...credits('developer', developer),
           ...(year ? { release_year: year } : {}),
         };
       default:
@@ -469,8 +470,8 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
           {type === 'movie' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label htmlFor="director">Director</Label>
-                <Input id="director" value={director} onChange={(e) => setDirector(e.target.value)} placeholder="optional" />
+                <Label htmlFor="director">Director(s)</Label>
+                <Input id="director" value={director} onChange={(e) => setDirector(e.target.value)} placeholder="comma-separated" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="year">Year</Label>
@@ -482,8 +483,8 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
           {type === 'tv_series' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label htmlFor="creator">Creator</Label>
-                <Input id="creator" value={creator} onChange={(e) => setCreator(e.target.value)} placeholder="optional" />
+                <Label htmlFor="creator">Creator(s)</Label>
+                <Input id="creator" value={creator} onChange={(e) => setCreator(e.target.value)} placeholder="comma-separated" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="year">Year</Label>
@@ -503,8 +504,8 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
           {type === 'book' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="author">Author</Label>
-                <Input id="author" value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="optional" />
+                <Label htmlFor="author">Author(s)</Label>
+                <Input id="author" value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="comma-separated for several authors" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="year">Year</Label>
@@ -516,8 +517,8 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
           {type === 'video_game' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label htmlFor="developer">Developer</Label>
-                <Input id="developer" value={developer} onChange={(e) => setDeveloper(e.target.value)} placeholder="optional" />
+                <Label htmlFor="developer">Developer(s)</Label>
+                <Input id="developer" value={developer} onChange={(e) => setDeveloper(e.target.value)} placeholder="comma-separated" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="year">Year</Label>

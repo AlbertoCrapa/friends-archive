@@ -38,7 +38,7 @@ export async function GroupMediaLoader({
   const itemIds = (items ?? []).map((item) => item.id);
   const adderIds = Array.from(new Set((items ?? []).map((item) => item.added_by)));
 
-  const [{ data: adders }, { data: consumptionRows }, { data: statusRows }] = await Promise.all([
+  const [{ data: adders }, { data: consumptionRows }, { data: statusRows }, { data: optOutRows }] = await Promise.all([
     adderIds.length > 0
       ? supabase.from('profiles').select('id, nickname').in('id', adderIds)
       : Promise.resolve({ data: [] as Array<{ id: string; nickname: string }> }),
@@ -68,6 +68,18 @@ export async function GroupMediaLoader({
           .in('media_item_id', itemIds)
       : Promise.resolve({
           data: [] as Array<{ media_item_id: string; status: ItemStatus }>,
+        }),
+    // EVERY member's opt-outs ('not_interested'), not just the viewer's. They
+    // are the one status that has to be read group-wide: a member who opted out
+    // is skipped when deciding whether the whole group finished an item.
+    itemIds.length > 0
+      ? supabase
+          .from('item_statuses')
+          .select('media_item_id, user_id')
+          .eq('status', 'not_interested')
+          .in('media_item_id', itemIds)
+      : Promise.resolve({
+          data: [] as Array<{ media_item_id: string; user_id: string }>,
         }),
   ]);
 
@@ -112,6 +124,12 @@ export async function GroupMediaLoader({
 
   const memberIds = (memberRows ?? []).map((row) => row.user_id);
 
+  // itemId -> user_ids that marked it 'not interested'.
+  const notInterestedByItem: Record<string, string[]> = {};
+  for (const row of optOutRows ?? []) {
+    (notInterestedByItem[row.media_item_id] ??= []).push(row.user_id);
+  }
+
   return (
     <GroupMediaSection
       groupId={groupId}
@@ -120,6 +138,7 @@ export async function GroupMediaLoader({
       isMember={isMember}
       isOwner={isOwner}
       memberIds={memberIds}
+      notInterestedByItem={notInterestedByItem}
       initialItems={enrichedItems}
       initialConsumedSet={consumedSet}
       initialActiveType={initialActiveType}

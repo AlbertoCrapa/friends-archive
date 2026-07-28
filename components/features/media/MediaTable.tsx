@@ -19,7 +19,8 @@ import {
 import { BookOpen, Clapperboard, ExternalLink, Gamepad2, MoreHorizontal, Pencil, Trash2, Tv } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { getStatusLabel, getStatusOptions } from '@/types';
-import { getStatusColor, getItemTags } from '@/lib/utils';
+import { getStatusColor, getPeople, getVisibleTags } from '@/lib/utils';
+import type { PersonKey } from '@/lib/utils';
 import type { ItemStatus, MediaItem, MediaItemWithDetails, MediaType } from '@/types';
 import { cn } from '@/lib/utils';
 import { SimpleTooltip, TooltipProvider } from '@/components/ui/tooltip';
@@ -37,6 +38,9 @@ interface Props {
   /** user_ids of the group's CURRENT members. When every one of them has
    *  completed an item, its row gets the "everyone finished" green wash. */
   memberIds?: string[];
+  /** itemId -> user_ids that marked the item 'not interested'. Those members
+   *  opted out, so they are skipped by the "everyone finished" wash. */
+  notInterestedByItem?: Record<string, string[]>;
   activeTags?: string[];
   onToggleTag?: (tag: string) => void;
   onDeleted?: (itemId: string) => void;
@@ -73,6 +77,7 @@ export function MediaTable({
   userId,
   currentUserNickname,
   memberIds = [],
+  notInterestedByItem = {},
   activeTags = [],
   onToggleTag,
   onDeleted,
@@ -193,7 +198,7 @@ export function MediaTable({
   return (
     <TooltipProvider delayDuration={150}>
     <div className="space-y-0 border border-stone-800/50">
-      <div className="hidden md:grid md:grid-cols-[16px_2.4fr_1fr_1.8fr_1fr_1.4fr_76px] gap-4 px-4 py-4 border-b border-stone-800/60 text-xs font-mono uppercase tracking-wider text-stone-500">
+      <div className="hidden md:grid md:grid-cols-[16px_2.4fr_148px_1.8fr_1fr_1.4fr_76px] gap-4 px-4 py-4 border-b border-stone-800/60 text-xs font-mono uppercase tracking-wider text-stone-500">
         <span>
           <span className="sr-only">Type</span>
         </span>
@@ -214,25 +219,50 @@ export function MediaTable({
         const isCurrentUserConsumed = currentUserNickname
           ? consumedUsers.includes(currentUserNickname)
           : consumed;
-        const tagChips = getItemTags(item);
-        // Everyone-finished marker: every CURRENT member has completed the item
-        // (completion ≡ having a consumption record; the viewer's own state uses
-        // the optimistic value so the marker appears/disappears immediately).
+        // Chips show the item's tags only — the credited people are hidden tags
+        // (searchable, never displayed) so the names aren't printed twice.
+        const tagChips = getVisibleTags(item);
+        // Personal opt-out: only THIS viewer's row is dimmed, and only when the
+        // viewer is the one who marked it. Everyone else sees the item normally.
+        const dimmed = effectiveStatus === 'not_interested';
+        // Members who said "not interested" step out of the group verdict — the
+        // viewer's own opt-out follows the optimistic status so the row reacts
+        // to the dropdown immediately.
+        const optedOut = new Set(notInterestedByItem[item.id] ?? []);
+        if (dimmed) optedOut.add(userId);
+        else optedOut.delete(userId);
+        // Everyone-finished marker: every CURRENT member who did NOT opt out has
+        // completed the item (completion ≡ having a consumption record; the
+        // viewer's own state uses the optimistic value so the marker
+        // appears/disappears immediately). One member opting out therefore no
+        // longer blocks the marker for the rest of the group.
+        const decidingMembers = memberIds.filter((memberId) => !optedOut.has(memberId));
         const completedByAll =
-          memberIds.length > 0 &&
-          memberIds.every((memberId) =>
+          decidingMembers.length > 0 &&
+          decidingMembers.every((memberId) =>
             memberId === userId
               ? consumed
               : (item.consumption_records ?? []).some((record) => record.user_id === memberId)
           );
+        // The opt-out reading wins over the green wash for the member who opted
+        // out: they get a greyed-out row, everybody else still gets the wash.
+        const showCompletedWash = completedByAll && !dimmed;
+        // Dimming is applied CELL BY CELL, never to the row itself: a child can
+        // never be more opaque than its parent, and the status selector has to
+        // be able to come back to full strength on hover.
+        const dimClass = dimmed ? 'opacity-45 saturate-0 transition-[opacity,filter] duration-200' : '';
 
         return (
           <Fragment key={item.id}>
             <motion.div
               className={cn(
-                'hidden md:grid md:grid-cols-[16px_2.4fr_1fr_1.8fr_1fr_1.4fr_76px] gap-4 px-4 py-4 border-b border-stone-800/50 items-start hover:bg-stone-900/20 transition-colors',
+                'group hidden md:grid md:grid-cols-[16px_2.4fr_148px_1.8fr_1fr_1.4fr_76px] gap-4 px-4 py-4 border-b border-stone-800/50 items-start hover:bg-stone-900/20 transition-colors',
                 // Whole-group completion reads as a wash over the row, not a badge.
-                completedByAll && 'bg-gradient-to-br from-emerald-700/35 via-emerald-900/15 via-40% to-transparent'
+                showCompletedWash && 'bg-gradient-to-br from-emerald-700/35 via-emerald-900/15 via-40% to-transparent',
+                // Opted out: every cell fades and loses its colour. The status
+                // cell (below) undoes it on row hover, so the one control you
+                // need to change your mind stays fully legible.
+                dimmed && '[&>*]:opacity-45 [&>*]:saturate-0 [&>*]:transition-[opacity,filter] [&>*]:duration-200'
               )}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
@@ -265,13 +295,32 @@ export function MediaTable({
               )}
             </div>
 
-            <div className="shrink-0">
+            <div
+              className={cn(
+                'shrink-0',
+                // Hovering an opted-out row wakes up ONLY this cell.
+                dimmed && 'group-hover:opacity-100 group-hover:saturate-100'
+              )}
+            >
               {isMember ? (
                 <Select
                   value={effectiveStatus}
                   onValueChange={(value) => updateStatus(item, value as ItemStatus)}
                 >
-                  <SelectTrigger className={cn('h-7 border text-[11px] font-mono px-2 py-0', statusClasses)} disabled={pendingStatusId === item.id}>
+                  {/* The pill hugs its label (w-fit) instead of stretching across
+                      the column, which left a dead stripe before the chevron.
+                      justify-start + truncate keep the label hard against the
+                      left padding: the shared trigger's justify-between and
+                      line-clamp (a -webkit-box, which re-flows and re-centres a
+                      label too long for the cell) are both overridden here. */}
+                  <SelectTrigger
+                    className={cn(
+                      'h-7 w-fit max-w-full justify-start gap-1.5 border text-[11px] font-mono px-2 py-0 text-left',
+                      '[&>span]:line-clamp-none [&>span]:truncate',
+                      statusClasses
+                    )}
+                    disabled={pendingStatusId === item.id}
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -378,15 +427,17 @@ export function MediaTable({
             <motion.div
               className={cn(
                 'md:hidden border-b border-stone-800/50 p-4 space-y-3',
-                completedByAll && 'bg-gradient-to-br from-emerald-700/35 via-emerald-900/15 via-40% to-transparent'
+                showCompletedWash && 'bg-gradient-to-br from-emerald-700/35 via-emerald-900/15 via-40% to-transparent'
               )}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.2, delay: Math.min(0.012 * index, 0.2) }}
             >
-            {/* Title + quick status (title leads; status reads as a colored pill) */}
+            {/* Title + quick status (title leads; status reads as a colored pill).
+                Opted-out cards dim everything EXCEPT the status control — touch
+                has no hover, so it simply stays legible. */}
             <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0 space-y-1">
+              <div className={cn('min-w-0 space-y-1', dimClass)}>
                 <div className="flex items-start gap-1.5">
                   <p className="text-base text-stone-100 leading-snug break-words">{item.title}</p>
                   {item.external_url && (
@@ -413,7 +464,14 @@ export function MediaTable({
               <div className="shrink-0">
                 {isMember ? (
                   <Select value={effectiveStatus} onValueChange={(value) => updateStatus(item, value as ItemStatus)}>
-                    <SelectTrigger className={cn('h-9 border text-[11px] font-mono px-2', statusClasses)} disabled={pendingStatusId === item.id}>
+                    <SelectTrigger
+                      className={cn(
+                        'h-9 w-fit max-w-full justify-start gap-1.5 border text-[11px] font-mono px-2 text-left',
+                        '[&>span]:line-clamp-none [&>span]:truncate',
+                        statusClasses
+                      )}
+                      disabled={pendingStatusId === item.id}
+                    >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -434,7 +492,7 @@ export function MediaTable({
 
             {/* Tags — only when present; finger-sized + tappable to filter */}
             {tagChips.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
+              <div className={cn('flex flex-wrap gap-1.5', dimClass)}>
                 <TagChipList
                   itemId={item.id}
                   tags={tagChips}
@@ -448,7 +506,7 @@ export function MediaTable({
             )}
 
             {/* Footer: who consumed it + actions (comments inline, rest in overflow) */}
-            <div className="flex items-end justify-between gap-2 pt-0.5">
+            <div className={cn('flex items-end justify-between gap-2 pt-0.5', dimClass)}>
               <div className="min-w-0">
                 <p className="text-[10px] font-mono uppercase tracking-wider text-stone-600 mb-1">Consumed by</p>
                 {consumedUsers.length === 0 ? (
@@ -606,39 +664,47 @@ function TagChipList({
 }
 
 /**
- * Renders the metadata summary line. Person/company entries (director, creator,
- * author, developer) become clickable external links when the matching *_url is
- * present in metadata; everything else is plain text. Returns null when empty.
+ * Renders the metadata summary line. Each credited person (director, creator,
+ * author, developer) is listed by name — several are comma-separated — and each
+ * name becomes a clickable external link when its page is known; everything else
+ * is plain text. Returns null when empty.
  */
 function MetaSummary({ item }: { item: MediaItem }) {
   const m = (item.metadata ?? {}) as Record<string, unknown>;
   const nodes: React.ReactNode[] = [];
 
-  const pushPerson = (prefix: string, value: unknown, url: unknown) => {
-    if (typeof value !== 'string' || !value) return;
-    const label = prefix ? `${prefix} ${value}` : value;
-    if (typeof url === 'string' && url) {
-      nodes.push(
-        <a
-          key={nodes.length}
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          className="hover:text-amber-500 underline decoration-dotted underline-offset-2 transition-colors"
-        >
-          {label}
-        </a>
-      );
-    } else {
-      nodes.push(<span key={nodes.length}>{label}</span>);
-    }
+  const pushCredit = (prefix: string, key: PersonKey) => {
+    const people = getPeople(m, key);
+    if (people.length === 0) return;
+    nodes.push(
+      <span key={key}>
+        {prefix ? `${prefix} ` : ''}
+        {people.map((person, i) => (
+          <Fragment key={person.name}>
+            {i > 0 && ', '}
+            {person.url ? (
+              <a
+                href={person.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="hover:text-amber-500 underline decoration-dotted underline-offset-2 transition-colors"
+              >
+                {person.name}
+              </a>
+            ) : (
+              person.name
+            )}
+          </Fragment>
+        ))}
+      </span>
+    );
   };
 
-  pushPerson('dir.', m.director, m.director_url);
-  pushPerson('cr.', m.creator, m.creator_url);
-  pushPerson('', m.author, m.author_url);
-  pushPerson('', m.developer, m.developer_url);
+  pushCredit('dir.', 'director');
+  pushCredit('cr.', 'creator');
+  pushCredit('', 'author');
+  pushCredit('', 'developer');
   if (m.release_year) nodes.push(<span key={nodes.length}>{String(m.release_year)}</span>);
   if (m.seasons) nodes.push(<span key={nodes.length}>{`${m.seasons} seasons`}</span>);
   if (m.duration_minutes) nodes.push(<span key={nodes.length}>{`${m.duration_minutes} min`}</span>);

@@ -4,6 +4,7 @@
 // ============================================
 
 import type { ExternalWork } from '@/types';
+import { MAX_PEOPLE, peopleMetadata } from '@/lib/utils';
 import { fetchJson } from './http';
 
 interface OpenLibraryDoc {
@@ -47,10 +48,14 @@ export async function searchOpenLibrary(query: string): Promise<ExternalWork[]> 
     .map((doc) => {
       const workId = workIdFrom(doc.key);
       if (!workId || !doc.title) return null;
-      const author = doc.author_name?.[0];
-      const authorKey = doc.author_key?.[0];
+      // Co-authored works list every name; author_key is positionally aligned.
+      const authors = (doc.author_name ?? []).slice(0, MAX_PEOPLE).map((name, i) => {
+        const key = doc.author_key?.[i];
+        return { name, url: key ? `https://openlibrary.org/authors/${key}` : undefined };
+      });
       const year = doc.first_publish_year;
       const genre = doc.subject?.[0]?.slice(0, 100);
+      const authorLine = authors.map((a) => a.name).join(', ');
       return {
         external_id: `openlibrary:book:${workId}`,
         external_source: 'openlibrary',
@@ -59,15 +64,12 @@ export async function searchOpenLibrary(query: string): Promise<ExternalWork[]> 
         title: doc.title,
         year,
         ...(genre ? { genre } : {}),
-        subtitle: [author, year ? String(year) : null].filter(Boolean).join(' · ') || undefined,
+        subtitle: [authorLine || null, year ? String(year) : null].filter(Boolean).join(' · ') || undefined,
         image_url: doc.cover_i
           ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-S.jpg`
           : undefined,
         metadata: {
-          ...(author ? { author } : {}),
-          ...(author && authorKey
-            ? { author_url: `https://openlibrary.org/authors/${authorKey}` }
-            : {}),
+          ...peopleMetadata('author', authors),
           ...(year ? { publication_year: year } : {}),
         },
       } satisfies ExternalWork;

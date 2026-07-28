@@ -4,6 +4,7 @@
 // ============================================
 
 import type { ExternalWork, MovieMetadata, TvSeriesMetadata } from '@/types';
+import { peopleMetadata } from '@/lib/utils';
 import { fetchJson } from './http';
 import type { ExternalDetails } from './types';
 import { genreFromNames } from './types';
@@ -122,10 +123,19 @@ function buildTmdbUrl(path: string): { url: string; headers?: Record<string, str
   };
 }
 
+/** Map a TMDB person (crew member / creator) to a name + their profile page. */
+function tmdbPerson(person: { name?: string; id?: number }) {
+  return {
+    name: person.name,
+    url: person.id ? `https://www.themoviedb.org/person/${person.id}` : undefined,
+  };
+}
+
 /**
  * Fetch full metadata for one TMDB title so fields the search list omits
- * (director + runtime for movies; creator/seasons/platform for TV) can be
- * auto-filled. Returns null on any failure.
+ * (director(s) + runtime for movies; creator(s)/seasons/platform for TV) can be
+ * auto-filled. Co-directed films and multi-creator shows keep every credited
+ * name. Returns null on any failure.
  */
 export async function getTmdbDetails(
   kind: 'movie' | 'tv_series',
@@ -137,14 +147,13 @@ export async function getTmdbDetails(
     const { url, headers } = buildTmdbUrl(`movie/${id}?append_to_response=credits`);
     const d = await fetchJson<TmdbMovieDetails>(url, headers);
     if (!d) return null;
-    const directorCrew = d.credits?.crew?.find((c) => c.job === 'Director');
-    const director = directorCrew?.name;
+    // A film can be co-directed (the Coens, the Wachowskis…) — keep them all.
+    const directors = (d.credits?.crew ?? [])
+      .filter((c) => c.job === 'Director')
+      .map(tmdbPerson);
     const year = yearFrom(d.release_date);
     const metadata: MovieMetadata = {
-      ...(director ? { director } : {}),
-      ...(director && directorCrew?.id
-        ? { director_url: `https://www.themoviedb.org/person/${directorCrew.id}` }
-        : {}),
+      ...peopleMetadata('director', directors),
       ...(year ? { release_year: year } : {}),
       ...(d.runtime ? { duration_minutes: d.runtime } : {}),
     };
@@ -154,15 +163,11 @@ export async function getTmdbDetails(
   const { url, headers } = buildTmdbUrl(`tv/${id}`);
   const d = await fetchJson<TmdbTvDetails>(url, headers);
   if (!d) return null;
-  const creatorObj = d.created_by?.[0];
-  const creator = creatorObj?.name;
+  const creators = (d.created_by ?? []).map(tmdbPerson);
   const platform = d.networks?.[0]?.name;
   const year = yearFrom(d.first_air_date);
   const metadata: TvSeriesMetadata = {
-    ...(creator ? { creator } : {}),
-    ...(creator && creatorObj?.id
-      ? { creator_url: `https://www.themoviedb.org/person/${creatorObj.id}` }
-      : {}),
+    ...peopleMetadata('creator', creators),
     ...(year ? { release_year: year } : {}),
     ...(d.number_of_seasons ? { seasons: d.number_of_seasons } : {}),
     ...(platform ? { platform } : {}),

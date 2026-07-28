@@ -12,7 +12,12 @@ export const ARCHIVE_FORMAT = 'friend-archive-group';
 export const ARCHIVE_VERSION = 1;
 
 export const MEDIA_TYPES: readonly MediaType[] = ['movie', 'tv_series', 'book', 'video_game'];
-export const ITEM_STATUSES: readonly ItemStatus[] = ['plan_to_consume', 'consuming', 'completed'];
+export const ITEM_STATUSES: readonly ItemStatus[] = [
+  'plan_to_consume',
+  'consuming',
+  'completed',
+  'not_interested',
+];
 
 type MetadataFieldKind = 'string' | 'number' | 'string[]';
 

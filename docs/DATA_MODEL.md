@@ -24,7 +24,7 @@ This document is the authoritative reference for the database schema of The Frie
    - [Why JSONB for metadata](#61-why-jsonb-for-metadata)
    - [Why a separate consumption_records table](#62-why-a-separate-consumption_records-table)
    - [Why profiles is separate from auth.users](#63-why-profiles-is-separate-from-authusers)
-   - [Why item_status is three values not six](#64-why-item_status-is-three-values-not-six)
+   - [Why item_status is type-agnostic, not six per-type values](#64-why-item_status-is-type-agnostic-not-six-per-type-values)
    - [Why added_by is immutable](#65-why-added_by-is-immutable)
    - [Why joining requires an approved request](#66-why-joining-requires-an-approved-request)
    - [Why comments are a separate table](#68-why-comments-are-a-separate-table)
@@ -96,7 +96,7 @@ CREATE TYPE media_type AS ENUM ('movie', 'tv_series', 'book', 'video_game');
 The **per-member** progress state for a media item. Stored in the `item_statuses` table — one row per (item, user) — **never** on the shared `media_items` row.
 
 ```sql
-CREATE TYPE item_status AS ENUM ('plan_to_consume', 'consuming', 'completed');
+CREATE TYPE item_status AS ENUM ('plan_to_consume', 'consuming', 'completed', 'not_interested');
 ```
 
 | Value             | UI label (every media type) |
@@ -104,17 +104,22 @@ CREATE TYPE item_status AS ENUM ('plan_to_consume', 'consuming', 'completed');
 | `plan_to_consume` | Planned                     |
 | `consuming`       | In progress                 |
 | `completed`       | Completed                   |
+| `not_interested`  | Not interested              |
 
-The UI uses **one uniform vocabulary** — Planned / In progress / Completed — for all four media types, in every surface: the status filter pills, the status dropdown selectors, and the read-only badges. The database stores only the three enum values (`getStatusLabel()` in `types/index.ts` maps them).
+The UI uses **one uniform vocabulary** — Planned / In progress / Completed / Not interested — for all four media types, in every surface: the status filter pills, the status dropdown selectors, and the read-only badges. The database stores only the four enum values (`getStatusLabel()` in `types/index.ts` maps them).
+
+The first three are progress steps. `not_interested` is different in kind: it is a **personal opt-out** — "count me out of this one" — and it is the only status that other members' views depend on (it removes its owner from the whole-group verdict, see below).
 
 UI behavior rules:
 
 - Each member sees and edits **only their own** status for an item. Changing it never affects any other member.
 - A missing `item_statuses` row means `plan_to_consume` — new items and new members start as "Planned" with no writes needed.
 - When the current user sets status to `completed`, the app automatically creates/keeps their `consumption_records` row for that item.
-- When the current user sets status to `plan_to_consume` or `consuming`, the app removes their `consumption_records` row for that item.
+- When the current user sets status to `plan_to_consume`, `consuming` or `not_interested`, the app removes their `consumption_records` row for that item — an opt-out is not a completion.
 - The `Consumed By` text is derived from `consumption_records` (with the current user's status reflected immediately in UI) and is not manually edited in the table row.
-- When **every current member** of the group has completed an item, the UI shows a small star next to the item's title ("Completed by everyone in the group").
+- When **every current member** of the group has completed an item, the UI shows a small star next to the item's title ("Completed by everyone in the group"). Members whose status is `not_interested` are **skipped** by that check: if everyone else completed the item, the whole-group marker still appears for the whole group.
+- `not_interested` renders the item **greyed out and semi-transparent — for that member only.** Everyone else sees the item exactly as before, whole-group marker included. The dimming replaces the marker's green wash for the member who opted out. The **status control is the exception**: on desktop, hovering the row wakes up that one cell (and nothing else), so changing your mind stays one move away; on touch, where there is no hover, it simply never dims.
+- In the status dropdowns, `not_interested` is listed **first** (`getStatusOptions()`), but the **default selection stays `plan_to_consume`** — the meaning of a missing row is unchanged. Ordering is a reach-for-it decision, not a default.
 
 ---
 
@@ -484,7 +489,9 @@ Per-item discussion. One row per comment written by a group member on a single `
 
 > **Read is group-wide, write is strictly personal.** Anyone who can read the group's content can read every member's status (same visibility rule as `consumption_records` — it feeds the "everyone completed" star and mirrors what `Consumed By` already reveals). But INSERT/UPDATE/DELETE are limited to `user_id = auth.uid()`: no member, not even the group owner, can change another member's status. See the RLS matrix in [§ 7](#item_statuses).
 
-> **Status ⇄ consumption invariant.** The app keeps a member's `completed` status and their `consumption_records` row in lockstep: setting `completed` upserts the consumption row; leaving `completed` deletes it. Rows of users who later leave the group are kept (like consumption records) but ignored by the "everyone completed" star, which only counts **current** members.
+> **Status ⇄ consumption invariant.** The app keeps a member's `completed` status and their `consumption_records` row in lockstep: setting `completed` upserts the consumption row; leaving `completed` — including for `not_interested` — deletes it. Rows of users who later leave the group are kept (like consumption records) but ignored by the "everyone completed" star, which only counts **current** members.
+
+> **Opt-outs leave the quorum.** `not_interested` is the one status read group-wide: the group page loads every member's `not_interested` rows for its items and removes those members from the "everyone completed" check. So one member opting out no longer blocks the whole-group marker for the others, and the marker never appears when *nobody* is left to complete the item.
 
 ---
 
@@ -605,7 +612,7 @@ Rejected because:
 
 Current UI linkage:
 
-- A member's own status (in `item_statuses`) and their consumption are intentionally linked. Setting your status to `completed` marks you consumed; setting it away from `completed` removes your consumption row. Other members' rows are never touched.
+- A member's own status (in `item_statuses`) and their consumption are intentionally linked. Setting your status to `completed` marks you consumed; setting it away from `completed` — to Planned, In progress or Not interested — removes your consumption row. Other members' rows are never touched.
 
 ---
 
@@ -623,13 +630,13 @@ The `profiles.id` column is a foreign key to `auth.users.id`, maintaining a stri
 
 ---
 
-### 6.4 Why `item_status` is three values, not six
+### 6.4 Why `item_status` is type-agnostic, not six per-type values
 
 **The original system** used six string values: `Plan to Watch`, `Watching`, `Watched`, `Plan to Read`, `Reading`, `Read`.
 
 **The problem:** These six values encode both the progress state and the media type in the same field. "Plan to Watch" and "Plan to Read" are semantically identical — the verb changes only because of the media type. This coupling makes filtering and querying awkward.
 
-**The new design:** Three enum values (`plan_to_consume`, `consuming`, `completed`) represent the pure progress state, and the UI shows them with **one uniform vocabulary for every media type**: Planned / In progress / Completed. The same three labels appear in the filter pills, the status dropdowns and the read-only badges — no per-type verb variants anywhere.
+**The new design:** Three enum values (`plan_to_consume`, `consuming`, `completed`) represent the pure progress state, plus `not_interested` for opting out entirely, and the UI shows them with **one uniform vocabulary for every media type**: Planned / In progress / Completed / Not interested. The same labels appear in the filter pills, the status dropdowns and the read-only badges — no per-type verb variants anywhere.
 
 ```typescript
 function getStatusLabel(status: ItemStatus): string {
@@ -637,11 +644,14 @@ function getStatusLabel(status: ItemStatus): string {
     case "plan_to_consume": return "Planned";
     case "consuming":       return "In progress";
     case "completed":       return "Completed";
+    case "not_interested":  return "Not interested";
   }
 }
 ```
 
 This makes filtering by status work correctly across all types with a single condition, and keeps the vocabulary identical everywhere in the app.
+
+**Why `not_interested` is an enum value and not a separate table:** it answers the same question as the other three ("where does this member stand on this item?"), it is mutually exclusive with them, and it lives under the same per-member RLS. A separate "skips" table would duplicate `item_statuses` row for row and let a member be both "completed" and "skipped" at once. The one thing it does differently — removing its owner from the "everyone completed" quorum — is a UI rule, not a schema one.
 
 ---
 
@@ -919,11 +929,20 @@ For each table and operation, this matrix shows what is permitted for each actor
 
 The `metadata` JSONB column on `media_items` stores different fields depending on `type`. All fields are optional — the UI shows fields as empty when not provided, and the database stores `{}` as the default.
 
+### People fields (`director`, `creator`, `author`, `developer`)
+
+A work can credit several people (co-directed films, co-authored books, co-developed games). All of them live in **one comma-separated string** under the existing singular key — `"director": "Joel Coen, Ethan Coen"` — capped at three names. A parallel `<key>_urls` array holds each name's external page in the same order (`""` when that person has no page); the legacy singular `<key>_url` written before multi-person support is still read as the first name's page.
+
+Why a string and not an array: export/import (§ `friend-archive-group`), tag search and every row written before the change keep working untouched, and the value is directly usable as the form field. Always read/write these keys through `getPeople()` / `peopleFields()` in `lib/utils.ts`.
+
+People are also **hidden tags**: `getSearchTags()` includes every credited name so items are searchable and filterable by person, while `getVisibleTags()` leaves them out — the names already show under the title, so repeating them as chips would be duplication.
+
 ### `movie`
 
 ```typescript
 interface MovieMetadata {
-  director?: string; // e.g. "Denis Villeneuve"
+  director?: string; // e.g. "Denis Villeneuve" — or "Joel Coen, Ethan Coen"
+  director_urls?: string[]; // one external page per name, same order
   release_year?: number; // e.g. 2021 (integer)
   duration_minutes?: number; // e.g. 155 (integer)
 }
@@ -943,7 +962,8 @@ Example:
 
 ```typescript
 interface TvSeriesMetadata {
-  creator?: string; // e.g. "Christopher Storer"
+  creator?: string; // e.g. "Christopher Storer" (comma-separated for several)
+  creator_urls?: string[]; // one external page per name, same order
   release_year?: number; // e.g. 2022 (integer, year of first episode)
   seasons?: number; // e.g. 3 (integer)
   platform?: string; // e.g. "Hulu", "Netflix", "Apple TV+"
@@ -965,7 +985,8 @@ Example:
 
 ```typescript
 interface BookMetadata {
-  author?: string; // e.g. "Andy Weir"
+  author?: string; // e.g. "Andy Weir" (comma-separated for several)
+  author_urls?: string[]; // one external page per name, same order
   publication_year?: number; // e.g. 2021 (integer)
   publisher?: string; // e.g. "Ballantine Books"
 }
@@ -985,7 +1006,8 @@ Example:
 
 ```typescript
 interface VideoGameMetadata {
-  developer?: string; // e.g. "FromSoftware"
+  developer?: string; // e.g. "FromSoftware" (comma-separated for several)
+  developer_urls?: string[]; // one external page per name, same order
   publisher?: string; // e.g. "Bandai Namco"
   release_year?: number; // e.g. 2022 (integer)
   platforms?: string[]; // e.g. ["PC", "PS5", "Xbox Series X"]
@@ -1010,12 +1032,14 @@ In `types/index.ts`, the metadata types are expressed as a discriminated union:
 ```typescript
 export type MovieMetadata = {
   director?: string;
+  director_urls?: string[];
   release_year?: number;
   duration_minutes?: number;
 };
 
 export type TvSeriesMetadata = {
   creator?: string;
+  creator_urls?: string[];
   release_year?: number;
   seasons?: number;
   platform?: string;
@@ -1023,12 +1047,14 @@ export type TvSeriesMetadata = {
 
 export type BookMetadata = {
   author?: string;
+  author_urls?: string[];
   publication_year?: number;
   publisher?: string;
 };
 
 export type VideoGameMetadata = {
   developer?: string;
+  developer_urls?: string[];
   publisher?: string;
   release_year?: number;
   platforms?: string[];

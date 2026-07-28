@@ -92,6 +92,33 @@ html {
   scrollbar-gutter: stable;
 }
 
+/*
+ * Scroll-lock compensation, cancelled.
+ *
+ * Radix (via react-remove-scroll) locks the body whenever a dropdown, dialog or
+ * popover opens, and compensates for the scrollbar it *assumes* disappears by
+ * pushing `margin-right: <scrollbar>px !important` onto the body. Our gutter is
+ * permanently reserved by `scrollbar-gutter: stable` above, so nothing ever
+ * disappears — that margin is pure double-counting and shifts the whole page
+ * sideways every time a select opens and back when it closes. Zero it out; the
+ * lock itself (overflow: hidden) still works.
+ */
+body[data-scroll-locked] {
+  margin-right: 0 !important;
+  padding-right: 0 !important;
+}
+
+/*
+ * Scrollbar-aware full width. Unlike 100vw / w-screen, which measure the
+ * viewport *including* the scrollbar gutter and therefore overflow by its
+ * width, `stretch` fills the containing block only. -webkit-fill-available is
+ * the fallback for engines that predate the standard keyword.
+ */
+@utility w-stretch {
+  width: -webkit-fill-available;
+  width: stretch;
+}
+
 html,
 body {
   margin: 0;

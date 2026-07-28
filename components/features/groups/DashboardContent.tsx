@@ -174,6 +174,11 @@ export function DashboardContent({
                   { label: 'completed', count: statusCounts.completed, color: 'oklch(0.72 0.14 160)' },
                   { label: 'in progress', count: statusCounts.consuming, color: 'oklch(0.78 0.13 62)' },
                   { label: 'planned', count: statusCounts.plan_to_consume, color: 'oklch(0.42 0.005 60)' },
+                  // Opt-outs only earn a slot once there are any — an always-on
+                  // zero would read as a fourth progress step, which it isn't.
+                  ...(statusCounts.not_interested > 0
+                    ? [{ label: 'not interested', count: statusCounts.not_interested, color: 'oklch(0.34 0.004 60)' }]
+                    : []),
                 ].map(({ label, count, color }) => (
                   <span key={label} className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-stone-500">
                     <span className="w-1.5 h-1.5 rotate-45 shrink-0" style={{ backgroundColor: color }} />

@@ -4,6 +4,7 @@
 // ============================================
 
 import type { ExternalWork, VideoGameMetadata } from '@/types';
+import { peopleMetadata } from '@/lib/utils';
 import { fetchJson } from './http';
 import type { ExternalDetails } from './types';
 import { genreFromNames } from './types';
@@ -102,7 +103,7 @@ function gameplayTags(tags: RawgGameDetails['tags']): string[] {
 }
 
 /**
- * Fetch full metadata for one RAWG game so the developer (and publisher /
+ * Fetch full metadata for one RAWG game so the developer(s) (and publisher /
  * platforms / genre) can be auto-filled. Costs ONE extra RAWG call per selection
  * — acceptable because selections are rare and deliberate. Returns null on failure.
  */
@@ -115,8 +116,11 @@ export async function getRawgDetails(id: string): Promise<ExternalDetails | null
   );
   if (!d) return null;
 
-  const developerObj = d.developers?.[0];
-  const developer = developerObj?.name;
+  // Co-developed games (studio + port house, sequel handoffs…) credit several.
+  const developers = (d.developers ?? []).map((dev) => ({
+    name: dev.name,
+    url: dev.slug ? `https://rawg.io/developers/${dev.slug}` : undefined,
+  }));
   const publisher = d.publishers?.[0]?.name;
   const year = yearFrom(d.released);
   const platforms = d.platforms
@@ -124,10 +128,7 @@ export async function getRawgDetails(id: string): Promise<ExternalDetails | null
     .filter((name): name is string => !!name);
 
   const metadata: VideoGameMetadata = {
-    ...(developer ? { developer } : {}),
-    ...(developer && developerObj?.slug
-      ? { developer_url: `https://rawg.io/developers/${developerObj.slug}` }
-      : {}),
+    ...peopleMetadata('developer', developers),
     ...(publisher ? { publisher } : {}),
     ...(year ? { release_year: year } : {}),
     ...(platforms && platforms.length ? { platforms } : {}),

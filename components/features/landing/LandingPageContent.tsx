@@ -838,7 +838,7 @@ function FinalCtaSection({ isSignedIn }: { isSignedIn: boolean }) {
         <div
           className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
           style={{
-            width: 'min(680px, 100vw)',
+            width: 'min(680px, 100%)',
             height: 'min(380px, 80%)',
             background:
               'radial-gradient(ellipse at center, oklch(0.65 0.14 60 / 0.05) 0%, transparent 70%)',

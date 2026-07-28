@@ -71,11 +71,12 @@ const EXAMPLE_JSON = `{
   ]
 }`;
 
+// People fields take several names in one comma-separated string.
 const METADATA_RULES: Array<{ type: string; keys: string }> = [
-  { type: 'movie', keys: 'director (text), release_year (number), duration_minutes (number)' },
-  { type: 'tv_series', keys: 'creator (text), release_year (number), seasons (number), platform (text)' },
-  { type: 'book', keys: 'author (text), publication_year (number), publisher (text)' },
-  { type: 'video_game', keys: 'developer (text), publisher (text), release_year (number), platforms (list of text)' },
+  { type: 'movie', keys: 'director (text, comma-separated for several), release_year (number), duration_minutes (number)' },
+  { type: 'tv_series', keys: 'creator (text, comma-separated for several), release_year (number), seasons (number), platform (text)' },
+  { type: 'book', keys: 'author (text, comma-separated for several), publication_year (number), publisher (text)' },
+  { type: 'video_game', keys: 'developer (text, comma-separated for several), publisher (text), release_year (number), platforms (list of text)' },
 ];
 
 export function GroupArchiveData({ group, userId }: Props) {
@@ -339,8 +340,9 @@ export function GroupArchiveData({ group, userId }: Props) {
                   <li>
                     <code className="text-stone-200">status</code> is optional and personal:{' '}
                     <code className="text-stone-200">plan_to_consume</code> (Planned),{' '}
-                    <code className="text-stone-200">consuming</code> (In progress) or{' '}
-                    <code className="text-stone-200">completed</code> (Completed). It sets{' '}
+                    <code className="text-stone-200">consuming</code> (In progress),{' '}
+                    <code className="text-stone-200">completed</code> (Completed) or{' '}
+                    <code className="text-stone-200">not_interested</code> (Not interested). It sets{' '}
                     <em className="not-italic text-stone-200">your own</em> status for the imported
                     item — never other members&apos;. Missing or invalid values fall back to{' '}
                     <code className="text-stone-200">plan_to_consume</code>.

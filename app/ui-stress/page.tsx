@@ -681,7 +681,7 @@ function mediaTypeFor(i: number): MediaType {
 }
 
 function statusFor(i: number): ItemStatus {
-  return (['plan_to_consume', 'consuming', 'completed'] as ItemStatus[])[i % 3];
+  return (['plan_to_consume', 'consuming', 'completed', 'not_interested'] as ItemStatus[])[i % 4];
 }
 
 function metadataFor(type: MediaType, i: number): Record<string, unknown> {

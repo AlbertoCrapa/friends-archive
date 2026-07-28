@@ -27,7 +27,15 @@ import {
 import { TagInput } from '@/components/ui/tag-input';
 import type { ExternalWork, ItemStatus, MediaItemWithDetails, MediaType } from '@/types';
 import { getStatusOptions } from '@/types';
-import { parseTags, serializeTags } from '@/lib/utils';
+import {
+  parsePeople,
+  parseTags,
+  peopleFields,
+  peopleValue,
+  personLinksFrom,
+  serializeTags,
+} from '@/lib/utils';
+import type { PersonKey } from '@/lib/utils';
 
 interface Props {
   item: MediaItemWithDetails;
@@ -47,10 +55,11 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
   const [tags, setTags] = useState<string[]>(parseTags(item.genre));
 
   const metadata = (item.metadata ?? {}) as Record<string, unknown>;
-  const [director, setDirector] = useState(String(metadata.director ?? ''));
-  const [creator, setCreator] = useState(String(metadata.creator ?? ''));
-  const [author, setAuthor] = useState(String(metadata.author ?? ''));
-  const [developer, setDeveloper] = useState(String(metadata.developer ?? ''));
+  // People fields hold every credited name, comma-separated.
+  const [director, setDirector] = useState(peopleValue(metadata, 'director'));
+  const [creator, setCreator] = useState(peopleValue(metadata, 'creator'));
+  const [author, setAuthor] = useState(peopleValue(metadata, 'author'));
+  const [developer, setDeveloper] = useState(peopleValue(metadata, 'developer'));
   const [releaseYear, setReleaseYear] = useState(
     String(metadata.release_year ?? metadata.publication_year ?? '')
   );
@@ -58,16 +67,12 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
   const [durationMinutes, setDurationMinutes] = useState(String(metadata.duration_minutes ?? ''));
   const [platform, setPlatform] = useState(String(metadata.platform ?? ''));
 
-  // Person/company links (director_url, author_url, …). Seeded from the existing
-  // item so an edit doesn't drop them, updated on (re)link.
-  const URL_KEYS = ['director_url', 'creator_url', 'author_url', 'developer_url'] as const;
-  const [metaLinks, setMetaLinks] = useState<Record<string, string>>(() => {
-    const seed: Record<string, string> = {};
-    for (const k of URL_KEYS) {
-      if (typeof metadata[k] === 'string') seed[k] = metadata[k] as string;
-    }
-    return seed;
-  });
+  // Person/company pages, keyed by lowercased name. Seeded from the existing
+  // item so an edit doesn't drop them, extended on (re)link. Keyed by NAME (not
+  // position) so renaming somebody drops their link rather than mis-pointing it.
+  const [personLinks, setPersonLinks] = useState<Record<string, string>>(() =>
+    personLinksFrom(metadata)
+  );
 
   // External identification layer
   const [externalId, setExternalId] = useState<string | null>(item.external_id);
@@ -95,21 +100,15 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
   function applyWorkMetadata(m: Record<string, unknown>) {
     if (m.release_year != null) setReleaseYear(String(m.release_year));
     else if (m.publication_year != null) setReleaseYear(String(m.publication_year));
-    if (typeof m.director === 'string') setDirector(m.director);
-    if (typeof m.creator === 'string') setCreator(m.creator);
-    if (typeof m.author === 'string') setAuthor(m.author);
-    if (typeof m.developer === 'string') setDeveloper(m.developer);
+    if (typeof m.director === 'string') setDirector(peopleValue(m, 'director'));
+    if (typeof m.creator === 'string') setCreator(peopleValue(m, 'creator'));
+    if (typeof m.author === 'string') setAuthor(peopleValue(m, 'author'));
+    if (typeof m.developer === 'string') setDeveloper(peopleValue(m, 'developer'));
     if (m.seasons != null) setSeasons(String(m.seasons));
     if (m.duration_minutes != null) setDurationMinutes(String(m.duration_minutes));
     if (typeof m.platform === 'string') setPlatform(m.platform);
 
-    setMetaLinks((prev) => {
-      const next = { ...prev };
-      for (const k of URL_KEYS) {
-        if (typeof m[k] === 'string') next[k] = m[k] as string;
-      }
-      return next;
-    });
+    setPersonLinks((prev) => ({ ...prev, ...personLinksFrom(m) }));
   }
 
   async function linkToWork(work: ExternalWork) {
@@ -148,40 +147,39 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
     setExternalId(null);
     setExternalSource(null);
     setExternalUrl(null);
-    setMetaLinks({});
+    setPersonLinks({});
+  }
+
+  /** Names + their known pages for one credit role, ready to store. */
+  function credits(key: PersonKey, field: string): Record<string, unknown> {
+    return peopleFields(key, parsePeople(field), (name) => personLinks[name.toLowerCase()]);
   }
 
   function buildMetadata(type: MediaType): Record<string, unknown> {
     const year = releaseYear ? parseInt(releaseYear, 10) : undefined;
-    const linkFor = (nameField: string, key: string) =>
-      nameField && metaLinks[key] ? { [key]: metaLinks[key] } : {};
 
     switch (type) {
       case 'movie':
         return {
-          ...(director ? { director } : {}),
-          ...linkFor(director, 'director_url'),
+          ...credits('director', director),
           ...(year ? { release_year: year } : {}),
           ...(durationMinutes ? { duration_minutes: parseInt(durationMinutes, 10) } : {}),
         };
       case 'tv_series':
         return {
-          ...(creator ? { creator } : {}),
-          ...linkFor(creator, 'creator_url'),
+          ...credits('creator', creator),
           ...(year ? { release_year: year } : {}),
           ...(seasons ? { seasons: parseInt(seasons, 10) } : {}),
           ...(platform ? { platform } : {}),
         };
       case 'book':
         return {
-          ...(author ? { author } : {}),
-          ...linkFor(author, 'author_url'),
+          ...credits('author', author),
           ...(year ? { publication_year: year } : {}),
         };
       case 'video_game':
         return {
-          ...(developer ? { developer } : {}),
-          ...linkFor(developer, 'developer_url'),
+          ...credits('developer', developer),
           ...(year ? { release_year: year } : {}),
         };
       default:
@@ -369,8 +367,8 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
           {item.type === 'movie' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label htmlFor={`director-${item.id}`}>Director</Label>
-                <Input id={`director-${item.id}`} value={director} onChange={(e) => setDirector(e.target.value)} placeholder="optional" />
+                <Label htmlFor={`director-${item.id}`}>Director(s)</Label>
+                <Input id={`director-${item.id}`} value={director} onChange={(e) => setDirector(e.target.value)} placeholder="comma-separated" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor={`year-${item.id}`}>Year</Label>
@@ -382,8 +380,8 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
           {item.type === 'tv_series' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label htmlFor={`creator-${item.id}`}>Creator</Label>
-                <Input id={`creator-${item.id}`} value={creator} onChange={(e) => setCreator(e.target.value)} placeholder="optional" />
+                <Label htmlFor={`creator-${item.id}`}>Creator(s)</Label>
+                <Input id={`creator-${item.id}`} value={creator} onChange={(e) => setCreator(e.target.value)} placeholder="comma-separated" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor={`year-${item.id}`}>Year</Label>
@@ -403,8 +401,8 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
           {item.type === 'book' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor={`author-${item.id}`}>Author</Label>
-                <Input id={`author-${item.id}`} value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="optional" />
+                <Label htmlFor={`author-${item.id}`}>Author(s)</Label>
+                <Input id={`author-${item.id}`} value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="comma-separated for several authors" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor={`year-${item.id}`}>Publication Year</Label>
@@ -416,8 +414,8 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
           {item.type === 'video_game' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label htmlFor={`developer-${item.id}`}>Developer</Label>
-                <Input id={`developer-${item.id}`} value={developer} onChange={(e) => setDeveloper(e.target.value)} placeholder="optional" />
+                <Label htmlFor={`developer-${item.id}`}>Developer(s)</Label>
+                <Input id={`developer-${item.id}`} value={developer} onChange={(e) => setDeveloper(e.target.value)} placeholder="comma-separated" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor={`year-${item.id}`}>Year</Label>

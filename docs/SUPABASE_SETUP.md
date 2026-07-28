@@ -25,6 +25,7 @@ This document is the complete, authoritative guide to configuring Supabase for T
 12. [Migration — RLS Hardening](#12-migration--rls-hardening)
 13. [Migration — Signup Email Allowlist](#13-migration--signup-email-allowlist)
 14. [Migration — Item-Delete Notifications](#14-migration--item-delete-notifications)
+15. [Migration — "Not Interested" Status](#15-migration--not-interested-status)
 
 ---
 
@@ -120,8 +121,10 @@ CREATE TYPE media_type AS ENUM ('movie', 'tv_series', 'book', 'video_game');
 -- Item status: PER-MEMBER progress state. Lives in the item_statuses table
 -- (one row per item + user) — never on the shared media_items row. The UI
 -- shows one uniform vocabulary for every media type:
--- Planned / In progress / Completed.
-CREATE TYPE item_status AS ENUM ('plan_to_consume', 'consuming', 'completed');
+-- Planned / In progress / Completed / Not interested.
+-- 'not_interested' is a personal opt-out: the item reads greyed out for that
+-- member alone, and they are skipped by the "everyone completed" marker.
+CREATE TYPE item_status AS ENUM ('plan_to_consume', 'consuming', 'completed', 'not_interested');
 
 -- Group visibility: determines discoverability.
 CREATE TYPE group_visibility AS ENUM ('public', 'private');
@@ -307,7 +310,7 @@ Application behavior note:
 - The UI auto-syncs personal consumption from the member's OWN status changes
   (in `item_statuses`):
   - `completed` => create/keep current user's `consumption_records` row.
-  - `plan_to_consume` or `consuming` => remove current user's row.
+  - `plan_to_consume`, `consuming` or `not_interested` => remove current user's row.
 - `Consumed By` in the table is display-only and derived from `consumption_records`.
 
 **Expected result:** `Success. No rows returned` — `consumption_records` table appears in **Database → Tables**.
@@ -333,7 +336,7 @@ CREATE TABLE public.item_statuses (
 COMMENT ON TABLE public.item_statuses IS
   'Per-member progress status for a media item. One row per (item, user); a missing row means plan_to_consume. Status is personal — the shared media_items row carries no status.';
 COMMENT ON COLUMN public.item_statuses.status IS
-  'The member''s own progress: plan_to_consume (Planned) | consuming (In progress) | completed (Completed).';
+  'The member''s own progress: plan_to_consume (Planned) | consuming (In progress) | completed (Completed) | not_interested (Not interested — personal opt-out, greyed out for that member only).';
 ```
 
 **Expected result:** `Success. No rows returned` — `item_statuses` table appears in **Database → Tables**.
@@ -2213,3 +2216,67 @@ when opened — the same derived-vs-stored bell pattern already used for join
 requests, but backed by this table. Deleting a whole group cascades its
 `media_items` (and any rows this trigger writes) away, so group deletion produces
 no "item deleted" spam.
+
+---
+
+## 15. Migration — "Not Interested" Status
+
+Adds a **fourth** value to the per-member `item_status` enum: `not_interested`.
+Fresh setups that followed Step 1 above already include it — skip this section.
+
+What it changes:
+
+- **A personal opt-out, not a progress step.** `not_interested` means "count me
+  out of this one". It lives in `item_statuses` like every other status: one row
+  per (item, user), writable only by its owner.
+- **It is never a completion.** Setting it removes the member's
+  `consumption_records` row, exactly like Planned or In progress.
+- **It leaves the quorum (UI rule, no SQL).** The "everyone completed" marker
+  skips members whose status is `not_interested`. If everybody else completed an
+  item, the whole group still sees the marker — one member opting out no longer
+  blocks it. The marker never appears when nobody is left to complete the item.
+- **It only greys out the opting-out member's own view.** That member sees the
+  row desaturated and semi-transparent, except the status control: on desktop
+  hovering the row wakes up that one cell, on touch it never dims. Every other
+  member's view is untouched.
+
+The ready-to-paste script also lives at
+`docs/migrations/2026-07-27_not_interested_status.sql`.
+
+> ⚠️ **Run the two steps as two separate queries.** PostgreSQL will not let a new
+> enum value be *used* in the same transaction that added it, so step 2 must run
+> after step 1 has committed.
+
+**Step 1 — run alone, first:**
+
+```sql
+ALTER TYPE public.item_status ADD VALUE IF NOT EXISTS 'not_interested';
+```
+
+**Step 2 — run after step 1 succeeded:**
+
+```sql
+COMMENT ON COLUMN public.item_statuses.status IS
+  'The member''s own progress: plan_to_consume (Planned) | consuming (In progress) | completed (Completed) | not_interested (Not interested — personal opt-out, greyed out for that member only).';
+
+-- Invariant repair: "not interested" is never a completion, so it must never
+-- travel with a consumption record. A no-op on a clean database — kept so the
+-- script stays safe to re-run.
+DELETE FROM public.consumption_records cr
+USING public.item_statuses s
+WHERE s.media_item_id = cr.media_item_id
+  AND s.user_id       = cr.user_id
+  AND s.status        = 'not_interested';
+```
+
+**Expected result:** `Success. No rows returned` for both steps. Verify with:
+
+```sql
+SELECT unnest(enum_range(NULL::item_status));
+-- plan_to_consume, consuming, completed, not_interested
+```
+
+**No RLS changes.** The existing `item_statuses` policies already cover the new
+value: readable by whoever can read the group's content (which is what lets the
+group page skip opted-out members in the "everyone completed" check), writable
+only by `user_id = auth.uid()`.

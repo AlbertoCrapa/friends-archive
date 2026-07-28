@@ -6,11 +6,11 @@ import { AddMediaDialog } from './AddMediaDialog';
 import { MediaTable } from './MediaTable';
 import { Input } from '@/components/ui/input';
 import { Search, X } from 'lucide-react';
-import { getItemTags } from '@/lib/utils';
+import { getSearchTags } from '@/lib/utils';
 import type { MediaItemWithDetails, MediaType } from '@/types';
 
 type MediaFilterType = 'all' | MediaType;
-type StatusFilter = 'all' | 'plan_to_consume' | 'consuming' | 'completed';
+type StatusFilter = 'all' | 'plan_to_consume' | 'consuming' | 'completed' | 'not_interested';
 
 const PAGE_SIZE = 20;
 
@@ -22,6 +22,9 @@ interface Props {
   isOwner: boolean;
   /** user_ids of the group's CURRENT members — drives the "everyone completed" star */
   memberIds: string[];
+  /** itemId -> user_ids that marked the item 'not interested'. Those members are
+   *  skipped by the "everyone completed" marker. */
+  notInterestedByItem: Record<string, string[]>;
   initialItems: MediaItemWithDetails[];
   initialConsumedSet: Set<string>;
   initialActiveType: MediaFilterType;
@@ -41,6 +44,7 @@ const statusFilters: Array<{ value: StatusFilter; label: string }> = [
   { value: 'plan_to_consume', label: 'Planned' },
   { value: 'consuming', label: 'In progress' },
   { value: 'completed', label: 'Completed' },
+  { value: 'not_interested', label: 'Not interested' },
 ];
 
 const STATUS_ACTIVE_CLASSES: Record<StatusFilter, string> = {
@@ -48,6 +52,7 @@ const STATUS_ACTIVE_CLASSES: Record<StatusFilter, string> = {
   plan_to_consume: 'border-amber-700/60 text-amber-400 bg-amber-950/25',
   consuming: 'border-sky-700/60 text-sky-400 bg-sky-950/25',
   completed: 'border-emerald-700/60 text-emerald-400 bg-emerald-950/25',
+  not_interested: 'border-stone-700/70 text-stone-400 bg-stone-800/30',
 };
 
 export function GroupMediaSection({
@@ -57,6 +62,7 @@ export function GroupMediaSection({
   isMember,
   isOwner,
   memberIds,
+  notInterestedByItem,
   initialItems,
   initialConsumedSet,
   initialActiveType,
@@ -76,21 +82,22 @@ export function GroupMediaSection({
     if (activeStatus !== 'all') result = result.filter((item) => item.status === activeStatus);
     if (activeTags.length > 0) {
       result = result.filter((item) => {
-        const itemTags = new Set(getItemTags(item));
+        const itemTags = new Set(getSearchTags(item));
         return activeTags.every((tag) => itemTags.has(tag));
       });
     }
     if (search.trim()) {
       const q = search.trim().toLowerCase();
-      // Score 2 = title match (highest priority), 1 = tag match (tags already
-      // include the metadata fields like director/platform via getItemTags),
+      // Score 2 = title match (highest priority), 1 = tag match — getSearchTags
+      // covers the visible chips AND the hidden ones (director, author, …), so
+      // a person is findable by name even though it is never shown as a chip.
       // 0 = no match. Sort keeps title hits first; Array.sort is stable so
       // original (recency) order is preserved within each tier.
       result = result
         .map((item) => {
           const score = item.title.toLowerCase().includes(q)
             ? 2
-            : getItemTags(item).some((tag) => tag.toLowerCase().includes(q))
+            : getSearchTags(item).some((tag) => tag.toLowerCase().includes(q))
               ? 1
               : 0;
           return { item, score };
@@ -223,7 +230,7 @@ export function GroupMediaSection({
             />
             <Input
               type="search"
-              placeholder="Search titles or tags..."
+              placeholder="Search titles, people or tags..."
               value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1); }}
               className="h-11 md:h-9 pl-9 pr-9 text-sm font-light w-full"
@@ -242,9 +249,10 @@ export function GroupMediaSection({
             )}
           </div>
 
-          {/* Status filter — all four always visible (no scroll): equal
-              4-column grid on mobile, inline on desktop (right side of the row). */}
-          <div className="grid grid-cols-4 gap-1.5 pb-0.5 md:flex md:shrink-0 md:pb-0">
+          {/* Status filter — all five always visible (no scroll): a 3-column
+              grid on phones (two rows, so "Not interested" keeps its full
+              label), 5 columns from sm up, inline on desktop. */}
+          <div className="grid grid-cols-3 gap-1.5 pb-0.5 sm:grid-cols-5 md:flex md:shrink-0 md:pb-0">
             {statusFilters.map(({ value, label }) => (
               <button
                 key={value}
@@ -323,6 +331,7 @@ export function GroupMediaSection({
           userId={userId}
           currentUserNickname={currentUserNickname}
           memberIds={memberIds}
+          notInterestedByItem={notInterestedByItem}
           activeTags={activeTags}
           onToggleTag={toggleTag}
           onDeleted={handleDeletedItem}

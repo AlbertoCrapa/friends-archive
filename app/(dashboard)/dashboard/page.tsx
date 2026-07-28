@@ -48,7 +48,12 @@ export default async function DashboardPage() {
         .in('media_items.group_id', groupIds)
     : { data: [] as Array<{ status: ItemStatus }> };
 
-  const statusCounts: Record<ItemStatus, number> = { plan_to_consume: 0, consuming: 0, completed: 0 };
+  const statusCounts: Record<ItemStatus, number> = {
+    plan_to_consume: 0,
+    consuming: 0,
+    completed: 0,
+    not_interested: 0,
+  };
   for (const row of myStatusRows ?? []) {
     const status = row.status as ItemStatus;
     if (status in statusCounts) statusCounts[status] += 1;
@@ -106,7 +111,7 @@ export default async function DashboardPage() {
   // from the total instead of expecting a stored row per item.
   statusCounts.plan_to_consume = Math.max(
     0,
-    totalItems - statusCounts.consuming - statusCounts.completed
+    totalItems - statusCounts.consuming - statusCounts.completed - statusCounts.not_interested
   );
 
   const groupNames = new Map(groups.map((g) => [g.id, g.name]));

@@ -13,43 +13,67 @@ export type MediaType = 'movie' | 'tv_series' | 'book' | 'video_game';
 /**
  * A member's personal progress on a media item. Stored per (item, user) in the
  * item_statuses table — NEVER on the shared media_items row. A missing row
- * means 'plan_to_consume'. The three values map to one uniform UI vocabulary
- * via getStatusLabel(): Planned / In progress / Completed, for every type.
+ * means 'plan_to_consume'. The four values map to one uniform UI vocabulary
+ * via getStatusLabel(): Planned / In progress / Completed / Not interested,
+ * for every type.
+ *
+ * 'not_interested' is a personal OPT-OUT, not a progress step: the item reads
+ * greyed out and semi-transparent for that member alone, and they are skipped
+ * when deciding whether the whole group finished an item.
  */
-export type ItemStatus = 'plan_to_consume' | 'consuming' | 'completed';
+export type ItemStatus = 'plan_to_consume' | 'consuming' | 'completed' | 'not_interested';
 
 /**
  * Type-specific metadata stored in the media_items.metadata JSONB column.
+ *
+ * PEOPLE (director / creator / author / developer) can be several: the names
+ * live in one comma-separated string ("Joel Coen, Ethan Coen") and the matching
+ * `*_urls` array holds one external page per name, in the same order ('' when
+ * that person has none). The singular `*_url` is the legacy shape, still read as
+ * the first name's page. Always go through getPeople()/peopleFields() in
+ * lib/utils rather than touching these keys directly.
  */
 export interface MovieMetadata {
+  /** Director(s) — comma-separated when there are several. */
   director?: string;
-  /** External page for the director (e.g. TMDB person), when known. */
+  /** Legacy single link, read as the first director's page. */
   director_url?: string;
+  /** External page per director (e.g. TMDB person), aligned with `director`. */
+  director_urls?: string[];
   release_year?: number;
   duration_minutes?: number;
 }
 
 export interface TvSeriesMetadata {
+  /** Creator(s) — comma-separated when there are several. */
   creator?: string;
-  /** External page for the creator (e.g. TMDB person), when known. */
+  /** Legacy single link, read as the first creator's page. */
   creator_url?: string;
+  /** External page per creator (e.g. TMDB person), aligned with `creator`. */
+  creator_urls?: string[];
   release_year?: number;
   seasons?: number;
   platform?: string;
 }
 
 export interface BookMetadata {
+  /** Author(s) — comma-separated when there are several. */
   author?: string;
-  /** External page for the author (e.g. Open Library author), when known. */
+  /** Legacy single link, read as the first author's page. */
   author_url?: string;
+  /** External page per author (e.g. Open Library author), aligned with `author`. */
+  author_urls?: string[];
   publication_year?: number;
   publisher?: string;
 }
 
 export interface VideoGameMetadata {
+  /** Developer(s) — comma-separated when there are several. */
   developer?: string;
-  /** External page for the developer (e.g. RAWG developer), when known. */
+  /** Legacy single link, read as the first developer's page. */
   developer_url?: string;
+  /** External page per developer (e.g. RAWG developer), aligned with `developer`. */
+  developer_urls?: string[];
   publisher?: string;
   release_year?: number;
   platforms?: string[];
@@ -304,7 +328,7 @@ export interface SortConfig {
 /**
  * Returns the UI label for a status value. One vocabulary for every media
  * type, everywhere in the app (filters, dropdowns, badges):
- * Planned / In progress / Completed.
+ * Planned / In progress / Completed / Not interested.
  */
 export function getStatusLabel(status: ItemStatus): string {
   switch (status) {
@@ -314,12 +338,22 @@ export function getStatusLabel(status: ItemStatus): string {
       return 'In progress';
     case 'completed':
       return 'Completed';
+    case 'not_interested':
+      return 'Not interested';
   }
 }
 
-/** All status values for select menus, with the uniform label */
+/**
+ * All status values for select menus, with the uniform label.
+ *
+ * ORDER IS NOT DEFAULT. 'not_interested' is listed first — opting out is the
+ * one choice you make once and want within immediate reach — but the DEFAULT
+ * selection is still 'plan_to_consume' ("Planned"): that is what a missing
+ * item_statuses row means and what every status control starts on.
+ */
 export function getStatusOptions(): { value: ItemStatus; label: string }[] {
   return [
+    { value: 'not_interested', label: getStatusLabel('not_interested') },
     { value: 'plan_to_consume', label: getStatusLabel('plan_to_consume') },
     { value: 'consuming', label: getStatusLabel('consuming') },
     { value: 'completed', label: getStatusLabel('completed') },
