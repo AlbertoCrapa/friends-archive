@@ -112,8 +112,14 @@ export interface ExternalWork {
   genre?: string;
   /** Director / author / developer — shown to disambiguate suggestions. */
   subtitle?: string;
-  /** Poster/cover thumbnail for the suggestion row. */
+  /**
+   * Artwork we STORE on the item (poster / cover / key art), at a size meant
+   * for list thumbnails. Always a provider-hosted https URL — we never copy the
+   * bytes into our own storage, see DATA_MODEL § 6.10.
+   */
   image_url?: string;
+  /** Tiny variant of the same artwork, only for the suggestion row. Falls back to image_url. */
+  thumb_url?: string;
   /** Pre-mapped into our existing per-type JSONB shape, ready to store. */
   metadata: MediaMetadata;
 }
@@ -234,6 +240,13 @@ export interface MediaItem {
   external_id: string | null;
   external_source: ExternalSource | null;
   external_url: string | null;
+  /**
+   * Provider-hosted artwork (poster / cover / key art) for the item — a LINK,
+   * never a copy: the bytes stay on the provider's CDN. NULL when unknown or
+   * when the member removed it. Only the provider hosts are accepted (see
+   * safeImageUrl in lib/utils and the DB CHECK constraint).
+   */
+  image_url: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -1,0 +1,1005 @@
+/* ============================================================================
+   Micro-interaction primitives — React Bits default skin.
+   ----------------------------------------------------------------------------
+   Values here are the library's own defaults, not a reinterpretation of them:
+   zinc surfaces (#27272a) on near-black, drawers at #3f3f46, gold #f5b400 for
+   a rating, #e5484d for a destructive commit, #22c55e for done. Radii run
+   6 / 7 / 8 / 9 / 10 / 12 / 16 / 999 depending on the control, every easing is
+   cubic-bezier(0.23, 1, 0.32, 1), and every press answers with a scale of
+   0.96–0.97. Anything the page needs to resize, it resizes through the
+   variables each component publishes, the way the library's props do.
+   ========================================================================= */
+
+.mi {
+  --mi-ink: #f5f5f5;
+  --mi-ink-inv: #18181b;
+  --mi-white: #fafafa;
+  --mi-surface: #27272a;
+  --mi-raised: #3f3f46;
+  --mi-idle: #52525b;
+  --mi-bg: #0b0b0f;
+  --mi-gold: #f5b400;
+  --mi-amber: #f5a524;
+  --mi-green: #22c55e;
+  --mi-red: #e5484d;
+  --mi-ease: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* ── StatusMark ──────────────────────────────────────────────────────────
+   One 20px glyph that morphs in place: a dashed ring waits, an arc runs, a
+   tick lands in green, a cross opts out. */
+
+.mi-mark {
+  --sm-size: 20px;
+  --sm-stroke: 2;
+  --sm-done: #22c55e;
+  --sm-muted: 0.55;
+  --sm-fill: 0.06;
+
+  display: inline-block;
+  vertical-align: middle;
+  overflow: visible;
+  color: color-mix(in srgb, var(--mi-ink, #f5f5f5) 62%, transparent);
+  transition: color 200ms var(--mi-ease);
+}
+.mi-mark[data-tone='you'] {
+  color: var(--mi-ink, #f5f5f5);
+}
+.mi-mark[data-status='completed'] {
+  color: var(--sm-done);
+}
+
+.mi-mark circle,
+.mi-mark path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.mi-mark-track {
+  fill: currentColor;
+  fill-opacity: 0;
+  stroke: none;
+  transition: fill-opacity 180ms ease;
+}
+.mi-mark[data-status='completed'] .mi-mark-track,
+.mi-mark[data-status='not_interested'] .mi-mark-track {
+  fill-opacity: var(--sm-fill);
+}
+
+.mi-mark-ring {
+  stroke: currentColor;
+  stroke-width: var(--sm-stroke);
+  opacity: var(--sm-muted);
+  transition: opacity 200ms ease;
+}
+.mi-mark[data-status='plan_to_consume'] .mi-mark-ring {
+  stroke-dasharray: 1.6 3.2;
+}
+.mi-mark[data-status='completed'] .mi-mark-ring,
+.mi-mark[data-status='consuming'] .mi-mark-ring {
+  opacity: 1;
+}
+.mi-mark[data-status='not_interested'] .mi-mark-ring {
+  opacity: 0.35;
+}
+
+.mi-mark-arc {
+  stroke: currentColor;
+  stroke-width: var(--sm-stroke);
+  stroke-dasharray: 1;
+  transform-origin: 50% 50%;
+  transform: rotate(-90deg);
+  opacity: 0;
+  transition: stroke-dashoffset 240ms var(--mi-ease);
+}
+.mi-mark[data-status='consuming'] .mi-mark-arc {
+  opacity: 1;
+}
+.mi-mark[data-status='consuming'][data-indeterminate='true'] .mi-mark-arc {
+  animation: mi-spin 1.1s linear infinite;
+}
+
+.mi-mark-glyph {
+  stroke: currentColor;
+  stroke-width: var(--sm-stroke);
+  stroke-dasharray: 16;
+  stroke-dashoffset: 16;
+  opacity: 0;
+  transition:
+    stroke-dashoffset 160ms var(--mi-ease),
+    opacity 0ms linear 160ms;
+}
+.mi-mark[data-status='completed'] .mi-mark-glyph[data-glyph='check'],
+.mi-mark[data-status='not_interested'] .mi-mark-glyph[data-glyph='cross'] {
+  stroke-dashoffset: 0;
+  opacity: 1;
+  transition:
+    stroke-dashoffset 240ms var(--mi-ease) 120ms,
+    opacity 0ms linear 120ms;
+}
+
+@keyframes mi-spin {
+  to {
+    transform: rotate(270deg);
+  }
+}
+
+/* ── PeekRating ──────────────────────────────────────────────────────────
+   Sweep the row and the stars lift to the pointer in a trailing wave while a
+   pill hops along with the word. Nothing is recorded until you let go. */
+
+.mi-rating {
+  --pr-active: #f5b400;
+  --pr-idle: #52525b;
+  --pr-tip: #27272a;
+  --pr-tip-text: #f5f5f5;
+  --pr-size: 28px;
+  --pr-gap: 6px;
+  --pr-room: 31px;
+  --pr-rise: 320ms;
+
+  display: inline-flex;
+  font-family: inherit;
+  color: inherit;
+}
+.mi-rating[data-readonly='true'] {
+  pointer-events: none;
+}
+
+.mi-rating-row {
+  position: relative;
+  display: inline-flex;
+  align-items: flex-end;
+  padding-top: var(--pr-room);
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mi-rating-slot {
+  display: grid;
+  place-items: center;
+  width: calc(var(--pr-size) + var(--pr-gap));
+  height: calc(var(--pr-size) + 8px);
+  background: none;
+  border: 0;
+  padding: 0;
+  outline: none;
+  touch-action: manipulation;
+}
+@media (hover: hover) and (pointer: fine) {
+  .mi-rating-slot {
+    cursor: pointer;
+  }
+}
+@media (pointer: coarse) {
+  .mi-rating-slot {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+.mi-rating-slot:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--pr-active) 70%, transparent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.mi-rating-lift {
+  display: block;
+  transform-origin: 50% 100%;
+  transition: transform var(--pr-rise) var(--mi-ease);
+}
+
+.mi-rating-glyph {
+  display: block;
+  width: var(--pr-size);
+  height: var(--pr-size);
+  fill: var(--pr-idle);
+  transition: fill 160ms ease;
+}
+.mi-rating-glyph[data-lit='true'] {
+  fill: var(--pr-active);
+}
+
+.mi-rating-tip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  height: calc(var(--pr-size) * 0.6);
+  padding: 0 calc(var(--pr-size) * 0.3);
+  border-radius: 999px;
+  background: var(--pr-tip);
+  color: var(--pr-tip-text);
+  font-size: calc(var(--pr-size) * 0.38);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--pr-rise) var(--mi-ease),
+    opacity 180ms ease;
+}
+.mi-rating-tip[data-show='true'] {
+  opacity: 1;
+}
+
+/* ── WarmTooltip ─────────────────────────────────────────────────────────
+   Light panel on a dark page. One shared delay per group: the first waits,
+   the rest are instant while the group is warm, and the panel glides. */
+
+.mi-tip-layer {
+  --wt-surface: #f5f5f5;
+  --wt-ink: #18181b;
+
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 9999;
+  pointer-events: none;
+  font-family: inherit;
+  transition: transform 160ms var(--mi-ease);
+}
+.mi-tip-layer[data-mode='pop'] {
+  transition: none;
+}
+
+.mi-tip-panel {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 17rem;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--wt-surface);
+  color: var(--wt-ink);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.12),
+    0 8px 24px -8px rgba(0, 0, 0, 0.45);
+  transform-origin: center bottom;
+}
+.mi-tip-layer[data-side='bottom'] .mi-tip-panel {
+  transform-origin: center top;
+}
+.mi-tip-layer[data-mode='pop'] .mi-tip-panel {
+  animation: mi-tip-pop 180ms var(--mi-ease);
+}
+
+.mi-tip-arrow {
+  position: absolute;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  border-radius: 2px;
+  background: var(--wt-surface);
+  transform: rotate(45deg);
+}
+.mi-tip-layer[data-side='top'] .mi-tip-arrow {
+  bottom: -3px;
+}
+.mi-tip-layer[data-side='bottom'] .mi-tip-arrow {
+  top: -3px;
+}
+
+.mi-tip-key {
+  display: inline-flex;
+  align-items: center;
+  height: 1.55em;
+  padding: 0 0.45em;
+  border-radius: 0.4em;
+  background: color-mix(in srgb, var(--wt-ink) 9%, transparent);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--wt-ink) 12%, transparent);
+  color: color-mix(in srgb, var(--wt-ink) 72%, transparent);
+  font-size: 0.86em;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes mi-tip-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(3px);
+  }
+}
+
+/* ── RubberSegment ───────────────────────────────────────────────────────
+   Light thumb on a zinc track. It stretches across the gap it crosses and
+   squashes onto the slot it lands on, and it can be grabbed and flicked. */
+
+.mi-seg {
+  --rs-track: #27272a;
+  --rs-thumb: #fafafa;
+  --rs-ink: #fafafa;
+  --rs-ink-active: #18181b;
+  --rs-radius: 10px;
+  --rs-inset: 3px;
+  --rs-thumb-radius: 7px;
+  --rs-h: 36px;
+  --rs-font: 13px;
+  --rs-pad: 14px;
+
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+  padding: var(--rs-inset);
+  border-radius: var(--rs-radius);
+  background: var(--rs-track);
+  font-family: inherit;
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mi-seg-thumb {
+  position: absolute;
+  left: var(--rs-inset);
+  top: var(--rs-inset);
+  bottom: var(--rs-inset);
+  border-radius: var(--rs-thumb-radius);
+  background: var(--rs-thumb);
+  transform-origin: left center;
+  pointer-events: none;
+}
+
+.mi-seg-option {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(var(--rs-h) - var(--rs-inset) * 2);
+  min-width: 44px;
+  padding: 0 var(--rs-pad);
+  border: 0;
+  border-radius: var(--rs-thumb-radius);
+  background: none;
+  color: var(--rs-ink);
+  opacity: 0.7;
+  font-size: var(--rs-font);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  transition:
+    opacity 160ms ease,
+    color 160ms ease;
+}
+.mi-seg-option[data-on='true'] {
+  color: var(--rs-ink-active);
+  opacity: 1;
+  cursor: default;
+}
+@media (hover: hover) and (pointer: fine) {
+  .mi-seg-option[data-on='false']:hover {
+    opacity: 0.9;
+  }
+}
+.mi-seg-option:focus-visible {
+  outline: 2px solid var(--rs-thumb);
+  outline-offset: 3px;
+}
+
+/* ── SpringCheck ─────────────────────────────────────────────────────────
+   One press fills the box, draws the tick and strikes the label. */
+
+.mi-check {
+  --sc-ink: #ffffff;
+  --sc-fill: #ffffff;
+  --sc-check: #0b0b0f;
+  --sc-box: 28px;
+  --sc-radius: 9px;
+  --sc-font: 18px;
+  --sc-ring: 2px;
+  --sc-gap: 12px;
+  --sc-row: 44px;
+  --sc-rule: 1.5px;
+
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sc-gap);
+  min-height: var(--sc-row);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--sc-ink);
+  font-family: inherit;
+  font-size: var(--sc-font);
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  text-align: left;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mi-check-box {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--sc-box);
+  height: var(--sc-box);
+  border-radius: var(--sc-radius);
+  overflow: hidden;
+  transition: transform 160ms var(--mi-ease);
+}
+.mi-check:active .mi-check-box {
+  transform: scale(0.95);
+}
+.mi-check:focus-visible .mi-check-box {
+  outline: 2px solid color-mix(in srgb, var(--sc-ink) 45%, transparent);
+  outline-offset: 3px;
+}
+
+.mi-check-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 var(--sc-ring) var(--sc-ink);
+  opacity: 0.28;
+  transition: opacity 120ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .mi-check:hover .mi-check-ring {
+    opacity: 0.5;
+  }
+}
+
+.mi-check-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--sc-fill);
+  transform: scale(0);
+  transition: transform 300ms cubic-bezier(0.2, 1.25, 0.4, 1);
+}
+.mi-check[data-on='true'] .mi-check-fill {
+  transform: scale(1);
+}
+
+.mi-check-tick {
+  position: relative;
+  fill: none;
+  stroke: var(--sc-check);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 14;
+  stroke-dashoffset: 14;
+  transition: stroke-dashoffset 220ms var(--mi-ease) 90ms;
+}
+.mi-check[data-on='true'] .mi-check-tick {
+  stroke-dashoffset: 0;
+}
+
+.mi-check-label {
+  position: relative;
+  transition: opacity 220ms var(--mi-ease) 60ms;
+}
+.mi-check-label::after {
+  content: '';
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  top: 54%;
+  height: var(--sc-rule);
+  border-radius: 1px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 300ms var(--mi-ease) 70ms;
+}
+.mi-check[data-on='true'] .mi-check-label {
+  opacity: 0.55;
+}
+.mi-check[data-on='true'] .mi-check-label::after {
+  transform: scaleX(1);
+}
+
+/* ── GlideSelect ─────────────────────────────────────────────────────────
+   The menu pops from its own corner and one highlight glides between rows,
+   remembering where you left it. */
+
+.mi-select {
+  --gs-surface: #27272a;
+  --gs-highlight: #3f3f46;
+  --gs-text: #f5f5f5;
+  --gs-radius: 10px;
+  --gs-inner-radius: 6px;
+  --gs-chip: 32px;
+  --gs-row: 30px;
+  --gs-font: 13px;
+  --gs-menu-w: 200px;
+
+  position: relative;
+  display: inline-block;
+  font-family: inherit;
+}
+
+.mi-select-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--gs-chip);
+  padding: 0 8px 0 10px;
+  border: 0;
+  border-radius: var(--gs-inner-radius);
+  background: var(--gs-surface);
+  color: var(--gs-text);
+  font-size: var(--gs-font);
+  font-weight: 500;
+  line-height: 1;
+  transition:
+    background-color 100ms ease,
+    transform 160ms var(--mi-ease);
+}
+@media (hover: hover) and (pointer: fine) {
+  .mi-select-trigger:hover {
+    background: color-mix(in srgb, var(--gs-highlight) 60%, var(--gs-surface));
+  }
+}
+.mi-select-trigger[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--gs-highlight) 60%, var(--gs-surface));
+}
+.mi-select-trigger:active {
+  transform: scale(0.97);
+}
+
+.mi-select-caret {
+  display: inline-flex;
+  color: color-mix(in srgb, var(--gs-text) 55%, transparent);
+  transition: transform 200ms var(--mi-ease);
+}
+.mi-select-trigger[aria-expanded='true'] .mi-select-caret {
+  transform: rotate(180deg);
+}
+
+.mi-select-menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: var(--gs-menu-w);
+  padding: 4px;
+  border-radius: var(--gs-radius);
+  background: var(--gs-surface);
+  transform-origin: top left;
+  animation: mi-menu-pop 180ms var(--mi-ease);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.2),
+    0 12px 32px -10px rgba(0, 0, 0, 0.6);
+}
+.mi-select-menu[data-align='right'] {
+  left: auto;
+  right: 0;
+  transform-origin: top right;
+}
+
+@keyframes mi-menu-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+
+.mi-select-highlight {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: 4px;
+  border-radius: var(--gs-inner-radius);
+  background: var(--gs-highlight);
+  transition:
+    transform 220ms var(--mi-ease),
+    opacity 120ms linear;
+  pointer-events: none;
+}
+.mi-select-highlight[data-jump='true'] {
+  transition: opacity 120ms linear;
+}
+
+.mi-select-option {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  height: var(--gs-row);
+  padding: 0 8px;
+  border-radius: var(--gs-inner-radius);
+  color: color-mix(in srgb, var(--gs-text) 72%, transparent);
+  font-size: var(--gs-font);
+  font-weight: 500;
+  line-height: 1;
+  text-align: left;
+}
+.mi-select-option[data-on='true'] {
+  color: var(--gs-text);
+}
+.mi-select-option span {
+  font-size: 11px;
+  color: color-mix(in srgb, var(--gs-text) 45%, transparent);
+}
+
+/* ── SwipeRow ────────────────────────────────────────────────────────────
+   A 16px-radius row on a zinc drawer. Pull to open, keep pulling and the
+   action colour takes the whole row. */
+
+.mi-swipe {
+  --sr-r: 16px;
+  --sr-a: 80px;
+  --sr-row: #27272a;
+  --sr-text: #f5f5f5;
+  --sr-drawer: #3f3f46;
+  --sr-action: #e5484d;
+  --sr-on-action: #ffffff;
+
+  position: relative;
+  border-radius: var(--sr-r);
+  overflow: hidden;
+  background: var(--sr-row);
+}
+
+.mi-swipe-rail {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  background: var(--sr-drawer);
+}
+
+.mi-swipe-flood {
+  position: absolute;
+  inset: 0;
+  background: var(--sr-action);
+  transform: scaleX(0);
+  transform-origin: right center;
+  transition: transform 260ms var(--mi-ease);
+}
+.mi-swipe-flood[data-armed='true'] {
+  transform: scaleX(1);
+}
+
+.mi-swipe-action {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 4px;
+  width: var(--sr-a);
+  border: 0;
+  background: none;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  touch-action: manipulation;
+}
+.mi-swipe-action[data-tone='out'] {
+  background: var(--sr-action);
+}
+.mi-swipe-action::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .mi-swipe-action:hover::after {
+    opacity: 0.08;
+  }
+}
+.mi-swipe-action:active {
+  transform: scale(0.97);
+}
+
+.mi-swipe-surface {
+  position: relative;
+  z-index: 1;
+  background: var(--sr-row);
+  /* Rows land on fractional pixel heights and the drawer behind them shows
+     through the rounding as a hairline. The ring covers that seam. */
+  box-shadow: 0 0 0 1px var(--sr-row);
+  color: var(--sr-text);
+  touch-action: pan-y;
+  will-change: transform;
+}
+@media (hover: hover) and (pointer: fine) {
+  .mi-swipe-surface {
+    cursor: grab;
+  }
+  .mi-swipe-surface:active {
+    cursor: grabbing;
+  }
+}
+
+.mi-swipe-handle {
+  display: none;
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  transform: translateY(-50%);
+  color: color-mix(in srgb, var(--sr-text) 55%, transparent);
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition:
+    opacity 140ms var(--mi-ease),
+    background 140ms var(--mi-ease),
+    color 140ms var(--mi-ease);
+}
+@media (hover: hover) and (pointer: fine) {
+  .mi-swipe-handle {
+    display: inline-flex;
+  }
+  .mi-swipe:hover .mi-swipe-handle,
+  .mi-swipe-handle:focus-visible {
+    opacity: 1;
+  }
+  .mi-swipe-handle:hover {
+    background: color-mix(in srgb, var(--sr-text) 12%, transparent);
+    color: var(--sr-text);
+  }
+}
+
+/* ── SwipeToast ──────────────────────────────────────────────────────────
+   Bottom right, 356px, an amber fuse burning exactly the time it has left.
+   Hovering pauses the fuse, which pauses the dismissal with it. */
+
+.mi-toast-dock {
+  --st-w: 356px;
+  --st-offset: 32px;
+
+  position: fixed;
+  right: var(--st-offset);
+  bottom: calc(var(--st-offset) + env(safe-area-inset-bottom, 0px));
+  z-index: 999999;
+  width: min(var(--st-w), calc(100vw - 2 * var(--st-offset)));
+  pointer-events: none;
+  font-family: inherit;
+}
+@media (max-width: 600px) {
+  .mi-toast-dock {
+    --st-offset: 16px;
+  }
+}
+
+.mi-toast {
+  --st-bg: #27272a;
+  --st-ink: #f5f5f5;
+  --st-fuse: #f5a524;
+
+  pointer-events: auto;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--st-bg);
+  color: var(--st-ink);
+  font-size: 13px;
+  line-height: 1.5;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.2),
+    0 16px 40px -12px rgba(0, 0, 0, 0.7);
+  cursor: grab;
+}
+.mi-toast:active {
+  cursor: grabbing;
+}
+
+.mi-toast-text {
+  flex: 1;
+  min-width: 0;
+}
+.mi-toast-text b {
+  font-weight: 600;
+}
+
+.mi-toast-undo {
+  flex: none;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: color-mix(in srgb, #fff 12%, transparent);
+  color: var(--st-ink);
+  font-size: 12.5px;
+  font-weight: 600;
+  transition:
+    background 140ms var(--mi-ease),
+    transform 160ms var(--mi-ease);
+}
+.mi-toast-undo:hover {
+  background: color-mix(in srgb, #fff 20%, transparent);
+}
+.mi-toast-undo:active {
+  transform: scale(0.96);
+}
+
+.mi-toast-fuse {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 100%;
+  background: var(--st-fuse);
+  transform-origin: left center;
+  animation: mi-fuse linear forwards;
+}
+.mi-toast:hover .mi-toast-fuse,
+.mi-toast:focus-within .mi-toast-fuse {
+  animation-play-state: paused;
+}
+
+@keyframes mi-fuse {
+  to {
+    transform: scaleX(0);
+  }
+}
+
+/* ── BranchedMenu ────────────────────────────────────────────────────────
+   A trunk down the side, a curved branch to each child, and an accent line
+   that travels to whatever is selected. */
+
+.mi-tree {
+  --bm-ink: #f5f5f5;
+  --bm-accent: #f5f5f5;
+  --bm-line: #3f3f46;
+  --bm-font: 14px;
+  --bm-row: 36px;
+  --bm-muted: color-mix(in srgb, var(--bm-ink) 55%, transparent);
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding-left: 14px;
+  color: var(--bm-ink);
+  font-family: inherit;
+  font-size: var(--bm-font);
+  line-height: 1.2;
+}
+.mi-tree::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  border-radius: 1px;
+  background: linear-gradient(to bottom, var(--bm-line) 0%, var(--bm-line) 55%, transparent 100%);
+}
+
+.mi-tree-marker {
+  position: absolute;
+  top: -1px;
+  left: 0;
+  z-index: 1;
+  width: 2px;
+  height: 16px;
+  border-radius: 1px;
+  background: var(--bm-accent);
+  opacity: 0;
+  transition:
+    transform 220ms var(--mi-ease),
+    opacity 150ms ease;
+}
+.mi-tree-marker[data-on='true'] {
+  opacity: 1;
+}
+
+.mi-tree-section {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.mi-tree-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 0;
+  border: 0;
+  background: none;
+  color: var(--bm-muted);
+  font-size: calc(var(--bm-font) + 1px);
+  font-weight: 500;
+  text-align: left;
+  transition: color 160ms var(--mi-ease);
+}
+.mi-tree-head:hover {
+  color: var(--bm-ink);
+}
+
+.mi-tree-chevron {
+  color: currentColor;
+  transition: transform 260ms var(--mi-ease);
+}
+.mi-tree-head[aria-expanded='true'] .mi-tree-chevron {
+  transform: rotate(90deg);
+}
+
+.mi-tree-branch {
+  position: relative;
+  overflow: hidden;
+  transition: height 300ms var(--mi-ease);
+}
+
+.mi-tree-lines {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+.mi-tree-lines path {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 400ms var(--mi-ease);
+}
+.mi-tree-line {
+  stroke: var(--bm-line);
+}
+.mi-tree-line-live {
+  stroke: var(--bm-accent);
+}
+
+.mi-tree-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding-left: 40px;
+  color: var(--bm-muted);
+  font-size: var(--bm-font);
+  font-weight: 500;
+  text-align: left;
+  transition: color 160ms var(--mi-ease);
+}
+.mi-tree-item:hover {
+  color: var(--bm-ink);
+}
+.mi-tree-item[data-on='true'] {
+  color: var(--bm-ink);
+}
+.mi-tree-item em {
+  font-style: normal;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--bm-ink) 38%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mi-mark[data-status='consuming'][data-indeterminate='true'] .mi-mark-arc {
+    animation: none;
+  }
+  .mi-rating-lift {
+    transition: none;
+  }
+}

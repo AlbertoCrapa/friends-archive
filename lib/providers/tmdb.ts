@@ -9,7 +9,12 @@ import { fetchJson } from './http';
 import type { ExternalDetails } from './types';
 import { genreFromNames } from './types';
 
-const IMAGE_BASE = 'https://image.tmdb.org/t/p/w92';
+// TMDB serves every poster at a set of fixed widths, chosen in the path. We keep
+// two: a tiny one for the suggestion row, and the one we STORE — sized for the
+// list thumbnails the app actually renders. A bigger surface later only needs
+// the width swapped in the stored URL (w185 -> w500), no re-fetch.
+const THUMB_BASE = 'https://image.tmdb.org/t/p/w92';
+const POSTER_BASE = 'https://image.tmdb.org/t/p/w185';
 
 interface TmdbMovieResult {
   id: number;
@@ -35,8 +40,8 @@ function yearFrom(date?: string): number | undefined {
   return Number.isFinite(year) ? year : undefined;
 }
 
-function imageFrom(path?: string | null): string | undefined {
-  return path ? `${IMAGE_BASE}${path}` : undefined;
+function imageFrom(path: string | null | undefined, base: string): string | undefined {
+  return path ? `${base}${path}` : undefined;
 }
 
 /**
@@ -73,7 +78,8 @@ export async function searchTmdb(
         title: r.title ?? 'Untitled',
         year,
         subtitle: year ? String(year) : undefined,
-        image_url: imageFrom(r.poster_path),
+        image_url: imageFrom(r.poster_path, POSTER_BASE),
+        thumb_url: imageFrom(r.poster_path, THUMB_BASE),
         metadata: year ? { release_year: year } : {},
       } satisfies ExternalWork;
     });
@@ -90,7 +96,8 @@ export async function searchTmdb(
       title: r.name ?? 'Untitled',
       year,
       subtitle: year ? String(year) : undefined,
-      image_url: imageFrom(r.poster_path),
+      image_url: imageFrom(r.poster_path, POSTER_BASE),
+      thumb_url: imageFrom(r.poster_path, THUMB_BASE),
       metadata: year ? { release_year: year } : {},
     } satisfies ExternalWork;
   });
@@ -101,6 +108,7 @@ export async function searchTmdb(
 interface TmdbMovieDetails {
   runtime?: number | null;
   release_date?: string;
+  poster_path?: string | null;
   genres?: Array<{ name?: string }>;
   credits?: { crew?: Array<{ job?: string; name?: string; id?: number }> };
 }
@@ -108,6 +116,7 @@ interface TmdbMovieDetails {
 interface TmdbTvDetails {
   first_air_date?: string;
   number_of_seasons?: number;
+  poster_path?: string | null;
   genres?: Array<{ name?: string }>;
   created_by?: Array<{ name?: string; id?: number }>;
   networks?: Array<{ name?: string }>;
@@ -157,7 +166,11 @@ export async function getTmdbDetails(
       ...(year ? { release_year: year } : {}),
       ...(d.runtime ? { duration_minutes: d.runtime } : {}),
     };
-    return { metadata, genre: genreFromNames((d.genres ?? []).map((g) => g.name)) };
+    return {
+      metadata,
+      genre: genreFromNames((d.genres ?? []).map((g) => g.name)),
+      image_url: imageFrom(d.poster_path, POSTER_BASE),
+    };
   }
 
   const { url, headers } = buildTmdbUrl(`tv/${id}`);
@@ -172,5 +185,9 @@ export async function getTmdbDetails(
     ...(d.number_of_seasons ? { seasons: d.number_of_seasons } : {}),
     ...(platform ? { platform } : {}),
   };
-  return { metadata, genre: genreFromNames((d.genres ?? []).map((g) => g.name)) };
+  return {
+    metadata,
+    genre: genreFromNames((d.genres ?? []).map((g) => g.name)),
+    image_url: imageFrom(d.poster_path, POSTER_BASE),
+  };
 }

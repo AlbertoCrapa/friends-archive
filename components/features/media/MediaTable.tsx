@@ -16,8 +16,7 @@ import {
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { BookOpen, Clapperboard, ExternalLink, Gamepad2, MoreHorizontal, Pencil, Trash2, Tv } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { ExternalLink, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { getStatusLabel, getStatusOptions } from '@/types';
 import { getStatusColor, getPeople, getVisibleTags } from '@/lib/utils';
 import type { PersonKey } from '@/lib/utils';
@@ -26,6 +25,7 @@ import { cn } from '@/lib/utils';
 import { SimpleTooltip, TooltipProvider } from '@/components/ui/tooltip';
 import { CommentsDialog } from './CommentsDialog';
 import { EditMediaItemDialog } from './EditMediaItemDialog';
+import { MediaPoster, TYPE_ICONS } from './MediaPoster';
 
 interface Props {
   items: MediaItemWithDetails[];
@@ -49,16 +49,15 @@ interface Props {
 
 const TAG_DISPLAY_LIMIT = 6;
 
-// One glyph per media type — the label lives in the tooltip / aria-label.
-const TYPE_ICONS: Record<MediaType, LucideIcon> = {
-  movie: Clapperboard,
-  tv_series: Tv,
-  book: BookOpen,
-  video_game: Gamepad2,
-};
+// Rows whose artwork skips lazy-loading. Roughly the first screenful: waiting
+// for the intersection observer there is a visible delay for no saving, while
+// everything below still loads only when scrolled to.
+const PRIORITY_ROWS = 8;
 
+// One glyph per media type — the label lives in the tooltip / aria-label. The
+// map is shared with MediaPoster, whose fallback face is the same glyph.
 function TypeIcon({ type, className }: { type: MediaType; className?: string }) {
-  const Icon = TYPE_ICONS[type] ?? Clapperboard;
+  const Icon = TYPE_ICONS[type];
   return (
     <SimpleTooltip label={getTypeLabel(type)} side="top">
       <span className="inline-flex">
@@ -272,27 +271,38 @@ export function MediaTable({
               <TypeIcon type={item.type} className="h-4 w-4" />
             </div>
 
-            <div className="space-y-1 min-w-0">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <p className="text-stone-100 font-light leading-snug truncate">{item.title}</p>
-                {item.external_url && (
-                  <a
-                    href={item.external_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={`View on ${item.external_source}`}
-                    aria-label={`View "${item.title}" on ${item.external_source}`}
-                    className="shrink-0 text-stone-600 hover:text-amber-500 transition-colors cursor-pointer"
-                  >
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
+            {/* Artwork leads the title cell: same 2:3 tile on every row, so the
+                titles stay on one vertical line whether or not a poster exists. */}
+            <div className="flex min-w-0 items-start gap-3">
+              <MediaPoster
+                src={item.image_url}
+                type={item.type}
+                size="sm"
+                zoomOnHover
+                priority={index < PRIORITY_ROWS}
+              />
+              <div className="space-y-1 min-w-0">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <p className="text-stone-100 font-light leading-snug truncate">{item.title}</p>
+                  {item.external_url && (
+                    <a
+                      href={item.external_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={`View on ${item.external_source}`}
+                      aria-label={`View "${item.title}" on ${item.external_source}`}
+                      className="shrink-0 text-stone-600 hover:text-amber-500 transition-colors cursor-pointer"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                </div>
+                {item.metadata && (
+                  <p className="text-[11px] font-mono text-stone-600 truncate">
+                    <MetaSummary item={item} />
+                  </p>
                 )}
               </div>
-              {item.metadata && (
-                <p className="text-[11px] font-mono text-stone-600 truncate">
-                  <MetaSummary item={item} />
-                </p>
-              )}
             </div>
 
             <div
@@ -434,28 +444,36 @@ export function MediaTable({
                 Opted-out cards dim everything EXCEPT the status control — touch
                 has no hover, so it simply stays legible. */}
             <div className="flex items-start justify-between gap-3">
-              <div className={cn('min-w-0 space-y-1', dimClass)}>
-                <div className="flex items-start gap-1.5">
-                  <p className="text-base text-stone-100 leading-snug break-words">{item.title}</p>
-                  {item.external_url && (
-                    <a
-                      href={item.external_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      aria-label={`View "${item.title}" on ${item.external_source}`}
-                      className="shrink-0 mt-1 text-stone-600 hover:text-amber-500 transition-colors cursor-pointer"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
+              <div className={cn('flex min-w-0 items-start gap-3', dimClass)}>
+                <MediaPoster
+                  src={item.image_url}
+                  type={item.type}
+                  size="md"
+                  priority={index < PRIORITY_ROWS}
+                />
+                <div className="min-w-0 space-y-1">
+                  <div className="flex items-start gap-1.5">
+                    <p className="text-base text-stone-100 leading-snug break-words">{item.title}</p>
+                    {item.external_url && (
+                      <a
+                        href={item.external_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={`View "${item.title}" on ${item.external_source}`}
+                        className="shrink-0 mt-1 text-stone-600 hover:text-amber-500 transition-colors cursor-pointer"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    )}
+                  </div>
+                  <p className="flex items-center gap-1 text-[11px] font-mono text-stone-500">
+                    <TypeIcon type={item.type} className="h-3 w-3" />
+                    {getTypeLabel(item.type)}
+                  </p>
+                  {item.metadata && (
+                    <p className="text-[11px] font-mono text-stone-600"><MetaSummary item={item} /></p>
                   )}
                 </div>
-                <p className="flex items-center gap-1 text-[11px] font-mono text-stone-500">
-                  <TypeIcon type={item.type} className="h-3 w-3" />
-                  {getTypeLabel(item.type)}
-                </p>
-                {item.metadata && (
-                  <p className="text-[11px] font-mono text-stone-600"><MetaSummary item={item} /></p>
-                )}
               </div>
 
               <div className="shrink-0">

@@ -1,0 +1,710 @@
+/* ============================================================================
+   THE BALLOT SHEET — page skin.
+   ----------------------------------------------------------------------------
+   The page takes its whole vocabulary from the React Bits micro defaults it is
+   built out of: near-black ground, #27272a surfaces at a 16px radius, #3f3f46
+   for anything raised or ruled, #f5f5f5 ink stepped down with color-mix
+   instead of extra greys, gold #f5b400 where a rating is involved, #e5484d for
+   opting out and #22c55e for done. Nothing here invents a token the components
+   did not already have.
+   ========================================================================= */
+
+.bl {
+  --bg: #0b0b0f;
+  --surface: #27272a;
+  --raised: #3f3f46;
+  --ink: #f5f5f5;
+  --ink-2: color-mix(in srgb, #f5f5f5 62%, transparent);
+  --ink-3: color-mix(in srgb, #f5f5f5 42%, transparent);
+  --ink-4: color-mix(in srgb, #f5f5f5 26%, transparent);
+  --hair: color-mix(in srgb, #f5f5f5 9%, transparent);
+  --white: #fafafa;
+  --ink-inv: #18181b;
+  --gold: #f5b400;
+  --green: #22c55e;
+  --red: #e5484d;
+
+  --r-chip: 6px;
+  --r-ctl: 10px;
+  --r-card: 16px;
+
+  --gap: clamp(1.25rem, 3vw, 2.5rem);
+  --rail: 15.5rem;
+  --ease: cubic-bezier(0.23, 1, 0.32, 1);
+
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  font-variation-settings: "opsz" 14;
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+.bl ::selection {
+  background: var(--gold);
+  color: var(--ink-inv);
+}
+
+.bl :focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--white) 70%, transparent);
+  outline-offset: 2px;
+  border-radius: var(--r-chip);
+}
+
+.bl a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  text-decoration-color: var(--ink-4);
+}
+.bl a:hover {
+  text-decoration-color: var(--ink);
+}
+
+/* Element-level reset only: :where() keeps it at specificity 0,0,1 so every
+   component class still outranks it. */
+:where(.bl) button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.bl button:active:not(:disabled) {
+  transform: none;
+}
+
+/* ── Type ────────────────────────────────────────────────────────────────
+   One family, one optical-size axis. Display sizes ask Bricolage for its
+   large-optical cut, text keeps the small one. */
+
+.bl-display {
+  margin: 0;
+  font-variation-settings: "opsz" 96;
+  font-weight: 700;
+  font-size: clamp(2.4rem, 5.8vw, 4.25rem);
+  line-height: 0.98;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+.bl-h2 {
+  margin: 0;
+  font-variation-settings: "opsz" 40;
+  font-weight: 600;
+  font-size: clamp(1.25rem, 2.2vw, 1.6rem);
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+}
+
+.bl-h3 {
+  margin: 0;
+  font-weight: 600;
+  font-size: 15px;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+}
+
+.bl-label {
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  color: var(--ink-3);
+}
+
+.bl-body {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 15px;
+  line-height: 1.62;
+  color: var(--ink-2);
+}
+
+.bl-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Masthead ────────────────────────────────────────────────────────────── */
+
+.bl-masthead {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 1rem var(--gap);
+  border-bottom: 1px solid var(--hair);
+}
+
+.bl-wordmark {
+  margin-right: auto;
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.bl-masthead-meta {
+  display: flex;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+/* ── Frame ───────────────────────────────────────────────────────────────── */
+
+.bl-frame {
+  display: grid;
+  grid-template-columns: var(--rail) minmax(0, 1fr);
+}
+
+.bl-rail {
+  padding: 1.75rem 1.25rem 4rem;
+  border-right: 1px solid var(--hair);
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: 100vh;
+  overflow-y: auto;
+}
+
+.bl-rail-foot {
+  margin: 2rem 0 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--hair);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+
+.bl-sheet {
+  padding: 0 var(--gap) 7rem;
+  min-width: 0;
+}
+
+.bl-section {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  margin: 3.5rem 0 1.25rem;
+}
+.bl-section-line {
+  flex: 1;
+  height: 1px;
+  background: var(--hair);
+}
+.bl-section-no {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-4);
+}
+
+/* ── Hero ────────────────────────────────────────────────────────────────── */
+
+.bl-hero {
+  padding: 3rem 0 0;
+}
+
+/* The slip: one card, the library's row radius, its drawer grey for the
+   header strip. */
+.bl-slip {
+  margin-top: 2rem;
+  border-radius: var(--r-card);
+  background: var(--surface);
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 16.5rem;
+}
+
+.bl-slip-head {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 1.25rem;
+  background: color-mix(in srgb, var(--raised) 55%, var(--surface));
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.bl-slip-main {
+  padding: 1.5rem 1.25rem 1.5rem;
+  min-width: 0;
+}
+
+.bl-slip-side {
+  padding: 1.5rem 1.25rem;
+  border-left: 1px solid var(--hair);
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+}
+
+.bl-hero-kicker {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.9rem;
+}
+
+.bl-slip-title {
+  margin: 0 0 0.25rem;
+  font-variation-settings: "opsz" 48;
+  font-weight: 650;
+  font-size: clamp(1.5rem, 3vw, 2.15rem);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+
+.bl-credits {
+  margin: 0 0 1.25rem;
+  font-size: 14px;
+  color: var(--ink-3);
+}
+
+.bl-rate-block {
+  margin-top: 1.25rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--hair);
+}
+
+.bl-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.bl-field-value {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+/* ── Tally ───────────────────────────────────────────────────────────────
+   Every rating on record is one translucent block of gold. Marks overlap, so
+   two on the same star compound into a brighter band: agreement is the part
+   that glows. */
+
+.bl-tally {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  align-items: end;
+  height: 56px;
+  margin-top: 0.4rem;
+}
+
+.bl-tally-col {
+  position: relative;
+  height: 100%;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+
+.bl-tally-mark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--i, 0) * 7px);
+  height: 15px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--gold) 55%, transparent);
+  transition: bottom 220ms var(--ease);
+}
+.bl-tally-mark[data-ink='you'] {
+  background: var(--gold);
+}
+.bl-tally-mark[data-ghost='true'] {
+  background: none;
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--gold) 70%, transparent);
+}
+
+.bl-tally-axis {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  margin-top: 0.35rem;
+}
+.bl-tally-axis span {
+  text-align: center;
+  font-size: 11px;
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Member marks ────────────────────────────────────────────────────────── */
+
+.bl-marks {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.bl-mark-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 28px;
+  padding: 0 0.45rem;
+  border-radius: 8px;
+  transition: background 140ms var(--ease);
+}
+.bl-mark-chip:hover,
+.bl-mark-chip:focus-visible {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+.bl-mark-name {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+.bl-mark-chip[data-ink='you'] .bl-mark-name {
+  color: var(--ink);
+}
+
+/* ── Filters ─────────────────────────────────────────────────────────────── */
+
+.bl-filters {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.75rem 0;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.bl-filters-row {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+
+/* The exclusions sit in a dense bar, so they run at the compact end of the
+   component's own size variables rather than its standalone defaults. */
+.bl-filters .mi-check {
+  --sc-font: 13.5px;
+  --sc-box: 20px;
+  --sc-radius: 7px;
+  --sc-gap: 8px;
+  --sc-row: 32px;
+  --sc-ring: 1.5px;
+  --sc-rule: 1.2px;
+}
+
+.bl-filters-spacer {
+  flex: 1;
+}
+
+.bl-count {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-3);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Queue ───────────────────────────────────────────────────────────────── */
+
+.bl-queue {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.bl-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 0.9rem;
+  align-items: center;
+  min-height: 72px;
+  padding: 0.75rem 3rem 0.75rem 1rem;
+}
+
+.bl-stamp {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-ctl);
+  background: color-mix(in srgb, var(--raised) 60%, transparent);
+  color: var(--ink-2);
+}
+.bl-stamp[data-out='true'] {
+  opacity: 0.45;
+}
+
+.bl-row-body {
+  min-width: 0;
+}
+
+.bl-row-title {
+  display: block;
+  max-width: 100%;
+  margin: 0;
+  text-align: left;
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 140ms var(--ease);
+}
+.bl-row-title:hover {
+  color: var(--gold);
+}
+
+.bl-row[data-selected='true'] .bl-row-title {
+  color: var(--gold);
+}
+.bl-row[data-out='true'] .bl-row-title {
+  color: var(--ink-3);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.bl-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 0.15rem;
+  font-size: 12.5px;
+  color: var(--ink-4);
+}
+
+.bl-row-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.bl-score {
+  display: flex;
+  align-items: baseline;
+  gap: 0.2rem;
+  min-width: 4.5rem;
+  justify-content: flex-end;
+  font-variant-numeric: tabular-nums;
+}
+.bl-score-value {
+  font-weight: 650;
+  font-size: 17px;
+  letter-spacing: -0.02em;
+  color: var(--gold);
+}
+.bl-score-of {
+  font-size: 11px;
+  color: var(--ink-4);
+}
+.bl-score[data-empty='true'] .bl-score-value {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-4);
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+
+.bl-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  height: 36px;
+  padding: 0 0.9rem;
+  border-radius: var(--r-ctl);
+  background: var(--white);
+  color: var(--ink-inv);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  transition:
+    background 140ms var(--ease),
+    transform 160ms var(--ease),
+    opacity 140ms var(--ease);
+}
+.bl-btn:hover:not(:disabled) {
+  background: #fff;
+}
+.bl-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.bl-btn[data-variant='quiet'] {
+  background: color-mix(in srgb, var(--raised) 60%, var(--surface));
+  color: var(--ink);
+}
+.bl-btn[data-variant='quiet']:hover:not(:disabled) {
+  background: var(--raised);
+}
+.bl-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Note ────────────────────────────────────────────────────────────────── */
+
+.bl-note {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 1rem;
+  max-width: 32rem;
+}
+.bl-note textarea {
+  font: inherit;
+  font-size: 14px;
+  resize: vertical;
+  min-height: 3.5rem;
+  padding: 0.6rem 0.75rem;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--ink);
+}
+.bl-note textarea::placeholder {
+  color: var(--ink-4);
+}
+.bl-note textarea:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ink) 25%, transparent);
+}
+
+/* ── Empty state ─────────────────────────────────────────────────────────── */
+
+.bl-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 3rem 1.25rem;
+  border-radius: var(--r-card);
+  background: var(--surface);
+}
+
+/* ── Figure caption ──────────────────────────────────────────────────────── */
+
+.bl-fig {
+  margin-top: 0.9rem;
+  max-width: 62ch;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink-3);
+}
+.bl-fig b {
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+/* ── Index of interactions ───────────────────────────────────────────────── */
+
+.bl-index {
+  columns: 2;
+  column-gap: 2.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bl-index li {
+  break-inside: avoid;
+  display: grid;
+  grid-template-columns: 1.6rem minmax(0, 1fr);
+  gap: 0.6rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--hair);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.bl-index-verdict {
+  padding-top: 0.1rem;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-4);
+}
+.bl-index li[data-kept='true'] .bl-index-verdict {
+  color: var(--gold);
+}
+.bl-index-name {
+  font-weight: 600;
+  color: var(--ink);
+}
+.bl-index-note {
+  color: var(--ink-3);
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+
+@media (max-width: 1020px) {
+  .bl-slip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .bl-slip-side {
+    border-left: 0;
+    border-top: 1px solid var(--hair);
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+  }
+}
+
+@media (max-width: 860px) {
+  .bl-frame {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .bl-rail {
+    position: static;
+    max-height: none;
+    border-right: 0;
+    border-bottom: 1px solid var(--hair);
+    padding: 1.25rem var(--gap);
+  }
+  .bl-rail-foot {
+    display: none;
+  }
+  .bl-index {
+    columns: 1;
+  }
+  .bl-hero {
+    padding-top: 2rem;
+  }
+  .bl-row {
+    grid-template-columns: 40px minmax(0, 1fr);
+    grid-template-areas:
+      'stamp body'
+      'right right';
+    row-gap: 0.65rem;
+    padding-right: 1rem;
+  }
+  .bl-row > .bl-stamp {
+    grid-area: stamp;
+  }
+  .bl-row-body {
+    grid-area: body;
+  }
+  .bl-row-right {
+    grid-area: right;
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 520px) {
+  .bl .mi-seg-option {
+    --rs-pad: 9px;
+    font-size: 12.5px;
+    min-width: 0;
+  }
+  .bl-masthead-meta {
+    gap: 0.85rem;
+  }
+}

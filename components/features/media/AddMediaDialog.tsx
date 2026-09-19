@@ -34,8 +34,10 @@ import {
   peopleFields,
   peopleValue,
   personLinksFrom,
+  safeImageUrl,
   serializeTags,
 } from '@/lib/utils';
+import { MediaPoster } from './MediaPoster';
 import type { PersonKey } from '@/lib/utils';
 
 interface Props {
@@ -47,7 +49,7 @@ interface Props {
 }
 
 const SELECT_COLUMNS =
-  'id, group_id, title, type, genre, metadata, added_by, external_id, external_source, external_url, created_at, updated_at';
+  'id, group_id, title, type, genre, metadata, added_by, external_id, external_source, external_url, image_url, created_at, updated_at';
 
 export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) {
   const router = useRouter();
@@ -86,6 +88,12 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
   const [externalSource, setExternalSource] = useState<string | null>(null);
   const [externalUrl, setExternalUrl] = useState<string | null>(null);
   const [externalTitle, setExternalTitle] = useState<string | null>(null);
+  // Artwork captured from the provider. We store the LINK only — the bytes stay
+  // on the provider's CDN — and the member can drop it before saving.
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  // What "Remove artwork" took away, kept so the member can put it back without
+  // spending another provider call.
+  const [droppedImage, setDroppedImage] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -109,6 +117,8 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
     setExternalSource(null);
     setExternalUrl(null);
     setExternalTitle(null);
+    setImageUrl(null);
+    setDroppedImage(null);
     setPersonLinks({});
   }
 
@@ -140,6 +150,9 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
     setExternalSource(work.external_source);
     setExternalUrl(work.external_url);
     setExternalTitle(work.title);
+    // The search payload already carries the artwork — no extra call needed.
+    setImageUrl(safeImageUrl(work.image_url));
+    setDroppedImage(null);
     // Linking disables the search hook (enabled = open && !externalId),
     // so no further search calls fire and the dropdown hides.
 
@@ -151,14 +164,19 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
         `/api/external-details?id=${encodeURIComponent(work.external_id)}`
       );
       if (res.ok) {
-        const { metadata, genre } = (await res.json()) as {
+        const { metadata, genre, image_url } = (await res.json()) as {
           metadata: Record<string, unknown> | null;
           genre: string | null;
+          image_url: string | null;
         };
         if (metadata) {
           applyMetadata({ ...(work.metadata as Record<string, unknown>), ...metadata });
         }
         if (genre) setTags(parseTags(genre));
+        // Only ever an upgrade: a detail call without artwork keeps the
+        // search-derived poster rather than clearing it.
+        const detailImage = safeImageUrl(image_url);
+        if (detailImage) setImageUrl(detailImage);
       }
     } catch {
       // keep the search-derived fields; user can fill the rest manually
@@ -245,6 +263,7 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
         external_id: externalId,
         external_source: externalSource,
         external_url: externalUrl,
+        image_url: imageUrl,
       })
       .select(SELECT_COLUMNS)
       .single();
@@ -378,16 +397,11 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
                       onClick={() => selectWork(work)}
                       className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-stone-900 transition-colors cursor-pointer border-b border-stone-800/60 last:border-b-0"
                     >
-                      {work.image_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={work.image_url}
-                          alt=""
-                          className="h-10 w-7 shrink-0 object-cover bg-stone-800"
-                        />
-                      ) : (
-                        <div className="h-10 w-7 shrink-0 bg-stone-800" />
-                      )}
+                      <MediaPoster
+                        src={work.thumb_url ?? work.image_url}
+                        type={work.type}
+                        size="xs"
+                      />
                       <span className="min-w-0">
                         <span className="block truncate text-sm text-stone-100">{work.title}</span>
                         {work.subtitle && (
@@ -404,15 +418,52 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
 
             {/* Linked / manual / unavailable hint line */}
             {externalId ? (
-              <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
-                <span className="inline-flex items-center gap-1 text-amber-500/90">
-                  <Link2 className="h-3 w-3" />
-                  Linked to {externalSource}
-                </span>
+              /* Linked: show what was actually captured — artwork included — so
+                 the poster is confirmed here rather than being a surprise in the
+                 list after saving. */
+              <div className="flex items-start gap-3 border border-stone-800/60 bg-stone-900/30 p-2">
+                <MediaPoster src={imageUrl} type={type} size="lg" />
+                <div className="min-w-0 flex-1 space-y-1 text-[11px] font-mono">
+                  <span className="flex items-center gap-1 text-amber-500/90">
+                    <Link2 className="h-3 w-3" />
+                    Linked to {externalSource}
+                  </span>
+                  {imageUrl ? (
+                    <>
+                      <p className="text-stone-500">Artwork from {externalSource}</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDroppedImage(imageUrl);
+                          setImageUrl(null);
+                        }}
+                        className="text-stone-600 underline decoration-dotted underline-offset-2 hover:text-stone-300 cursor-pointer"
+                      >
+                        Remove artwork
+                      </button>
+                    </>
+                  ) : droppedImage ? (
+                    <>
+                      <p className="text-stone-600">Artwork removed</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setImageUrl(droppedImage);
+                          setDroppedImage(null);
+                        }}
+                        className="text-stone-500 underline decoration-dotted underline-offset-2 hover:text-amber-500 cursor-pointer"
+                      >
+                        Restore artwork
+                      </button>
+                    </>
+                  ) : (
+                    <p className="text-stone-600">No artwork available</p>
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={resetExternalLink}
-                  className="inline-flex items-center gap-1 text-stone-500 hover:text-stone-300 cursor-pointer"
+                  className="inline-flex items-center gap-1 text-[11px] font-mono text-stone-500 hover:text-stone-300 cursor-pointer"
                 >
                   <X className="h-3 w-3" />
                   Unlink

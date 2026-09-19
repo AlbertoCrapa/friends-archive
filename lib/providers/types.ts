@@ -11,6 +11,13 @@ import type { MediaMetadata } from '@/types';
 export interface ExternalDetails {
   metadata: MediaMetadata;
   genre?: string;
+  /**
+   * Poster / cover / key art for the work, at list-thumbnail size. Stored as a
+   * link to the provider's CDN — never copied into our own storage. The search
+   * payload already carries it, so this is the refresh path: it fills the
+   * artwork for an item linked before we started keeping it.
+   */
+  image_url?: string;
 }
 
 /**

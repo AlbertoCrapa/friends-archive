@@ -29,6 +29,7 @@ This document is the authoritative reference for the database schema of The Frie
    - [Why joining requires an approved request](#66-why-joining-requires-an-approved-request)
    - [Why comments are a separate table](#68-why-comments-are-a-separate-table)
    - [Why status is per-member](#69-why-status-is-per-member)
+   - [Why artwork is linked, not stored](#610-why-artwork-is-linked-not-stored)
 7. [Row Level Security Matrix](#7-row-level-security-matrix)
 8. [Metadata Field Reference](#8-metadata-field-reference)
 
@@ -334,6 +335,7 @@ A single media item within a group. The `type` field determines which keys are m
 | `external_id`     | `TEXT`   | NULL     | `NULL`              | Namespaced provider-stable id (e.g. `tmdb:movie:693134`). Identical across all groups for the same work. NULL = manual entry. |
 | `external_source` | `TEXT`   | NULL     | `NULL`              | Originating provider: `tmdb` \| `openlibrary` \| `rawg`. Set together with `external_id`. |
 | `external_url`    | `TEXT`   | NULL     | `NULL`              | Cached external detail page for the work. NULL = manual entry. |
+| `image_url`       | `TEXT`   | NULL     | `NULL`              | Poster / cover / key art, as a **link** to the provider's image CDN — the bytes are never copied into Supabase Storage. NULL when unknown, unavailable, or removed by a member. See [§ 6.10](#610-why-artwork-is-linked-not-stored). |
 | `created_at` | `TIMESTAMPTZ` | NOT NULL | `NOW()`             | Row creation time.                                            |
 | `updated_at` | `TIMESTAMPTZ` | NOT NULL | `NOW()`             | Last updated.                                                 |
 
@@ -346,6 +348,7 @@ A single media item within a group. The `type` field determines which keys are m
 | `genre_length`           | CHECK       | `genre IS NULL OR char_length(genre) <= 255`         |
 | `external_source_valid`  | CHECK       | `external_source IS NULL OR external_source IN ('tmdb','openlibrary','rawg')` |
 | `external_id_with_source`| CHECK       | `(external_id IS NULL) = (external_source IS NULL)`   |
+| `image_url_provider_host`| CHECK       | `image_url IS NULL OR (char_length(image_url) <= 500 AND image_url ~ '^https://(image\.tmdb\.org\|covers\.openlibrary\.org\|media\.rawg\.io)/')` |
 
 **Foreign keys:**
 
@@ -787,6 +790,30 @@ provider abstraction and the search/autocomplete flow live in `lib/providers/` a
 **Why a missing row means `plan_to_consume`:** every member has a status for every item in their groups; materialising all of them would mean `members × items` rows that are almost all "Planned". Treating absence as the default keeps the table proportional to actual activity and makes new items and new members correct with zero writes.
 
 **What stayed shared:** everything else on `media_items` (title, type, tags, metadata, external link) is still one row co-edited by the whole group, and `consumption_records` still records who finished what. The "everyone completed" star is derived in the UI: an item earns it when every **current** `group_members` row has a matching completion.
+
+---
+
+### 6.10 Why artwork is linked, not stored
+
+**The decision:** `media_items.image_url` holds a **URL on the provider's image CDN**. The app never downloads a poster and never writes it to Supabase Storage.
+
+**The alternative:** copy each poster into a Storage bucket on insert and serve our own copy.
+
+**Why linking wins here:**
+
+| | Link (chosen) | Copy into Storage |
+| --- | --- | --- |
+| Cost | Zero bytes stored, zero egress — the viewer's browser fetches from TMDB/Open Library/RAWG | Every item consumes the 1 GB free bucket and its egress budget, for a catalogue that only grows |
+| Work on add | None — the poster is **already in the search payload** the app fetches to fill the title and metadata | Download + upload + failure handling inside the add flow, which must never block adding an item |
+| Rights | The providers publish these files precisely to be embedded, and ask for attribution rather than rehosting | Rehosting is the part their terms do not invite |
+| Freshness | A re-mastered poster updates itself | Our copy is frozen at add time |
+| Failure mode | A dead link degrades to the type glyph in `MediaPoster` | A failed upload leaves an item half-created |
+
+**What it costs us:** link rot (the provider moves or removes a file) and dependence on their CDN being reachable. Both are absorbed in the UI rather than in the schema: `MediaPoster` always paints the media-type glyph underneath, so a missing, slow or broken image reads as "movie"/"book" instead of a hole, and the artwork can be re-fetched on demand from the edit dialog.
+
+**Why the host allowlist:** any member of a group can `UPDATE media_items`, so an unconstrained URL column would let one member point every other member's browser at a server of their choosing — IP logging, tracking pixels, or simply junk. The `image_url_provider_host` CHECK restricts the column to the three provider image hosts, and `safeImageUrl()` in `lib/utils.ts` applies the same rule when writing and when rendering. **The two must be kept in sync**; adding a provider means changing both. The practical consequence is deliberate: a manual (unlinked) item cannot carry a pasted image from an arbitrary host.
+
+**Sizes are chosen in the URL,** at the size the list actually renders — `w185` for TMDB, `-M` for Open Library covers, `resize/420/-/` for RAWG's full-bleed key art. A bigger surface later only needs the size segment swapped in the stored URL; no re-fetch and no migration.
 
 ---
 

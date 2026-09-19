@@ -643,6 +643,10 @@ function buildMediaItems(count: number): MediaItemWithDetails[] {
       external_id: i % 3 === 0 ? `tmdb:movie:${1000 + i}` : null,
       external_source: i % 3 === 0 ? 'tmdb' : null,
       external_url: i % 3 === 0 ? `https://www.themoviedb.org/movie/${1000 + i}` : null,
+      // No artwork in the stress fixtures: the point here is the layout with
+      // the poster tile at its FALLBACK size, which is the case that has to
+      // stay aligned. Real artwork only ever fills the same box.
+      image_url: null,
       added_by: `user-${(i % 12) + 1}`,
       created_at: new Date(Date.now() - i * 86400000).toISOString(),
       updated_at: new Date(Date.now() - i * 3600000).toISOString(),

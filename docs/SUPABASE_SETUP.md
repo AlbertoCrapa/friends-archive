@@ -26,6 +26,7 @@ This document is the complete, authoritative guide to configuring Supabase for T
 13. [Migration — Signup Email Allowlist](#13-migration--signup-email-allowlist)
 14. [Migration — Item-Delete Notifications](#14-migration--item-delete-notifications)
 15. [Migration — "Not Interested" Status](#15-migration--not-interested-status)
+16. [Migration — Item Artwork](#16-migration--item-artwork)
 
 ---
 
@@ -2280,3 +2281,63 @@ SELECT unnest(enum_range(NULL::item_status));
 value: readable by whoever can read the group's content (which is what lets the
 group page skip opted-out members in the "everyone completed" check), writable
 only by `user_id = auth.uid()`.
+
+---
+
+## 16. Migration — Item Artwork
+
+Adds **one nullable column** to `media_items` so an item can carry its poster,
+cover or key art:
+
+```sql
+image_url TEXT NULL
+```
+
+**We store the link, not the file.** The image stays on the provider's CDN
+(`image.tmdb.org`, `covers.openlibrary.org`, `media.rawg.io`) and is fetched by
+the viewer's browser, so the feature costs **zero Supabase Storage and zero
+egress** — which matters on the free tier (§ 5). The full trade-off, including
+what link rot costs us and how the UI absorbs it, is in
+[DATA_MODEL § 6.10](DATA_MODEL.md#610-why-artwork-is-linked-not-stored).
+
+Run the script in `docs/migrations/2026-09-19_item_artwork.sql`, or this block
+in the SQL Editor:
+
+```sql
+ALTER TABLE public.media_items
+  ADD COLUMN IF NOT EXISTS image_url TEXT;
+
+-- https only, provider image hosts only, length-capped.
+ALTER TABLE public.media_items
+  DROP CONSTRAINT IF EXISTS image_url_provider_host;
+ALTER TABLE public.media_items
+  ADD CONSTRAINT image_url_provider_host
+    CHECK (
+      image_url IS NULL
+      OR (
+        char_length(image_url) <= 500
+        AND image_url ~ '^https://(image\.tmdb\.org|covers\.openlibrary\.org|media\.rawg\.io)/'
+      )
+    );
+
+COMMENT ON COLUMN public.media_items.image_url IS
+  'Poster/cover/key art for the item, as a LINK to the provider image CDN (never copied into Supabase Storage). NULL when unknown, unavailable, or removed by a member. Restricted by CHECK to image.tmdb.org | covers.openlibrary.org | media.rawg.io.';
+```
+
+**Expected result:** `Success. No rows returned`.
+
+**Why the host allowlist:** any group member can `UPDATE media_items`, so an
+unconstrained URL column would let one member point every other member's browser
+at a server of their choosing. The CHECK is the authoritative guard;
+`safeImageUrl()` in `lib/utils.ts` applies the identical rule in the app, when
+writing **and** when rendering. Adding a provider means changing **both**.
+
+**No RLS changes.** The column rides the existing `media_items` policies (§ 5e):
+members of the item's group may write it exactly like `title`/`genre`/`metadata`,
+and it is not part of the `added_by` immutability rule.
+
+**No backfill.** Existing rows keep `NULL`. New items get their artwork from the
+provider search payload at add time (no extra call). An item linked **before**
+this migration gets one when a member opens **Edit → Fetch artwork**, which
+spends a single provider call on demand — deliberately not a mass job, since the
+free RAWG quota is shared by the whole app (§ 8).

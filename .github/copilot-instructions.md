@@ -475,6 +475,28 @@ its internal UUID and belongs to one group.
   link a manual item or unlink a mis-linked one via `EditMediaItemDialog`.
 - **Links:** when `external_url` is set, `MediaTable` shows an open-in-new icon to
   the provider's page. Manual items show no link.
+- **Artwork (`image_url`):** an item's poster/cover/key art is stored as a **link
+  to the provider's image CDN** — never downloaded into Supabase Storage (cost,
+  rights, and the add flow must not depend on an upload). The search payload
+  already carries it, so linking a work costs **no extra call**; the detail call
+  returns it too, which is what makes **Edit → Fetch artwork** work for items
+  linked before the column existed. Sizes are picked in the URL at the size the
+  list renders (TMDB `w185`, Open Library `-M`, RAWG `resize/420/-/`). Only the
+  three provider image hosts are accepted — enforced by `safeImageUrl()` in
+  `lib/utils.ts` **and** by the `image_url_provider_host` CHECK constraint; change
+  one and you must change the other. Render artwork only through `MediaPoster`,
+  which paints the media-type glyph underneath so a missing or dead image never
+  leaves a hole.
+- **Artwork caching is the browser's job — do not build a second one.** TMDB and
+  RAWG serve these files with a one-year immutable `Cache-Control`, so a revisit
+  costs zero requests; a service worker, an IndexedDB blob store or a base64
+  cache would only duplicate the HTTP cache and pay overhead for it. If posters
+  ever *look* like they reload, the cause is in the render path, not the network:
+  `MediaPoster` paints an image that is already `complete` at mount with **no**
+  fade, and animates only a genuine download. The root layout `preconnect`s to
+  the three image hosts. The one real exception is Open Library covers, which
+  redirect to `archive.org` with `max-age=10800` (3 h) — one re-fetch per book
+  every few hours, accepted deliberately rather than proxied.
 
 ---
 

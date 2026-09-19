@@ -27,6 +27,18 @@ function yearFrom(date?: string): number | undefined {
   return Number.isFinite(year) ? year : undefined;
 }
 
+// RAWG's key art is full-bleed (often 1920px wide) — far too heavy for a row of
+// thumbnails. Its CDN resizes on the fly when a `resize/<width>/-/` segment is
+// inserted after /media/, which is what rawg.io itself serves. Anything that
+// doesn't match the expected shape is passed through untouched.
+const RAWG_MEDIA_PREFIX = 'https://media.rawg.io/media/';
+
+function rawgImage(url: string | null | undefined, width: number): string | undefined {
+  if (!url) return undefined;
+  if (!url.startsWith(RAWG_MEDIA_PREFIX)) return url;
+  return `${RAWG_MEDIA_PREFIX}resize/${width}/-/${url.slice(RAWG_MEDIA_PREFIX.length)}`;
+}
+
 export async function searchRawg(query: string): Promise<ExternalWork[]> {
   const apiKey = process.env.RAWG_API_KEY;
   if (!apiKey) return [];
@@ -50,7 +62,8 @@ export async function searchRawg(query: string): Promise<ExternalWork[]> {
         title: r.name,
         year,
         subtitle: year ? String(year) : undefined,
-        image_url: r.background_image ?? undefined,
+        image_url: rawgImage(r.background_image, 420),
+        thumb_url: rawgImage(r.background_image, 200),
         metadata: year ? { release_year: year } : {},
       } satisfies ExternalWork;
     })
@@ -61,6 +74,7 @@ export async function searchRawg(query: string): Promise<ExternalWork[]> {
 
 interface RawgGameDetails {
   released?: string;
+  background_image?: string | null;
   developers?: Array<{ name?: string; slug?: string }>;
   publishers?: Array<{ name?: string }>;
   platforms?: Array<{ platform?: { name?: string } }>;
@@ -138,5 +152,9 @@ export async function getRawgDetails(id: string): Promise<ExternalDetails | null
     ...(d.genres ?? []).map((g) => g.name),
     ...gameplayTags(d.tags),
   ];
-  return { metadata, genre: genreFromNames(tagNames) };
+  return {
+    metadata,
+    genre: genreFromNames(tagNames),
+    image_url: rawgImage(d.background_image, 420),
+  };
 }

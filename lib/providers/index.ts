@@ -7,7 +7,7 @@
 
 import type { ExternalWork, MediaType } from '@/types';
 import { searchTmdb, getTmdbDetails } from './tmdb';
-import { searchOpenLibrary } from './openlibrary';
+import { searchOpenLibrary, getOpenLibraryDetails } from './openlibrary';
 import { searchRawg, getRawgDetails } from './rawg';
 import type { ExternalDetails } from './types';
 
@@ -46,11 +46,11 @@ export async function searchExternal(
 }
 
 /**
- * Fetch full metadata (and a genre hint) for a single work by its namespaced
- * external_id, to auto-fill fields the search list can't return (director/runtime
- * for movies, developer for games, creator/seasons/platform for TV, plus genre).
- * Books are already fully covered by search, so they need no detail call.
- * Returns null on any failure.
+ * Fetch full metadata (a genre hint and the artwork) for a single work by its
+ * namespaced external_id, to auto-fill fields the search list can't return
+ * (director/runtime for movies, developer for games, creator/seasons/platform
+ * for TV, plus genre). Books get only their cover here — search already returns
+ * everything else about them. Returns null on any failure.
  */
 export async function getExternalDetails(
   externalId: string
@@ -62,5 +62,6 @@ export async function getExternalDetails(
   if (source === 'tmdb' && kind === 'movie') return getTmdbDetails('movie', id);
   if (source === 'tmdb' && kind === 'tv') return getTmdbDetails('tv_series', id);
   if (source === 'rawg' && kind === 'game') return getRawgDetails(id);
+  if (source === 'openlibrary' && kind === 'book') return getOpenLibraryDetails(id);
   return null;
 }

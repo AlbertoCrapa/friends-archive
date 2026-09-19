@@ -163,6 +163,45 @@ export function peopleMetadata(
   return peopleFields(key, names, (name) => links[name.toLowerCase()]);
 }
 
+// ── Artwork ───────────────────────────────────────────────────────────────
+// An item's poster/cover is stored as a LINK to the provider's CDN — we never
+// copy the bytes into Supabase Storage (see DATA_MODEL § 6.10). Because any
+// group member can write media_items.image_url, the value is restricted to the
+// image hosts of the three providers we already trust: an arbitrary URL in an
+// <img src> would turn every viewer of the group into a request to a stranger's
+// server. The same rule is enforced in the database by a CHECK constraint.
+
+/** Image CDNs we accept artwork from — one per provider. */
+export const PROVIDER_IMAGE_HOSTS = [
+  'image.tmdb.org',
+  'covers.openlibrary.org',
+  'media.rawg.io',
+] as const;
+
+/** Max characters for a stored artwork URL (mirrors the DB CHECK). */
+export const IMAGE_URL_MAX_LENGTH = 500;
+
+/**
+ * Normalize an artwork URL for storage/rendering: https, from a provider image
+ * host, within the length cap. Returns null for anything else, so a bad value
+ * degrades to "no artwork" instead of loading a stranger's URL.
+ */
+export function safeImageUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > IMAGE_URL_MAX_LENGTH) return null;
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'https:') return null;
+    if (!PROVIDER_IMAGE_HOSTS.includes(url.hostname as (typeof PROVIDER_IMAGE_HOSTS)[number])) {
+      return null;
+    }
+    return trimmed;
+  } catch {
+    return null;
+  }
+}
+
 // ── Tags ──────────────────────────────────────────────────────────────────
 // Tags are stored in the media_items.genre column as a comma-separated list
 // (the column name is legacy; semantically it is the item's tag set). On top of

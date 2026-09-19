@@ -1,7 +1,9 @@
 // ============================================================================
 // GET /api/external-details?id=<external_id>
 // Returns full normalized metadata for a single work, so selecting a suggestion
-// can auto-fill fields the search list omits (director/runtime, developer, etc).
+// can auto-fill fields the search list omits (director/runtime, developer, etc)
+// plus the artwork link (already known from search — repeated here so an item
+// linked before we stored artwork can refresh it with one call).
 // Server-side (keeps keys off the client). Requires a session.
 // ============================================================================
 
@@ -28,5 +30,6 @@ export async function GET(request: Request) {
   return NextResponse.json({
     metadata: details?.metadata ?? null,
     genre: details?.genre ?? null,
+    image_url: details?.image_url ?? null,
   });
 }

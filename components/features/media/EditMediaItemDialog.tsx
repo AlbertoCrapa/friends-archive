@@ -8,7 +8,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { FormBanner } from '@/components/ui/form-banner';
-import { ExternalLink, Link2, Search, X } from 'lucide-react';
+import { ExternalLink, ImageDown, Link2, Search, X } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -33,8 +33,10 @@ import {
   peopleFields,
   peopleValue,
   personLinksFrom,
+  safeImageUrl,
   serializeTags,
 } from '@/lib/utils';
+import { MediaPoster } from './MediaPoster';
 import type { PersonKey } from '@/lib/utils';
 
 interface Props {
@@ -78,6 +80,14 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
   const [externalId, setExternalId] = useState<string | null>(item.external_id);
   const [externalSource, setExternalSource] = useState<string | null>(item.external_source);
   const [externalUrl, setExternalUrl] = useState<string | null>(item.external_url);
+  // Artwork is a stored LINK to the provider's CDN. It can be dropped (an ugly
+  // or wrong poster) and re-fetched — items linked before artwork existed have
+  // no image until somebody asks for one.
+  const [imageUrl, setImageUrl] = useState<string | null>(safeImageUrl(item.image_url));
+  // What "Remove artwork" took away, kept so it can go back without a call.
+  const [droppedImage, setDroppedImage] = useState<string | null>(null);
+  const [fetchingArtwork, setFetchingArtwork] = useState(false);
+  const [artworkMissing, setArtworkMissing] = useState(false);
 
   // Inline "link to external" search (only shown when not currently linked).
   // Same throttled, quota-capped hook the Add dialog uses.
@@ -118,6 +128,10 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
     setExternalId(work.external_id);
     setExternalSource(work.external_source);
     setExternalUrl(work.external_url);
+    // The search payload already carries the artwork — no extra call needed.
+    setImageUrl(safeImageUrl(work.image_url));
+    setDroppedImage(null);
+    setArtworkMissing(false);
     // Setting externalId disables the search hook; clear the query box.
     setLinkQuery('');
     resetSearch();
@@ -129,12 +143,17 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
         `/api/external-details?id=${encodeURIComponent(work.external_id)}`
       );
       if (res.ok) {
-        const { metadata, genre } = (await res.json()) as {
+        const { metadata, genre, image_url } = (await res.json()) as {
           metadata: Record<string, unknown> | null;
           genre: string | null;
+          image_url: string | null;
         };
         if (metadata) applyWorkMetadata(metadata);
         if (genre) setTags(parseTags(genre));
+        // Only ever an upgrade: no artwork in the details keeps the one search
+        // already gave us.
+        const detailImage = safeImageUrl(image_url);
+        if (detailImage) setImageUrl(detailImage);
       }
     } catch {
       // keep the search-derived fields
@@ -147,7 +166,35 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
     setExternalId(null);
     setExternalSource(null);
     setExternalUrl(null);
+    setImageUrl(null);
+    setDroppedImage(null);
+    setArtworkMissing(false);
     setPersonLinks({});
+  }
+
+  /**
+   * Pull just the artwork for an already-linked item — the backfill path for
+   * every item added before artwork was stored. One provider call, on demand,
+   * and it touches nothing but the image.
+   */
+  async function fetchArtwork() {
+    if (!externalId) return;
+    setFetchingArtwork(true);
+    setArtworkMissing(false);
+    try {
+      const res = await fetch(
+        `/api/external-details?id=${encodeURIComponent(externalId)}`
+      );
+      const image = res.ok
+        ? safeImageUrl(((await res.json()) as { image_url: string | null }).image_url)
+        : null;
+      if (image) setImageUrl(image);
+      else setArtworkMissing(true);
+    } catch {
+      setArtworkMissing(true);
+    } finally {
+      setFetchingArtwork(false);
+    }
   }
 
   /** Names + their known pages for one credit role, ready to store. */
@@ -202,9 +249,10 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
         external_id: externalId,
         external_source: externalSource,
         external_url: externalUrl,
+        image_url: imageUrl,
       })
       .eq('id', item.id)
-      .select('id, group_id, title, type, genre, metadata, added_by, external_id, external_source, external_url, created_at, updated_at')
+      .select('id, group_id, title, type, genre, metadata, added_by, external_id, external_source, external_url, image_url, created_at, updated_at')
       .single();
 
     if (updateError) {
@@ -267,26 +315,79 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
             />
 
             {externalId ? (
-              <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
-                <span className="inline-flex items-center gap-1 text-amber-500/90">
-                  <Link2 className="h-3 w-3" />
-                  Linked to {externalSource}
-                  {externalUrl && (
-                    <a
-                      href={externalUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="ml-1 inline-flex items-center text-stone-500 hover:text-amber-500 cursor-pointer"
-                      aria-label="Open external page"
-                    >
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
+              /* Linked: the artwork is part of what the link gave us, so it is
+                 shown — and managed — right here rather than hidden in the row. */
+              <div className="flex items-start gap-3 border border-stone-800/60 bg-stone-900/30 p-2">
+                <MediaPoster src={imageUrl} type={item.type} size="lg" />
+                <div className="min-w-0 flex-1 space-y-1 text-[11px] font-mono">
+                  <span className="flex items-center gap-1 text-amber-500/90">
+                    <Link2 className="h-3 w-3" />
+                    Linked to {externalSource}
+                    {externalUrl && (
+                      <a
+                        href={externalUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-1 inline-flex items-center text-stone-500 hover:text-amber-500 cursor-pointer"
+                        aria-label="Open external page"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+                  </span>
+                  {imageUrl ? (
+                    <>
+                      <p className="text-stone-500">Artwork from {externalSource}</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDroppedImage(imageUrl);
+                          setImageUrl(null);
+                        }}
+                        className="text-stone-600 underline decoration-dotted underline-offset-2 hover:text-stone-300 cursor-pointer"
+                      >
+                        Remove artwork
+                      </button>
+                    </>
+                  ) : droppedImage ? (
+                    <>
+                      <p className="text-stone-600">Artwork removed</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setImageUrl(droppedImage);
+                          setDroppedImage(null);
+                        }}
+                        className="text-stone-500 underline decoration-dotted underline-offset-2 hover:text-amber-500 cursor-pointer"
+                      >
+                        Restore artwork
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-stone-600">
+                        {artworkMissing ? 'No artwork available' : 'No artwork yet'}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={fetchArtwork}
+                        disabled={fetchingArtwork}
+                        className="inline-flex items-center gap-1 text-stone-500 hover:text-amber-500 disabled:cursor-not-allowed disabled:text-stone-700 cursor-pointer"
+                      >
+                        {fetchingArtwork ? (
+                          <Spinner className="h-3 w-3" />
+                        ) : (
+                          <ImageDown className="h-3 w-3" />
+                        )}
+                        {fetchingArtwork ? 'Fetching…' : 'Fetch artwork'}
+                      </button>
+                    </>
                   )}
-                </span>
+                </div>
                 <button
                   type="button"
                   onClick={unlink}
-                  className="inline-flex items-center gap-1 text-stone-500 hover:text-stone-300 cursor-pointer"
+                  className="inline-flex items-center gap-1 text-[11px] font-mono text-stone-500 hover:text-stone-300 cursor-pointer"
                 >
                   <X className="h-3 w-3" />
                   Unlink
@@ -321,12 +422,11 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
                         onClick={() => linkToWork(work)}
                         className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-stone-900 transition-colors cursor-pointer border-b border-stone-800/60 last:border-b-0"
                       >
-                        {work.image_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={work.image_url} alt="" className="h-10 w-7 shrink-0 object-cover bg-stone-800" />
-                        ) : (
-                          <div className="h-10 w-7 shrink-0 bg-stone-800" />
-                        )}
+                        <MediaPoster
+                          src={work.thumb_url ?? work.image_url}
+                          type={work.type}
+                          size="xs"
+                        />
                         <span className="min-w-0">
                           <span className="block truncate text-sm text-stone-100">{work.title}</span>
                           {work.subtitle && (
