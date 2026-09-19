@@ -308,15 +308,12 @@ export function MediaTable({
                   onValueChange={(value) => updateStatus(item, value as ItemStatus)}
                 >
                   {/* The pill hugs its label (w-fit) instead of stretching across
-                      the column, which left a dead stripe before the chevron.
-                      justify-start + truncate keep the label hard against the
-                      left padding: the shared trigger's justify-between and
-                      line-clamp (a -webkit-box, which re-flows and re-centres a
-                      label too long for the cell) are both overridden here. */}
+                      the column, which left a dead stripe before the chevron;
+                      justify-start keeps the label hard against the left padding
+                      even when a long one has to be clipped. */}
                   <SelectTrigger
                     className={cn(
                       'h-7 w-fit max-w-full justify-start gap-1.5 border text-[11px] font-mono px-2 py-0 text-left',
-                      '[&>span]:line-clamp-none [&>span]:truncate',
                       statusClasses
                     )}
                     disabled={pendingStatusId === item.id}
@@ -467,7 +464,6 @@ export function MediaTable({
                     <SelectTrigger
                       className={cn(
                         'h-9 w-fit max-w-full justify-start gap-1.5 border text-[11px] font-mono px-2 text-left',
-                        '[&>span]:line-clamp-none [&>span]:truncate',
                         statusClasses
                       )}
                       disabled={pendingStatusId === item.id}
