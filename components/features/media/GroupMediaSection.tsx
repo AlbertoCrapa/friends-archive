@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { AddMediaDialog } from './AddMediaDialog';
 import { ArchiveControls, type ArchiveView, type SortKey, type StatusFilter, type TypeFilter } from './ArchiveControls';
@@ -75,6 +75,12 @@ export function GroupMediaSection({
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(Math.max(1, initialPage));
   const [items, setItems] = useState<MediaItemWithDetails[]>(initialItems);
+  /**
+   * The item whose sheet is open, kept HERE rather than in the list, because
+   * it belongs in the URL: `?item=<id>` is a link to one title inside a shared
+   * archive, which is the thing a group actually wants to send each other.
+   */
+  const [openId, setOpenId] = useState<string | null>(null);
 
   // Filter pipeline: type → status → tags → search → order
   const filteredItems = useMemo(() => {
@@ -123,6 +129,45 @@ export function GroupMediaSection({
     () => (activeType === 'all' ? items : items.filter((item) => item.type === activeType)),
     [items, activeType],
   );
+
+  /** Open or close a sheet, and leave the address bar saying which. */
+  function openItem(nextId: string | null) {
+    setOpenId(nextId);
+    syncUrl(activeType, currentPage, view, nextId);
+  }
+
+  /**
+   * A link straight to one title.
+   *
+   * Opening `?item=<id>` has to do more than set a flag: the item has to be
+   * ON SCREEN for the list to render its sheet, and whoever sent the link had
+   * their own filters and their own page. So the filters come off, the page
+   * jumps to wherever that item actually sits, and the stats view — which has
+   * no rows at all — gives way to the list. Mount only: after that the URL
+   * follows the sheet rather than the other way round.
+   */
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get('item');
+    if (!requested) return;
+    const index = items.findIndex((item) => item.id === requested);
+    if (index === -1) {
+      // The link points at something this archive no longer has (deleted, or
+      // a different group) — drop the parameter rather than leaving a dead one.
+      syncUrl(activeType, initialPage, initialView, null);
+      return;
+    }
+    setActiveType('all');
+    setActiveStatus('all');
+    setActiveTags([]);
+    setSearch('');
+    const nextView: ArchiveView = initialView === 'stats' ? 'list' : initialView;
+    setView(nextView);
+    const nextPage = Math.floor(index / PAGE_SIZE) + 1;
+    setPage(nextPage);
+    setOpenId(requested);
+    syncUrl('all', nextPage, nextView, requested);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function toggleTag(tag: string) {
     setActiveTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
@@ -201,7 +246,12 @@ export function GroupMediaSection({
     syncUrl(activeType, currentPage, next);
   }
 
-  function syncUrl(type: TypeFilter, nextPage: number, nextView: ArchiveView = view) {
+  function syncUrl(
+    type: TypeFilter,
+    nextPage: number,
+    nextView: ArchiveView = view,
+    nextItem: string | null = openId,
+  ) {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     if (type === 'all') params.delete('type');
@@ -210,6 +260,8 @@ export function GroupMediaSection({
     else params.set('page', String(nextPage));
     if (nextView === 'list') params.delete('view');
     else params.set('view', nextView);
+    if (nextItem) params.set('item', nextItem);
+    else params.delete('item');
     const query = params.toString();
     window.history.replaceState({}, '', query ? `${window.location.pathname}?${query}` : window.location.pathname);
   }
@@ -312,7 +364,14 @@ export function GroupMediaSection({
             userId={userId}
             currentUserNickname={currentUserNickname}
             memberIds={memberIds}
+            members={members}
             notInterestedByItem={notInterestedByItem}
+            activeTags={activeTags}
+            onToggleTag={toggleTag}
+            onDeleted={handleDeletedItem}
+            onRestored={handleRestoredItem}
+            openId={openId}
+            onOpenId={openItem}
             onUpdated={handleUpdatedItem}
           />
         ) : (
@@ -331,6 +390,8 @@ export function GroupMediaSection({
             onToggleTag={toggleTag}
             onDeleted={handleDeletedItem}
             onRestored={handleRestoredItem}
+            openId={openId}
+            onOpenId={openItem}
             onUpdated={handleUpdatedItem}
           />
         )}

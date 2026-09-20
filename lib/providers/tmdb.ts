@@ -3,11 +3,21 @@
 // Server-only. Normalizes TMDB search results into ExternalWork[].
 // ============================================
 
-import type { ExternalWork, MovieMetadata, TvSeriesMetadata } from '@/types';
+import type { ExternalWork, ItemStory, MovieMetadata, TvSeriesMetadata } from '@/types';
+import { ITEM_STORY_VERSION } from '@/types';
 import { peopleMetadata } from '@/lib/utils';
 import { fetchJson } from './http';
 import type { ExternalDetails } from './types';
 import { genreFromNames } from './types';
+import {
+  STORY_REVALIDATE_SECONDS,
+  billedNames,
+  factList,
+  languageName,
+  longDate,
+  plainText,
+  trimSynopsis,
+} from './story';
 
 // TMDB serves every poster at a set of fixed widths, chosen in the path. We keep
 // two: a tiny one for the suggestion row, and the one we STORE — sized for the
@@ -189,5 +199,156 @@ export async function getTmdbDetails(
     metadata,
     genre: genreFromNames((d.genres ?? []).map((g) => g.name)),
     image_url: imageFrom(d.poster_path, POSTER_BASE),
+  };
+}
+
+// ── Story (the on-demand read behind the item sheet) ─────────────────────────
+
+interface TmdbCredits {
+  cast?: Array<{ name?: string; order?: number }>;
+}
+
+interface TmdbMovieStory {
+  overview?: string;
+  tagline?: string;
+  runtime?: number | null;
+  vote_average?: number;
+  vote_count?: number;
+  release_date?: string;
+  original_language?: string;
+  revenue?: number;
+  production_companies?: Array<{ name?: string }>;
+  credits?: TmdbCredits;
+}
+
+interface TmdbTvStory {
+  overview?: string;
+  tagline?: string;
+  number_of_seasons?: number;
+  number_of_episodes?: number;
+  /** Effectively always empty now — see episodeLength(). */
+  episode_run_time?: number[];
+  vote_average?: number;
+  vote_count?: number;
+  first_air_date?: string;
+  last_air_date?: string;
+  status?: string;
+  original_language?: string;
+  networks?: Array<{ name?: string }>;
+  credits?: TmdbCredits;
+  last_episode_to_air?: { runtime?: number | null } | null;
+  /** The appended first season. The key really is spelled "season/1". */
+  'season/1'?: { episodes?: Array<{ runtime?: number | null }> };
+}
+
+/**
+ * How long ONE episode of this show runs.
+ *
+ * `episode_run_time` is the field for this and TMDB has quietly emptied it —
+ * it comes back `[]` for Breaking Bad, Game of Thrones, Arcane and everything
+ * else we tried. So the length is taken from the MEDIAN of the first season's
+ * episodes, which is why the story appends `season/1` to the same request
+ * rather than spending a second one.
+ *
+ * The median, not the last episode: a finale is the outlier of its own show
+ * (Friends ends on a 48-minute double, against a 23-minute median), and
+ * multiplying a finale by the episode count overstated Friends by 95 hours.
+ */
+function episodeLength(d: TmdbTvStory): number | undefined {
+  const runtimes = (d['season/1']?.episodes ?? [])
+    .map((episode) => episode.runtime)
+    .filter((n): n is number => typeof n === 'number' && n > 0)
+    .sort((a, b) => a - b);
+  if (runtimes.length > 0) return runtimes[Math.floor(runtimes.length / 2)];
+
+  const declared = (d.episode_run_time ?? []).filter((n) => n > 0).sort((a, b) => a - b);
+  if (declared.length > 0) return declared[0];
+
+  const last = d.last_episode_to_air?.runtime;
+  return typeof last === 'number' && last > 0 ? last : undefined;
+}
+
+/** $1,300,000,000 -> "$1.3B". Only worth showing at all above a million. */
+function money(value: unknown): string | undefined {
+  if (typeof value !== 'number' || value < 1_000_000) return undefined;
+  if (value >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(1)}B`;
+  return `$${Math.round(value / 1_000_000)}M`;
+}
+
+/** TMDB bills its cast in `order`; take the top of that list, not the API's. */
+function topBilled(credits: TmdbCredits | undefined) {
+  return [...(credits?.cast ?? [])]
+    .sort((a, b) => (a.order ?? 99) - (b.order ?? 99))
+    .slice(0, 6);
+}
+
+/**
+ * The full story for one TMDB title: synopsis, the world's score, the billed
+ * cast, and the time it asks of you.
+ *
+ * A series' time cost is the honest one — episodes times their length, not the
+ * length of one episode — because that is the number a group is really
+ * deciding about when somebody proposes starting a show.
+ */
+export async function getTmdbStory(
+  kind: 'movie' | 'tv_series',
+  id: string
+): Promise<ItemStory | null> {
+  if (!process.env.TMDB_API_KEY) return null;
+  const fetchedAt = new Date().toISOString();
+
+  if (kind === 'movie') {
+    const { url, headers } = buildTmdbUrl(`movie/${id}?append_to_response=credits`);
+    const d = await fetchJson<TmdbMovieStory>(url, headers, undefined, STORY_REVALIDATE_SECONDS);
+    if (!d) return null;
+    const runtime = typeof d.runtime === 'number' && d.runtime > 0 ? d.runtime : undefined;
+    return {
+      v: ITEM_STORY_VERSION,
+      source: 'tmdb',
+      fetched_at: fetchedAt,
+      synopsis: trimSynopsis(d.overview),
+      tagline: plainText(d.tagline),
+      ...(runtime ? { minutes: runtime, minutes_basis: 'Runtime' } : {}),
+      ...(d.vote_average && d.vote_average > 0
+        ? { score: { value: d.vote_average, count: d.vote_count, label: 'TMDB members' } }
+        : {}),
+      people: billedNames(topBilled(d.credits)),
+      facts: factList([
+        { label: 'Released', value: longDate(d.release_date) },
+        { label: 'Language', value: languageName(d.original_language) },
+        { label: 'Studio', value: d.production_companies?.[0]?.name },
+        { label: 'Box office', value: money(d.revenue) },
+      ]),
+    };
+  }
+
+  const { url, headers } = buildTmdbUrl(`tv/${id}?append_to_response=credits,season/1`);
+  const d = await fetchJson<TmdbTvStory>(url, headers, undefined, STORY_REVALIDATE_SECONDS);
+  if (!d) return null;
+
+  const episodes = d.number_of_episodes ?? 0;
+  const perEpisode = episodeLength(d);
+  const minutes = episodes > 0 && perEpisode ? episodes * perEpisode : undefined;
+
+  return {
+    v: ITEM_STORY_VERSION,
+    source: 'tmdb',
+    fetched_at: fetchedAt,
+    synopsis: trimSynopsis(d.overview),
+    tagline: plainText(d.tagline),
+    ...(minutes
+      ? { minutes, minutes_basis: `${episodes} episodes × ${perEpisode} min` }
+      : {}),
+    ...(d.vote_average && d.vote_average > 0
+      ? { score: { value: d.vote_average, count: d.vote_count, label: 'TMDB members' } }
+      : {}),
+    people: billedNames(topBilled(d.credits)),
+    facts: factList([
+      { label: 'Status', value: d.status },
+      { label: 'First aired', value: longDate(d.first_air_date) },
+      { label: 'Last aired', value: longDate(d.last_air_date) },
+      { label: 'Network', value: d.networks?.[0]?.name },
+      { label: 'Language', value: languageName(d.original_language) },
+    ]),
   };
 }

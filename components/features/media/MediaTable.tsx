@@ -15,7 +15,7 @@
 // not holding a phone.
 // ============================================================================
 
-import { Fragment, useState } from 'react';
+import { Fragment, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Check,
@@ -26,9 +26,7 @@ import {
   RotateCcw,
   Trash2,
 } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
-import { useToast } from '@/components/ui/toast';
 import { GlideSelect } from '@/components/micro/GlideSelect';
 import { SwipeRow } from '@/components/micro/SwipeRow';
 import { WarmTooltip, WarmTooltipGroup } from '@/components/micro/WarmTooltip';
@@ -39,12 +37,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useItemDelete } from '@/hooks/useItemDelete';
 import { useItemStatus } from '@/hooks/useItemStatus';
 import { getPeople, getVisibleTags, cn } from '@/lib/utils';
 import type { PersonKey } from '@/lib/utils';
 import { getStatusLabel, getStatusOptions, getTypeLabel } from '@/types';
 import type { ItemStatus, MediaItem, MediaItemWithDetails, MediaType } from '@/types';
 import { CommentsDialog } from './CommentsDialog';
+import { ItemSheet } from './ItemSheet';
 import { StatusDot, statusOptions } from './StatusDot';
 import { EditMediaItemDialog } from './EditMediaItemDialog';
 import { MediaPoster, PosterGlow, TYPE_ICONS } from './MediaPoster';
@@ -87,6 +87,9 @@ interface Props {
   onDeleted?: (itemId: string) => void;
   /** Puts a deleted item back where it was when the undo is pressed. */
   onRestored?: (item: MediaItemWithDetails) => void;
+  /** Which item's sheet is open, when the archive owns that (deep links). */
+  openId?: string | null;
+  onOpenId?: (itemId: string | null) => void;
   onUpdated?: (item: MediaItemWithDetails) => void;
 }
 
@@ -105,6 +108,8 @@ export function MediaTable({
   onToggleTag,
   onDeleted,
   onRestored,
+  openId,
+  onOpenId,
   onUpdated,
 }: Props) {
   const { statusOf, isConsumed, setStatus, savingId } = useItemStatus({
@@ -113,7 +118,17 @@ export function MediaTable({
     onUpdated,
   });
   const [editing, setEditing] = useState<MediaItemWithDetails | null>(null);
-  const { toast } = useToast();
+  // The open sheet is tracked by ID, not by object: the item it shows is
+  // re-read from `items` on every render, so a status change, an edit or a new
+  // comment reaches the open sheet instead of leaving a stale copy on screen.
+  //
+  // The archive above owns that id when it can — it is in the URL, so a sheet
+  // can be linked to — and falls back to local state wherever this list is
+  // used on its own.
+  const [localOpenId, setLocalOpenId] = useState<string | null>(null);
+  const currentOpenId = openId !== undefined ? openId : localOpenId;
+  const setOpenId = onOpenId ?? setLocalOpenId;
+  const deleteItem = useItemDelete({ onDeleted, onRestored });
   const activeTagSet = new Set(activeTags);
 
   // The meter has one slot per member, in a fixed order with the viewer first,
@@ -130,46 +145,10 @@ export function MediaTable({
     }));
   })();
 
-  /**
-   * Deleting a title is undoable, and undoable here means the DELETE has not
-   * happened yet.
-   *
-   * The row leaves the list on the spot — that is the whole answer the gesture
-   * or the menu owes you — and the write itself is handed to the toast, which
-   * runs it only if the undo window closes untouched. Pressing Undo therefore
-   * puts the row back with nothing to repair: the item never left the table,
-   * so its comments, its per-member statuses and its consumption records are
-   * all still attached to it. Restoring a row that HAD been deleted could not
-   * promise any of that.
-   */
-  function deleteItem(item: MediaItemWithDetails) {
-    onDeleted?.(item.id);
-    toast({
-      tone: 'destructive',
-      message: (
-        <>
-          Deleted <b>{item.title}</b>
-        </>
-      ),
-      onUndo: () => onRestored?.(item),
-      commit: async () => {
-        const supabase = createClient();
-        const { error } = await supabase.from('media_items').delete().eq('id', item.id);
-        if (!error) return;
-        // The window closed, the write failed: the row is still there on the
-        // server, so it goes back on screen rather than quietly disappearing
-        // until the next reload.
-        onRestored?.(item);
-        toast({
-          message: (
-            <>
-              Could not delete <b>{item.title}</b> — it is back in the archive.
-            </>
-          ),
-        });
-      },
-    });
-  }
+  const openItem = useMemo(
+    () => (currentOpenId ? items.find((item) => item.id === currentOpenId) ?? null : null),
+    [items, currentOpenId],
+  );
 
   if (items.length === 0) {
     const label = activeType === 'all' ? 'items' : getTypeLabel(activeType).toLowerCase();
@@ -205,9 +184,44 @@ export function MediaTable({
             onStatus={(next) => setStatus(item, next)}
             onEdit={() => setEditing(item)}
             onDelete={() => deleteItem(item)}
+            onOpen={() => setOpenId(item.id)}
           />
         ))}
       </ul>
+
+      {/* Clicking a row opens the item itself: what it is, what it costs you,
+          where the group has got to, and what everyone said. The list stays
+          mounted behind it, so closing the sheet puts you back exactly where
+          you were in the archive. */}
+      <ItemSheet
+        item={openItem}
+        open={!!openItem}
+        onOpenChange={(next) => {
+          if (!next) setOpenId(null);
+        }}
+        userId={userId}
+        currentUserNickname={currentUserNickname}
+        isMember={isMember}
+        isOwner={isOwner}
+        members={roster}
+        status={openItem ? statusOf(openItem) : 'plan_to_consume'}
+        consumed={openItem ? isConsumed(openItem.id) : false}
+        saving={!!openItem && savingId === openItem.id}
+        onStatus={(next) => {
+          if (openItem) setStatus(openItem, next);
+        }}
+        onUpdated={onUpdated}
+        onDelete={
+          isMember && openItem
+            ? () => {
+                deleteItem(openItem);
+                setOpenId(null);
+              }
+            : undefined
+        }
+        onToggleTag={onToggleTag}
+        activeTags={activeTags}
+      />
 
       {editing ? (
         <EditMediaItemDialog
@@ -244,6 +258,7 @@ interface RowProps {
   onStatus: (status: ItemStatus) => void;
   onEdit: () => void;
   onDelete: () => void;
+  onOpen: () => void;
 }
 
 function ArchiveRow({
@@ -263,11 +278,22 @@ function ArchiveRow({
   onStatus,
   onEdit,
   onDelete,
+  onOpen,
 }: RowProps) {
   const TypeGlyph = TYPE_ICONS[item.type];
   const tags = getVisibleTags(item);
   const skipped = status === 'not_interested';
   const [menuOpen, setMenuOpen] = useState(false);
+
+  /**
+   * Where the press started, so a PULL is never mistaken for a TAP.
+   *
+   * The row is draggable (that is how the delete drawer opens) and clicking it
+   * opens the item. A gesture that moved more than a few pixels was a drag,
+   * whatever the browser then decides to call it, and must not also open a
+   * sheet on top of the drawer it just opened.
+   */
+  const pressAt = useRef<{ x: number; y: number } | null>(null);
 
   // The viewer's own state is optimistic, so the meter has to prefer it over
   // the server's consumption records for their own slot.
@@ -320,6 +346,19 @@ function ArchiveRow({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.18, delay: Math.min(index * 0.01, 0.16) }}
+          onPointerDown={(event) => {
+            pressAt.current = { x: event.clientX, y: event.clientY };
+          }}
+          onClick={(event) => {
+            const start = pressAt.current;
+            pressAt.current = null;
+            // Anything that handles its own click — a tag, a link, the status
+            // control, the menu — stops the event before it reaches this, so
+            // only the row's own surface opens the sheet.
+            if (event.defaultPrevented) return;
+            if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 8) return;
+            onOpen();
+          }}
           className={cn(
             // A grid, not a wrapping flex row.
             //
@@ -329,7 +368,7 @@ function ArchiveRow({
             // below the poster instead, which left a band of dead space under
             // every short row and made no two rows the same height.
             // From sm up the same three pieces lay out in three columns.
-            'group relative isolate grid grid-cols-[48px_minmax(0,1fr)] items-start gap-x-3 gap-y-2 rounded-[12px] border p-2.5 transition-colors sm:grid-cols-[48px_minmax(0,1fr)_auto]',
+            'group relative isolate grid cursor-pointer grid-cols-[48px_minmax(0,1fr)] items-start gap-x-3 gap-y-2 rounded-[12px] border p-2.5 transition-colors sm:grid-cols-[48px_minmax(0,1fr)_auto]',
             everyone ? 'border-emerald-500/40' : 'border-white/[0.07]',
             'hover:border-white/20',
             skipped && 'opacity-55',
@@ -350,8 +389,21 @@ function ArchiveRow({
 
           <div className="min-w-0 space-y-1 py-0.5">
             <div className="flex min-w-0 items-center gap-1.5">
-              <h3 className="truncate text-[14.5px] font-semibold tracking-[-0.015em] text-stone-50">
-                {item.title}
+              {/* The pointer can click anywhere on the row; a keyboard needs
+                  one real control, and the title is the one that says what it
+                  will open. */}
+              <h3 className="min-w-0 truncate text-[14.5px] font-semibold tracking-[-0.015em] text-stone-50">
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onOpen();
+                  }}
+                  aria-haspopup="dialog"
+                  className="max-w-full cursor-pointer truncate text-left align-bottom transition-colors hover:text-amber-300"
+                >
+                  {item.title}
+                </button>
               </h3>
               {item.external_url ? (
                 <a
@@ -359,6 +411,7 @@ function ArchiveRow({
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label={`Open ${item.title} on ${item.external_source}`}
+                  onClick={(event) => event.stopPropagation()}
                   className="shrink-0 text-stone-600 transition-colors hover:text-amber-400"
                 >
                   <ExternalLink className="h-3 w-3" />
@@ -380,7 +433,10 @@ function ArchiveRow({
                   <button
                     key={tag}
                     type="button"
-                    onClick={() => onToggleTag?.(tag)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onToggleTag?.(tag);
+                    }}
                     aria-pressed={activeTagSet.has(tag)}
                     disabled={!onToggleTag}
                     className={cn(
@@ -410,8 +466,12 @@ function ArchiveRow({
             ) : null}
           </div>
 
-          {/* Column 2 row 2 on a phone, column 3 on a desk. */}
-          <div className="flex items-center gap-2 sm:col-start-3 sm:row-start-1 sm:self-center sm:justify-end">
+          {/* Column 2 row 2 on a phone, column 3 on a desk. Every control in
+              here does its own thing and stops the row's click. */}
+          <div
+            onClick={(event) => event.stopPropagation()}
+            className="flex items-center gap-2 sm:col-start-3 sm:row-start-1 sm:self-center sm:justify-end"
+          >
             <FinishedMeter
               roster={roster}
               finished={finished}

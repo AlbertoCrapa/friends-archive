@@ -3,10 +3,12 @@
 // Server-only. No API key required. Normalizes search.json into ExternalWork[].
 // ============================================
 
-import type { ExternalWork } from '@/types';
+import type { ExternalWork, ItemStory } from '@/types';
+import { ITEM_STORY_VERSION } from '@/types';
 import { MAX_PEOPLE, peopleMetadata } from '@/lib/utils';
 import { fetchJson } from './http';
 import type { ExternalDetails } from './types';
+import { STORY_REVALIDATE_SECONDS, factList, longDate, trimSynopsis } from './story';
 
 interface OpenLibraryDoc {
   key?: string; // e.g. "/works/OL45804W"
@@ -135,5 +137,101 @@ export async function getOpenLibraryDetails(workId: string): Promise<ExternalDet
   return {
     metadata: {},
     image_url: coverId ? `https://covers.openlibrary.org/b/id/${coverId}-M.jpg` : undefined,
+  };
+}
+
+// ── Story (the on-demand read behind the item sheet) ─────────────────────────
+
+interface OpenLibraryWorkStory {
+  description?: string | { value?: string };
+  first_publish_date?: string;
+  subjects?: string[];
+}
+
+interface OpenLibraryEditionStory {
+  entries?: Array<{
+    number_of_pages?: number;
+    publishers?: string[];
+    publish_date?: string;
+    languages?: Array<{ key?: string }>;
+  }>;
+}
+
+/**
+ * Minutes per page, for the time cost.
+ *
+ * A trade paperback page is roughly 300 words and an adult reads prose at
+ * roughly 250 words a minute, so a page is a little over a minute. It is an
+ * estimate and the sheet says so — but "12 hours" is an answer a group can
+ * plan an evening around, and "384 pages" is not.
+ */
+const MINUTES_PER_PAGE = 1.2;
+
+/** The median of the page counts the editions report, ignoring the nonsense. */
+function medianPages(entries: OpenLibraryEditionStory['entries']): number | undefined {
+  const counts = (entries ?? [])
+    .map((entry) => entry.number_of_pages)
+    .filter((n): n is number => typeof n === 'number' && n > 20 && n < 5000)
+    .sort((a, b) => a - b);
+  if (counts.length === 0) return undefined;
+  return counts[Math.floor(counts.length / 2)];
+}
+
+/**
+ * The full story for one Open Library work.
+ *
+ * Open Library splits what a reader thinks of as "the book" across a WORK (the
+ * text: its description, when it first appeared) and its EDITIONS (the objects:
+ * how many pages, who printed them). Both are needed here and both are fast, so
+ * the story spends two calls where the artwork lookup spends one.
+ */
+export async function getOpenLibraryStory(workId: string): Promise<ItemStory | null> {
+  const id = encodeURIComponent(workId);
+  // Open Library is the slow one — its editions endpoint regularly takes
+  // several seconds — and unlike the autocomplete, nobody is waiting on a
+  // keystroke here: the sheet is already fully readable while this resolves.
+  // The default 3s budget was simply throwing the answer away.
+  const OL_STORY_TIMEOUT_MS = 12_000;
+
+  const [work, editions] = await Promise.all([
+    fetchJson<OpenLibraryWorkStory>(
+      `https://openlibrary.org/works/${id}.json`,
+      OL_HEADERS,
+      OL_STORY_TIMEOUT_MS,
+      STORY_REVALIDATE_SECONDS
+    ),
+    fetchJson<OpenLibraryEditionStory>(
+      `https://openlibrary.org/works/${id}/editions.json?limit=20`,
+      OL_HEADERS,
+      OL_STORY_TIMEOUT_MS,
+      STORY_REVALIDATE_SECONDS
+    ),
+  ]);
+  if (!work && !editions) return null;
+
+  const description =
+    typeof work?.description === 'string' ? work.description : work?.description?.value;
+  const pages = medianPages(editions?.entries);
+  const publisher = (editions?.entries ?? [])
+    .map((entry) => entry.publishers?.[0])
+    .find((name): name is string => !!name);
+
+  return {
+    v: ITEM_STORY_VERSION,
+    source: 'openlibrary',
+    fetched_at: new Date().toISOString(),
+    synopsis: trimSynopsis(description),
+    ...(pages
+      ? {
+          minutes: Math.round(pages * MINUTES_PER_PAGE),
+          minutes_basis: `${pages} pages, estimated`,
+        }
+      : {}),
+    facts: factList([
+      { label: 'First published', value: longDate(work?.first_publish_date) },
+      { label: 'Pages', value: pages },
+      { label: 'Publisher', value: publisher },
+      { label: 'Editions', value: editions?.entries?.length },
+    ]),
   };
 }

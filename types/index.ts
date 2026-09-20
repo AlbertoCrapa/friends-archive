@@ -124,6 +124,68 @@ export interface ExternalWork {
   metadata: MediaMetadata;
 }
 
+// ── The story (on-demand external enrichment) ────────────────────────────────
+
+/**
+ * Bump when the shape below changes in a way that makes an older cached payload
+ * wrong. The number is part of every cache key, so old entries are ignored
+ * rather than migrated.
+ */
+export const ITEM_STORY_VERSION = 1;
+
+/** One labelled line in the facts table of the item sheet. */
+export interface StoryFact {
+  label: string;
+  value: string;
+  /** External page for the value, when the provider gives one. */
+  url?: string;
+}
+
+/**
+ * Everything the item sheet shows that is NOT ours: the synopsis, the world's
+ * score, the billed names, and the handful of facts that differ per provider.
+ *
+ * This is deliberately NOT stored on media_items. The archive list already
+ * carries `metadata` for every row, and a synopsis per item would put tens of
+ * kilobytes of prose into a payload that exists to draw a list. The story is
+ * fetched once, the first time somebody opens that item, and cached in three
+ * places that each cost nothing: the browser's memory for the session, the
+ * browser's localStorage for a month, and Next's own fetch cache on the server
+ * — which is shared between users, so the second friend to open the same film
+ * within the day does not reach the provider at all. See DATA_MODEL § 6.11.
+ */
+export interface ItemStory {
+  v: number;
+  source: ExternalSource;
+  /** ISO timestamp of the upstream read, for the cache's own TTL. */
+  fetched_at: string;
+  /** Plot / description, plain text, already trimmed to a readable length. */
+  synopsis?: string;
+  /** The one-line promotional line, when the provider has one. */
+  tagline?: string;
+  /**
+   * WHAT IT COSTS YOU, in minutes: a film's runtime, a series' episodes times
+   * their length, a game's average playthrough, a book's pages at reading pace.
+   * The one number that makes four kinds of media comparable, and the question
+   * a group actually argues about.
+   */
+  minutes?: number;
+  /** How that number was arrived at, e.g. "62 episodes x 48 min". */
+  minutes_basis?: string;
+  /** The world's verdict, normalised to a 0–10 scale. */
+  score?: {
+    value: number;
+    /** How many people voted, when the provider says. */
+    count?: number;
+    /** Who is speaking — "TMDB members", "Metacritic", … */
+    label: string;
+  };
+  /** Billed cast / narrators / notable names, at most six. */
+  people?: string[];
+  /** Provider-specific facts, already formatted for display. */
+  facts?: StoryFact[];
+}
+
 // ── Users / Auth ────────────────────────────────────────────────────────────
 
 export interface Profile {

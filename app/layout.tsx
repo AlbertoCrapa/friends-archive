@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { PROVIDER_IMAGE_HOSTS } from '@/lib/utils';
+import { ScrollGutter } from '@/components/layout/ScrollGutter';
 import { ToastProvider } from '@/components/ui/toast';
 import '@/components/micro/micro.css';
 import './globals.css';
@@ -31,6 +32,10 @@ export default function RootLayout({
           navigated away from — has to outlive whatever raised it, and a
           deferred delete has to keep its undo window while it does. */}
       <body>
+        {/* Holds the page's width still when a menu or a dialog locks
+            scrolling — see the component for why CSS alone is not taken on
+            trust here. */}
+        <ScrollGutter />
         <ToastProvider>{children}</ToastProvider>
       </body>
     </html>

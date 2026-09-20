@@ -363,7 +363,7 @@ A single media item within a group. The `type` field determines which keys are m
 
 ### 3.6 `consumption_records`
 
-Tracks per-user consumption of a specific item. One row per (user, item) pair. Allows each member to independently mark any item as consumed and optionally attach a personal note.
+Tracks per-user consumption of a specific item. One row per (user, item) pair. Allows each member to independently mark any item as consumed and attach their verdict on it — a note, a 1–5 rating, or both.
 
 | Column          | Type          | Nullable | Default             | Description                                         |
 | --------------- | ------------- | -------- | ------------------- | --------------------------------------------------- |
@@ -371,7 +371,8 @@ Tracks per-user consumption of a specific item. One row per (user, item) pair. A
 | `media_item_id` | `UUID`        | NOT NULL | —                   | FK to `media_items.id`.                             |
 | `user_id`       | `UUID`        | NOT NULL | —                   | FK to `profiles.id`.                                |
 | `consumed_at`   | `TIMESTAMPTZ` | NOT NULL | `NOW()`             | When the user marked this as consumed.              |
-| `note`          | `TEXT`        | NULL     | `NULL`              | Personal note. Max 500 chars. Per-user, not shared. |
+| `note`          | `TEXT`        | NULL     | `NULL`              | What this member thought of it. Max 500 chars. Written by its owner alone, **readable by the whole group** (that is what RLS has always allowed) and shown to them on the item sheet — see [§ 6.12](#612-where-a-verdict-lives). |
+| `rating`        | `SMALLINT`    | NULL     | `NULL`              | The member's own 1–5 verdict. NULL = finished without rating. Added by `docs/migrations/2026-09-20_item_ratings.sql`; the UI hides the stars until it is run. |
 | `created_at`    | `TIMESTAMPTZ` | NOT NULL | `NOW()`             | Row creation time.                                  |
 | `updated_at`    | `TIMESTAMPTZ` | NOT NULL | `NOW()`             | Last updated.                                       |
 
@@ -814,6 +815,53 @@ provider abstraction and the search/autocomplete flow live in `lib/providers/` a
 **Why the host allowlist:** any member of a group can `UPDATE media_items`, so an unconstrained URL column would let one member point every other member's browser at a server of their choosing — IP logging, tracking pixels, or simply junk. The `image_url_provider_host` CHECK restricts the column to the three provider image hosts, and `safeImageUrl()` in `lib/utils.ts` applies the same rule when writing and when rendering. **The two must be kept in sync**; adding a provider means changing both. The practical consequence is deliberate: a manual (unlinked) item cannot carry a pasted image from an arbitrary host.
 
 **Sizes are chosen in the URL,** at the size the list actually renders — `w185` for TMDB, `-M` for Open Library covers, `resize/420/-/` for RAWG's full-bleed key art. A bigger surface later only needs the size segment swapped in the stored URL; no re-fetch and no migration.
+
+---
+
+### 6.11 Why the item sheet caches instead of storing
+
+**The decision:** clicking an item opens a sheet that shows a synopsis, the world's score, the billed cast and a handful of provider facts. **None of it is written to `media_items`.** It is read on demand from the provider and cached in three places, none of which is our database.
+
+**The alternative:** fetch it once when the item is created (or on first open) and keep it in `metadata`, the way we already keep the director and the runtime.
+
+**Why caching wins here:**
+
+| | Cache (chosen) | Store in `metadata` |
+| --- | --- | --- |
+| Cost per archive page load | Zero — the list query never carries a synopsis | A 500-word overview **per item**, in every list payload, on every visit, for a page that draws rows |
+| Freshness | A re-written synopsis or a moved score arrives within a day | Frozen at whatever the provider said the day the item was added |
+| Provider calls | ≈1 per title per day, **for everybody** (see below) | 1 per title ever — the only column where storing wins |
+| Schema | None | A JSONB blob that has to be versioned, migrated and kept out of the list `select` |
+
+**The three layers, cheapest first** (`hooks/useItemStory.ts`, `lib/providers/story.ts`, `app/api/item-story/route.ts`):
+
+1. **The tab's memory** — a module-level `Map`. Re-opening the same item in the same session is free, and two components asking at the same moment share one request.
+2. **`localStorage`, 30 days** — survives reloads and later visits, capped at 120 entries and pruned oldest-first, with every read and write wrapped so a browser that refuses storage simply falls back to layer 1.
+3. **Next's fetch cache, 24 hours** — on the server, and therefore **shared between users**: the first friend to open a title that day pays the provider call and the rest of the group is served from it. This is the layer that makes the feature safe on a free tier.
+
+**The free tiers this has to live inside:**
+
+| Provider | Free allowance | What we spend |
+| --- | --- | --- |
+| TMDB | No daily cap; rate-limited per second. Attribution required | 1 call per movie/series per day, worldwide |
+| RAWG | **20,000 requests per month** — the binding constraint | 1 call per game per day |
+| Open Library | No key, no published cap; asks for a descriptive User-Agent | 2 calls per book per day (work + editions) |
+
+A 200-title archive opened daily by six friends costs at most ~200 upstream calls a month, because the day cache collapses the six into one. The API route additionally refuses more than 40 story reads a minute from one account, so a loop cannot spend the quota on everyone's behalf.
+
+**Artwork is never re-fetched.** The poster is the link the item already carries (§ 6.10), and the sheet asks the CDN for a *larger size of the same file* by rewriting the size segment (`w185` → `w500`, `-M` → `-L`, `resize/420` → `resize/640`) — one image, once, then the browser's own year-long cache. The blurred wash behind the sheet is the **same URL the row was already showing**, so it costs nothing at all.
+
+**What it costs us:** an item whose provider is unreachable shows no synopsis. That is why everything above the fold — the title, the credits, the tags, who has finished it, what they said — comes from our own row and is on screen before the network is touched at all.
+
+### 6.12 Where a verdict lives
+
+**The decision:** what a member thought of something is stored on their `consumption_records` row — `note` (up to 500 chars, shipped from the beginning) and `rating` (1–5, added by the 2026-09-20 migration).
+
+**Why there:** that row already exists once per (item, member) and already means *I finished this*. A verdict is a statement by the same person about the same completion, so it needs no new table, no new uniqueness rule and no new policy: a member may write only their own row, and the whole group may read it — which is exactly the sharing rule a verdict wants.
+
+**The consequence to know about:** un-marking something as finished deletes that row, and takes the note and the rating with it. The sheet says so before you do it.
+
+**Ratings degrade, they do not break.** The client asks for `rating`, and if the column is not there yet it remembers that for the session and re-reads without it; the sheet then shows notes alone. Running the migration turns the stars on with no deploy.
 
 ---
 

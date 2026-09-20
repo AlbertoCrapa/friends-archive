@@ -5,10 +5,10 @@
 // abstraction the rest of the app speaks).
 // ============================================
 
-import type { ExternalWork, MediaType } from '@/types';
-import { searchTmdb, getTmdbDetails } from './tmdb';
-import { searchOpenLibrary, getOpenLibraryDetails } from './openlibrary';
-import { searchRawg, getRawgDetails } from './rawg';
+import type { ExternalWork, ItemStory, MediaType } from '@/types';
+import { searchTmdb, getTmdbDetails, getTmdbStory } from './tmdb';
+import { searchOpenLibrary, getOpenLibraryDetails, getOpenLibraryStory } from './openlibrary';
+import { searchRawg, getRawgDetails, getRawgStory } from './rawg';
 import type { ExternalDetails } from './types';
 
 /** Provider assignment per media category. */
@@ -63,5 +63,28 @@ export async function getExternalDetails(
   if (source === 'tmdb' && kind === 'tv') return getTmdbDetails('tv_series', id);
   if (source === 'rawg' && kind === 'game') return getRawgDetails(id);
   if (source === 'openlibrary' && kind === 'book') return getOpenLibraryDetails(id);
+  return null;
+}
+
+/**
+ * Read the STORY for one linked work — the synopsis, the world's score, the
+ * billed names and the time it asks of you.
+ *
+ * Nothing here is written to our own row: the story is read when a member opens
+ * the item and cached in front of this call (Next's shared fetch cache on the
+ * server, the browser's memory and localStorage on the client), so a title
+ * costs at most one provider call a day no matter how many friends open it.
+ * See DATA_MODEL § 6.11. Returns null for manual items and on any failure —
+ * the sheet simply shows what we already know about the item instead.
+ */
+export async function getExternalStory(externalId: string): Promise<ItemStory | null> {
+  const [source, kind, ...rest] = externalId.split(':');
+  const id = rest.join(':');
+  if (!id) return null;
+
+  if (source === 'tmdb' && kind === 'movie') return getTmdbStory('movie', id);
+  if (source === 'tmdb' && kind === 'tv') return getTmdbStory('tv_series', id);
+  if (source === 'rawg' && kind === 'game') return getRawgStory(id);
+  if (source === 'openlibrary' && kind === 'book') return getOpenLibraryStory(id);
   return null;
 }

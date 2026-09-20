@@ -180,22 +180,39 @@
 /*
  * The gutter, reserved once and for all.
  *
- * `scrollbar-gutter` is INERT while a box's overflow is `visible`, which is the
- * initial value on <html> — so the declaration on its own did nothing and every
- * navigation between a page that scrolls and one that does not moved the whole
- * layout sideways, header included. Setting overflow-y makes the property
- * apply. Engines that predate it (Safari before 18.2) get a permanent
- * scrollbar instead, which reserves the same space by other means.
+ * THE RULE: the width of the page must never depend on whether the page
+ * happens to be long enough to scroll. A layout that is 10px narrower on the
+ * archive than on the dashboard moves the header, the toolbar and every
+ * centred thing on the page sideways on every navigation.
+ *
+ * Two declarations, because they fail on different machines:
+ *
+ *   overflow-y: scroll     — the old, universal way: the scrollport always has
+ *                            a track, so its space is always taken. Works on
+ *                            engines that never heard of the property below,
+ *                            and costs nothing visually here because the track
+ *                            itself is transparent (see ::-webkit-scrollbar
+ *                            further down) — an idle one is indistinguishable
+ *                            from an empty gutter.
+ *   scrollbar-gutter       — the modern way: reserve the strip whether or not
+ *                            a scrollbar is drawn in it. Also, per spec, the
+ *                            gutter survives `overflow: hidden`, which is what
+ *                            the scroll lock below turns this element into.
+ *
+ * `scrollbar-gutter` is INERT while a box's overflow is `visible` (the initial
+ * value on <html>), which is why the overflow declaration is not optional.
+ *
+ * macOS deserves a note: its overlay scrollbars take no space at all, so none
+ * of this would matter — except that styling ::-webkit-scrollbar (which this
+ * app does) turns them back into classic, space-taking scrollbars. So a Mac
+ * needs exactly the same treatment as Windows here, and gets it.
+ *
+ * Anything these two miss at runtime is caught and measured by
+ * components/layout/ScrollGutter.tsx.
  */
 html {
-  overflow-y: auto;
+  overflow-y: scroll;
   scrollbar-gutter: stable;
-}
-
-@supports not (scrollbar-gutter: stable) {
-  html {
-    overflow-y: scroll;
-  }
 }
 
 /*
@@ -232,6 +249,11 @@ html body[data-scroll-locked] {
 
 html:has(body[data-scroll-locked]) {
   overflow: hidden;
+  /* Restated rather than inherited: this is the one moment the element stops
+     being a scrolling box, and the gutter it was reserving must not leave with
+     the scrollbar — or the whole page widens by 10px the instant any menu
+     opens, and narrows again when it closes. */
+  scrollbar-gutter: stable;
 }
 
 /*
@@ -391,14 +413,22 @@ body::before {
   /* ==========================================================================
      THE WORDMARK
      --------------------------------------------------------------------------
-     The logo is two rings that overlap with a diamond in the shared middle.
-     The name is set to say the same thing: FRIEND drawn narrow and heavy so
-     the letters crowd together, ARCHIVE drawn wide and light so they stand
-     apart, and the diamond sitting exactly on the join between them. Two
-     words, opposite settings, one shared point — which is both a lockup you
-     could not mistake for default type and, as it happens, the product.
+     One mark, at every width, and one idea inside it.
+     
+     The symbol is two friends as two rings that interlock — one drawn in the
+     ink of the page, one in gold, woven so neither is simply on top of the
+     other. No tile, no border, nothing behind it: a plate with a dark fill and
+     its own outline, sitting on a bar that is already dark, only ever reads as
+     a box inside a box.
 
-     Everything scales off `--wm`, so the same mark serves a 56px top bar and
+     The name is set ONCE rather than four times. Both words are the same size,
+     the same width and the same weight; the only thing that separates them is
+     ink — "Friend" at full strength, "Archive" one step back — which echoes the
+     two rings instead of arguing with them. The old lockup put a tracked-out
+     article, a condensed 700, a rotated gold square and a wide 300 into 130
+     pixels, and at reading size that is not a contrast, it is a collision.
+
+     Everything scales off `--wm`, so the same lockup serves a 56px top bar and
      a hero.
      ========================================================================== */
 
@@ -406,59 +436,68 @@ body::before {
     --wm: 1.0625rem;
     display: inline-flex;
     align-items: center;
+    gap: calc(var(--wm) * 0.52);
     white-space: nowrap;
     line-height: 1;
   }
 
-  .wordmark-the {
-    font-size: calc(var(--wm) * 0.5);
-    font-variation-settings: "opsz" 12, "wdth" 100, "wght" 600;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: var(--color-text-muted);
-    margin-right: calc(var(--wm) * 0.34);
-    transition: color var(--duration-standard) var(--ease-standard);
-  }
-
-  .wordmark-tight {
-    font-size: var(--wm);
-    font-variation-settings: "opsz" 96, "wdth" 82, "wght" 700;
-    letter-spacing: -0.025em;
-    text-transform: uppercase;
+  /* The rings. Height follows the type, so the lockup keeps its proportions at
+     any size, and the gold comes from the palette every other accent uses. */
+  .wordmark-mark {
+    height: calc(var(--wm) * 1.16);
+    width: auto;
+    flex: none;
+    overflow: visible;
     color: var(--color-text-primary);
   }
 
-  .wordmark-open {
+  .wordmark-ring-gold {
+    stroke: var(--color-accent);
+  }
+
+  .wordmark-ring-ink {
+    stroke: currentColor;
+    transition: stroke var(--duration-standard) var(--ease-standard);
+  }
+
+  .wordmark-name {
+    display: inline-flex;
+    gap: 0.3em;
     font-size: var(--wm);
-    font-variation-settings: "opsz" 96, "wdth" 100, "wght" 300;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
+    font-variation-settings: "wdth" 100, "wght" 600;
+    letter-spacing: -0.022em;
+  }
+
+  .wordmark-name-strong {
+    color: var(--color-text-primary);
+  }
+
+  .wordmark-name-soft {
     color: var(--color-text-secondary);
     transition: color var(--duration-standard) var(--ease-standard);
   }
 
-  /* The shared middle. Rotated square rather than a glyph, so it lines up with
-     the cap height at every size instead of wherever a font puts its lozenge. */
-  .wordmark-pivot {
-    width: calc(var(--wm) * 0.26);
-    height: calc(var(--wm) * 0.26);
-    margin: 0 calc(var(--wm) * 0.3);
-    rotate: 45deg;
-    flex: none;
-    background: var(--color-accent);
-    transition: scale var(--duration-standard) var(--ease-standard);
-    scale: 1;
+  /* Narrow bars keep the rings and drop the words: the nav buttons need the
+     room, and the mark alone is still the mark. */
+  @media (max-width: 639px) {
+    .wordmark[data-compact="true"] .wordmark-name {
+      display: none;
+    }
   }
 
-  a:hover > .wordmark .wordmark-open,
-  a:hover > .wordmark .wordmark-the {
+  /* Hovering the brand brings both halves up to full strength: the quiet word
+     catches up with the loud one, and the ink ring warms toward the gold one.
+     Nothing moves — a logo that jumps under the pointer is a logo you notice
+     for the wrong reason. */
+  a:hover > .wordmark .wordmark-name-soft {
     color: var(--color-text-primary);
   }
 
-  a:hover > .wordmark .wordmark-pivot {
-    scale: 1.35;
+  a:hover > .wordmark .wordmark-ring-ink {
+    stroke: var(--color-accent-hover);
   }
 }
+
 
 @layer base {
   /*
@@ -615,6 +654,63 @@ body::before {
  * were always meant to be: defaults a utility can overrule.
  */
 @layer base {
+  /* ==========================================================================
+     CURSORS
+     --------------------------------------------------------------------------
+     The pointer is the only thing on the page that tells you what is pressable
+     BEFORE you press it, and the browser's defaults get it wrong for everything
+     that is not a native control: a Radix menu item is a `div` with a role, a
+     select option is a `div` with a role, a card that opens a sheet is an
+     `article`. All of those come back as an arrow unless they are told
+     otherwise, which is why so much of the app had `cursor-pointer` written
+     onto individual components — and why anything that was forgotten silently
+     read as decoration.
+
+     So it is stated once, by ROLE rather than by class: if it behaves like a
+     control, it points. Component-level rules (micro.css sets `grab` on a row
+     you can pull, `default` on the segment that is already selected) are
+     unlayered and therefore still win over this — which is what should happen,
+     because those are the cases where the component knows better.
+     ========================================================================== */
+  a[href],
+  button:not(:disabled),
+  summary,
+  select:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  [role='link'],
+  [role='menuitem'],
+  [role='menuitemcheckbox'],
+  [role='menuitemradio'],
+  [role='option'],
+  [role='tab'],
+  [role='switch'],
+  [role='radio'],
+  [role='checkbox'],
+  input[type='checkbox']:not(:disabled),
+  input[type='radio']:not(:disabled),
+  input[type='range']:not(:disabled),
+  input[type='color']:not(:disabled),
+  input[type='file']:not(:disabled),
+  input[type='submit']:not(:disabled),
+  input[type='reset']:not(:disabled) {
+    cursor: pointer;
+  }
+
+  /* Switched off, and saying so before the press rather than after it. Radix
+     marks its own disabled items with data attributes rather than the DOM
+     property, so both spellings are covered. */
+  :disabled,
+  [aria-disabled='true'],
+  [data-disabled],
+  [data-state='disabled'] {
+    cursor: not-allowed;
+  }
+
+  /* A label is deliberately NOT in that list. Almost every one in this app
+     names a text field, where clicking only puts a caret — a hand over it
+     would promise a control that is not there. The few labels that do toggle
+     something (a checkbox row) are buttons in their own right. */
+
   tr {
     transition: background-color var(--duration-fast) var(--ease-standard);
   }

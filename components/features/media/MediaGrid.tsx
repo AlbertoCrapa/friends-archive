@@ -1,11 +1,14 @@
 'use client';
 
+import { useMemo, useState } from 'react';
 import { Check } from 'lucide-react';
 import { GlideSelect } from '@/components/micro/GlideSelect';
 import { WarmTooltip, WarmTooltipGroup } from '@/components/micro/WarmTooltip';
 import { CommentsDialog } from './CommentsDialog';
+import { ItemSheet } from './ItemSheet';
 import { MediaPoster } from './MediaPoster';
 import { StatusDot, statusOptions } from './StatusDot';
+import { useItemDelete } from '@/hooks/useItemDelete';
 import { useItemStatus } from '@/hooks/useItemStatus';
 import { cn, getPeople, isFinishedByEveryone } from '@/lib/utils';
 import { getStatusLabel, getStatusOptions } from '@/types';
@@ -28,7 +31,16 @@ interface Props {
   userId: string;
   currentUserNickname: string | null;
   memberIds: string[];
+  /** Nicknames for those members, so the item sheet can name the whole room. */
+  members?: { id: string; nickname: string }[];
   notInterestedByItem: Record<string, string[]>;
+  activeTags?: string[];
+  onToggleTag?: (tag: string) => void;
+  onDeleted?: (itemId: string) => void;
+  onRestored?: (item: MediaItemWithDetails) => void;
+  /** Which item's sheet is open, when the archive owns that (deep links). */
+  openId?: string | null;
+  onOpenId?: (itemId: string | null) => void;
   onUpdated?: (item: MediaItemWithDetails) => void;
 }
 
@@ -53,7 +65,14 @@ export function MediaGrid({
   userId,
   currentUserNickname,
   memberIds,
+  members = [],
   notInterestedByItem,
+  activeTags = [],
+  onToggleTag,
+  onDeleted,
+  onRestored,
+  openId,
+  onOpenId,
   onUpdated,
 }: Props) {
   const { statusOf, isConsumed, setStatus, savingId } = useItemStatus({
@@ -61,6 +80,27 @@ export function MediaGrid({
     consumedSet,
     onUpdated,
   });
+  // Tracked by id, so the open sheet follows the item through edits and status
+  // changes rather than showing a copy taken when it opened. The archive owns
+  // the id when it can, because it is in the URL and therefore linkable.
+  const [localOpenId, setLocalOpenId] = useState<string | null>(null);
+  const currentOpenId = openId !== undefined ? openId : localOpenId;
+  const setOpenId = onOpenId ?? setLocalOpenId;
+  const deleteItem = useItemDelete({ onDeleted, onRestored });
+
+  const openItem = useMemo(
+    () => (currentOpenId ? items.find((item) => item.id === currentOpenId) ?? null : null),
+    [items, currentOpenId],
+  );
+
+  const roster = useMemo(() => {
+    const named = new Map(members.map((member) => [member.id, member.nickname]));
+    const ids = memberIds.length > 0 ? memberIds : members.map((member) => member.id);
+    return [userId, ...ids.filter((id) => id !== userId)].map((id) => ({
+      id,
+      nickname: id === userId ? currentUserNickname ?? 'You' : named.get(id) ?? 'Member',
+    }));
+  }, [members, memberIds, userId, currentUserNickname]);
 
   if (items.length === 0) return null;
 
@@ -84,7 +124,9 @@ export function MediaGrid({
           return (
             <li key={item.id}>
               <article
+                onClick={() => setOpenId(item.id)}
                 className={cn(
+                  'cursor-pointer',
                   // `translate-y-0` for the same reason the posters carry
                   // `scale-100`: Tailwind v4 lifts cards with the standalone
                   // `translate` property, which starts at `none` and will not
@@ -108,7 +150,7 @@ export function MediaGrid({
                 {/* Controls live in the corners, where the artwork has least to
                     say, and stay put: a card that only shows its controls on
                     hover is a card a phone can never fully use. */}
-                <div className="absolute left-1.5 top-1.5">
+                <div className="absolute left-1.5 top-1.5" onClick={(event) => event.stopPropagation()}>
                   {isMember ? (
                     <span className={savingId === item.id ? 'pointer-events-none opacity-60' : undefined}>
                       <GlideSelect
@@ -145,16 +187,30 @@ export function MediaGrid({
 
                 <div className="absolute inset-x-0 bottom-0 flex items-end gap-1 p-2">
                   <div className="min-w-0 flex-1">
+                    {/* The whole cover is the click target for a pointer; the
+                        title is the one a keyboard can reach, and it says what
+                        pressing it opens. */}
                     <h3
-                      className="truncate text-[12.5px] font-semibold leading-tight tracking-[-0.015em] text-stone-50"
+                      className="min-w-0 truncate text-[12.5px] font-semibold leading-tight tracking-[-0.015em] text-stone-50"
                       title={item.title}
                     >
-                      {item.title}
+                      <button
+                        type="button"
+                        aria-haspopup="dialog"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setOpenId(item.id);
+                        }}
+                        className="max-w-full cursor-pointer truncate text-left align-bottom transition-colors hover:text-amber-300"
+                      >
+                        {item.title}
+                      </button>
                     </h3>
                     <p className="truncate text-[11px] leading-tight text-stone-400">
                       {[year, credit].filter(Boolean).join(' \u00b7 ') || getStatusLabel(status)}
                     </p>
                   </div>
+                  <span onClick={(event) => event.stopPropagation()} className="shrink-0">
                   <CommentsDialog
                     itemId={item.id}
                     itemTitle={item.title}
@@ -164,12 +220,45 @@ export function MediaGrid({
                     isOwner={isOwner}
                     triggerClassName="-mb-0.5 h-7 w-7 shrink-0 text-stone-400 hover:text-stone-100"
                   />
+                  </span>
                 </div>
               </article>
             </li>
           );
         })}
       </ul>
+
+      {/* Same sheet the list opens — a cover and a row are two ways of finding
+          the same thing, and they must lead to the same place. */}
+      <ItemSheet
+        item={openItem}
+        open={!!openItem}
+        onOpenChange={(next) => {
+          if (!next) setOpenId(null);
+        }}
+        userId={userId}
+        currentUserNickname={currentUserNickname}
+        isMember={isMember}
+        isOwner={isOwner}
+        members={roster}
+        status={openItem ? statusOf(openItem) : 'plan_to_consume'}
+        consumed={openItem ? isConsumed(openItem.id) : false}
+        saving={!!openItem && savingId === openItem.id}
+        onStatus={(next) => {
+          if (openItem) setStatus(openItem, next);
+        }}
+        onUpdated={onUpdated}
+        onDelete={
+          isMember && openItem && onDeleted
+            ? () => {
+                deleteItem(openItem);
+                setOpenId(null);
+              }
+            : undefined
+        }
+        onToggleTag={onToggleTag}
+        activeTags={activeTags}
+      />
     </WarmTooltipGroup>
   );
 }

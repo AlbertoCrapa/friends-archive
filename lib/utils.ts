@@ -337,3 +337,46 @@ export function isFinishedByEveryone(options: {
     id === viewerId && viewerConsumed !== undefined ? viewerConsumed : consumers.has(id)
   );
 }
+
+/**
+ * The same artwork, one size bigger.
+ *
+ * Every provider encodes the size of an image IN ITS URL (DATA_MODEL § 6.10),
+ * so a detail surface does not need a second lookup, a second column or a
+ * re-fetch of anything we already know — it needs a different path on the same
+ * file. The list keeps asking for the small one it has cached; the sheet asks
+ * the CDN for the large one once, and the browser caches that too.
+ *
+ * Anything that does not match a provider's known shape is returned as it came,
+ * and the result is re-validated, so this can never widen the host allowlist.
+ */
+export function posterAtDetailSize(value: unknown): string | null {
+  const url = safeImageUrl(value);
+  if (!url) return null;
+  const bigger = url
+    // TMDB: /t/p/w92 | w185 -> /t/p/w500
+    .replace(/\/t\/p\/w(92|154|185|342)\//, '/t/p/w500/')
+    // Open Library: -S.jpg | -M.jpg -> -L.jpg
+    .replace(/-(S|M)\.jpg$/, '-L.jpg')
+    // RAWG: /media/resize/200|420/-/ -> /media/resize/640/-/
+    .replace(/\/media\/resize\/\d+\/-\//, '/media/resize/640/-/');
+  return safeImageUrl(bigger) ?? url;
+}
+
+/**
+ * Minutes as the time a person would actually say.
+ *
+ * Under an hour it is minutes, under half a day it is hours and minutes, and
+ * past that only hours — nobody plans a 62-hour series around the spare 20
+ * minutes, and printing them would suggest a precision the number does not
+ * have.
+ */
+export function formatMinutes(minutes: number | undefined | null): string | null {
+  if (typeof minutes !== 'number' || !Number.isFinite(minutes) || minutes <= 0) return null;
+  const rounded = Math.round(minutes);
+  if (rounded < 60) return `${rounded} min`;
+  const hours = Math.floor(rounded / 60);
+  const rest = rounded % 60;
+  if (rounded < 12 * 60) return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
+  return `${Math.round(rounded / 60)} hours`;
+}
