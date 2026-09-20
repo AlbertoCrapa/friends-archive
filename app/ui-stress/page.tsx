@@ -42,7 +42,7 @@ export default async function UIStressPage({ searchParams }: Props) {
     activeSurface === 'all' || activeSurface === surface;
 
   return (
-    <main className="min-h-screen bg-stone-950 px-4 py-6 sm:px-6">
+    <main className="min-h-screen px-4 py-6 sm:px-6">
       <div className="mx-auto max-w-7xl space-y-10">
         {/* Header */}
         <header className="space-y-3 border-b border-stone-800/50 pb-8">

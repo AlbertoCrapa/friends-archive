@@ -10,6 +10,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { FormBanner } from '@/components/ui/form-banner';
+import { useToast } from '@/components/ui/toast';
 import {
   Dialog,
   DialogContent,
@@ -120,6 +121,7 @@ export function AddMediaDialog({
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
   const [enriching, setEnriching] = useState(false);
 
   // Throttled, quota-capped external search (debounce + cooldown + caps).
@@ -273,6 +275,9 @@ export function AddMediaDialog({
     setError(null);
     setLoading(true);
 
+    // Read before the form is reset: the confirmation names the title, and by
+    // the time it is raised the field is already empty for the next one.
+    const addedTitle = title.trim();
     const supabase = createClient();
     const { data: insertedItem, error: insertError } = await supabase
       .from('media_items')
@@ -323,6 +328,16 @@ export function AddMediaDialog({
     if (insertedItem) {
       onAdded?.({ ...(insertedItem as MediaItem), status });
     }
+
+    // The dialog closes on success, so the confirmation has to live outside it.
+    toast({
+      tone: 'success',
+      message: (
+        <>
+          Added <b>{addedTitle}</b> to the archive
+        </>
+      ),
+    });
 
     if (!onAdded) {
       router.refresh();

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { PROVIDER_IMAGE_HOSTS } from '@/lib/utils';
+import { ToastProvider } from '@/components/ui/toast';
 import '@/components/micro/micro.css';
 import './globals.css';
 
@@ -25,7 +26,13 @@ export default function RootLayout({
           <link key={host} rel="preconnect" href={`https://${host}`} crossOrigin="anonymous" />
         ))}
       </head>
-      <body>{children}</body>
+      {/* The toast dock lives at the root, above every route: a notification
+          raised by a row that is already gone — or by a page you have since
+          navigated away from — has to outlive whatever raised it, and a
+          deferred delete has to keep its undo window while it does. */}
+      <body>
+        <ToastProvider>{children}</ToastProvider>
+      </body>
     </html>
   );
 }

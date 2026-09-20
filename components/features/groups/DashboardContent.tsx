@@ -341,6 +341,7 @@ function GroupCard({ group }: { group: GroupRow }) {
                   loading="lazy"
                   decoding="async"
                   referrerPolicy="no-referrer"
+                  draggable={false}
                   className="h-full min-w-0 flex-1 object-cover"
                 />
               ))}

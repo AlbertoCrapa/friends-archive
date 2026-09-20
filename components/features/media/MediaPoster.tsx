@@ -121,6 +121,7 @@ export function MediaPoster({
           fetchPriority={priority ? 'high' : 'auto'}
           decoding="async"
           referrerPolicy="no-referrer"
+          draggable={false}
           onLoad={() => setPaint((current) => (current === 'pending' ? 'faded' : current))}
           onError={() => setFailed(true)}
           className={cn(
@@ -202,6 +203,7 @@ export function PosterGlow({
         loading="lazy"
         decoding="async"
         referrerPolicy="no-referrer"
+        draggable={false}
         className={cn(
           'h-full w-full object-cover saturate-150',
           shape === 'row' ? 'scale-[1.6] opacity-[0.13] blur-2xl' : 'scale-[1.35] opacity-[0.45] blur-2xl'

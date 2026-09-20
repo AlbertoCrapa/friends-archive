@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
+import { useToast } from '@/components/ui/toast';
 import { GlideSelect } from '@/components/micro/GlideSelect';
 import { SwipeRow } from '@/components/micro/SwipeRow';
 import { WarmTooltip, WarmTooltipGroup } from '@/components/micro/WarmTooltip';
@@ -85,6 +85,8 @@ interface Props {
   activeTags?: string[];
   onToggleTag?: (tag: string) => void;
   onDeleted?: (itemId: string) => void;
+  /** Puts a deleted item back where it was when the undo is pressed. */
+  onRestored?: (item: MediaItemWithDetails) => void;
   onUpdated?: (item: MediaItemWithDetails) => void;
 }
 
@@ -102,6 +104,7 @@ export function MediaTable({
   activeTags = [],
   onToggleTag,
   onDeleted,
+  onRestored,
   onUpdated,
 }: Props) {
   const { statusOf, isConsumed, setStatus, savingId } = useItemStatus({
@@ -109,8 +112,8 @@ export function MediaTable({
     consumedSet,
     onUpdated,
   });
-  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editing, setEditing] = useState<MediaItemWithDetails | null>(null);
+  const { toast } = useToast();
   const activeTagSet = new Set(activeTags);
 
   // The meter has one slot per member, in a fixed order with the viewer first,
@@ -127,12 +130,45 @@ export function MediaTable({
     }));
   })();
 
-  async function deleteItem(itemId: string) {
-    setDeletingId(itemId);
-    const supabase = createClient();
-    const { error } = await supabase.from('media_items').delete().eq('id', itemId);
-    if (!error) onDeleted?.(itemId);
-    setDeletingId(null);
+  /**
+   * Deleting a title is undoable, and undoable here means the DELETE has not
+   * happened yet.
+   *
+   * The row leaves the list on the spot — that is the whole answer the gesture
+   * or the menu owes you — and the write itself is handed to the toast, which
+   * runs it only if the undo window closes untouched. Pressing Undo therefore
+   * puts the row back with nothing to repair: the item never left the table,
+   * so its comments, its per-member statuses and its consumption records are
+   * all still attached to it. Restoring a row that HAD been deleted could not
+   * promise any of that.
+   */
+  function deleteItem(item: MediaItemWithDetails) {
+    onDeleted?.(item.id);
+    toast({
+      tone: 'destructive',
+      message: (
+        <>
+          Deleted <b>{item.title}</b>
+        </>
+      ),
+      onUndo: () => onRestored?.(item),
+      commit: async () => {
+        const supabase = createClient();
+        const { error } = await supabase.from('media_items').delete().eq('id', item.id);
+        if (!error) return;
+        // The window closed, the write failed: the row is still there on the
+        // server, so it goes back on screen rather than quietly disappearing
+        // until the next reload.
+        onRestored?.(item);
+        toast({
+          message: (
+            <>
+              Could not delete <b>{item.title}</b> — it is back in the archive.
+            </>
+          ),
+        });
+      },
+    });
   }
 
   if (items.length === 0) {
@@ -159,7 +195,6 @@ export function MediaTable({
             status={statusOf(item)}
             consumed={isConsumed(item.id)}
             saving={savingId === item.id}
-            deleting={deletingId === item.id}
             optedOut={new Set(notInterestedByItem[item.id] ?? [])}
             isMember={isMember}
             isOwner={isOwner}
@@ -169,7 +204,7 @@ export function MediaTable({
             onToggleTag={onToggleTag}
             onStatus={(next) => setStatus(item, next)}
             onEdit={() => setEditing(item)}
-            onDelete={() => deleteItem(item.id)}
+            onDelete={() => deleteItem(item)}
           />
         ))}
       </ul>
@@ -199,7 +234,6 @@ interface RowProps {
   status: ItemStatus;
   consumed: boolean;
   saving: boolean;
-  deleting: boolean;
   optedOut: Set<string>;
   isMember: boolean;
   isOwner: boolean;
@@ -219,7 +253,6 @@ function ArchiveRow({
   status,
   consumed,
   saving,
-  deleting,
   optedOut,
   isMember,
   isOwner,
@@ -461,17 +494,12 @@ function ArchiveRow({
                     </span>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    className="text-red-400 focus:text-red-300"
-                    disabled={deleting}
-                    onSelect={onDelete}
-                  >
-                    {deleting ? (
-                      <Spinner className="mr-2 h-3.5 w-3.5" />
-                    ) : (
-                      <Trash2 className="mr-2 h-3.5 w-3.5" />
-                    )}
-                    {deleting ? 'Deleting' : 'Delete'}
+                  {/* No pending state: the row goes the instant this is
+                      chosen, and the toast holds both the confirmation and the
+                      way back. */}
+                  <DropdownMenuItem className="text-red-400 focus:text-red-300" onSelect={onDelete}>
+                    <Trash2 className="mr-2 h-3.5 w-3.5" />
+                    Delete
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

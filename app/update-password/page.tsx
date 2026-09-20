@@ -62,7 +62,7 @@ export default function UpdatePasswordPage() {
 
   if (!ready) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-stone-950 px-6">
+      <main className="min-h-screen flex items-center justify-center px-6">
         <div className="text-center space-y-3">
           <p className="font-mono text-stone-400 text-sm inline-flex items-center gap-2">
             <Spinner />
@@ -80,7 +80,7 @@ export default function UpdatePasswordPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-stone-950 px-6">
+    <main className="min-h-screen flex items-center justify-center px-6">
       <div className="w-full max-w-sm space-y-8">
         <div className="text-center space-y-2">
           <h1 className="font-serif text-3xl text-stone-100">Set new password</h1>

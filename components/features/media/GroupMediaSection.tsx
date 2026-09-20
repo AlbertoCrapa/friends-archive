@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { AddMediaDialog } from './AddMediaDialog';
 import { ArchiveControls, type ArchiveView, type SortKey, type StatusFilter, type TypeFilter } from './ArchiveControls';
@@ -158,8 +158,32 @@ export function GroupMediaSection({
     } satisfies MediaItemWithDetails);
   }
 
+  /**
+   * Where each deleted row was, so an undo can put it back in its own place
+   * rather than at the top of the archive. A delete is reversible for as long
+   * as its toast is up, and a row that reappears somewhere else has not really
+   * been restored.
+   */
+  const lastIndexOf = useRef(new Map<string, number>());
+
   function handleDeletedItem(itemId: string) {
-    setItems((prev) => prev.filter((item) => item.id !== itemId));
+    setItems((prev) => {
+      const index = prev.findIndex((item) => item.id === itemId);
+      if (index === -1) return prev;
+      lastIndexOf.current.set(itemId, index);
+      return [...prev.slice(0, index), ...prev.slice(index + 1)];
+    });
+  }
+
+  function handleRestoredItem(item: MediaItemWithDetails) {
+    setItems((prev) => {
+      if (prev.some((current) => current.id === item.id)) return prev;
+      const index = Math.min(lastIndexOf.current.get(item.id) ?? 0, prev.length);
+      const next = [...prev];
+      next.splice(index, 0, item);
+      return next;
+    });
+    lastIndexOf.current.delete(item.id);
   }
 
   function handleUpdatedItem(item: MediaItemWithDetails) {
@@ -306,6 +330,7 @@ export function GroupMediaSection({
             activeTags={activeTags}
             onToggleTag={toggleTag}
             onDeleted={handleDeletedItem}
+            onRestored={handleRestoredItem}
             onUpdated={handleUpdatedItem}
           />
         )}

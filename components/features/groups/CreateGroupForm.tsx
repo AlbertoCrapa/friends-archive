@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { FormBanner } from '@/components/ui/form-banner';
+import { useToast } from '@/components/ui/toast';
 import {
   Select,
   SelectContent,
@@ -24,6 +25,7 @@ export function CreateGroupForm() {
   const [visibility, setVisibility] = useState<'public' | 'private'>('private');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -60,6 +62,16 @@ export function CreateGroupForm() {
       return;
     }
 
+    // Raised before the navigation on purpose: the dock is mounted at the root
+    // of the app, so the toast rides along and lands on the new group's page.
+    toast({
+      tone: 'success',
+      message: (
+        <>
+          Created <b>{name.trim()}</b>
+        </>
+      ),
+    });
     router.push(`/groups/${group.id}`);
   }
 

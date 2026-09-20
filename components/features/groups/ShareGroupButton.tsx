@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/toast';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,6 +27,7 @@ export function ShareGroupButton({ groupId, groupName }: Props) {
   const [url, setUrl] = useState('');
   const [canNativeShare, setCanNativeShare] = useState(false);
   const [copied, setCopied] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
     setUrl(`${window.location.origin}/groups/${groupId}`);
@@ -48,8 +50,11 @@ export function ShareGroupButton({ groupId, groupName }: Props) {
       await navigator.clipboard.writeText(url);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+      toast({ tone: 'success', message: 'Invite link copied' });
     } catch {
-      // Clipboard unavailable (e.g. insecure context) — silently ignore.
+      // Clipboard unavailable (e.g. insecure context) — say so rather than
+      // leaving the menu looking as though it worked.
+      toast({ message: 'Could not copy the link — your browser blocked it.' });
     }
   }
 

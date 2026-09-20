@@ -900,6 +900,7 @@
   --st-bg: #27272a;
   --st-ink: #f5f5f5;
   --st-fuse: #f5a524;
+  --st-tone: #a1a1aa;
 
   pointer-events: auto;
   position: relative;
@@ -909,7 +910,15 @@
   gap: 10px;
   padding: 12px 14px;
   border-radius: 12px;
+  /* Translucent over the page's own gradient rather than a flat panel: the
+     toast is the one surface that floats over whatever is underneath it, and
+     letting a little of that through is what says so. The solid colour stays
+     as the fallback wherever backdrop-filter is not available. */
   background: var(--st-bg);
+  background: color-mix(in srgb, var(--st-bg) 86%, transparent);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid color-mix(in srgb, #fafafa 9%, transparent);
   color: var(--st-ink);
   font-size: 13px;
   line-height: 1.5;
@@ -917,6 +926,33 @@
     0 1px 2px rgba(0, 0, 0, 0.2),
     0 16px 40px -12px rgba(0, 0, 0, 0.7);
   cursor: grab;
+}
+
+/* Three tones, one shape. The icon and the fuse carry the meaning; nothing
+   else about the toast changes, so a run of them reads as one component. */
+.mi-toast[data-tone='success'] {
+  --st-tone: var(--mi-green, #22c55e);
+  --st-fuse: var(--mi-green, #22c55e);
+}
+.mi-toast[data-tone='destructive'] {
+  --st-tone: var(--mi-red, #e5484d);
+  --st-fuse: var(--mi-red, #e5484d);
+}
+
+.mi-toast-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--st-tone) 16%, transparent);
+  color: var(--st-tone);
+}
+.mi-toast-icon svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 2.2;
 }
 .mi-toast:active {
   cursor: grabbing;
@@ -934,6 +970,7 @@
   flex: none;
   height: 26px;
   padding: 0 10px;
+  cursor: pointer;
   border: 0;
   border-radius: 8px;
   background: color-mix(in srgb, #fff 12%, transparent);
@@ -960,6 +997,11 @@
   background: var(--st-fuse);
   transform-origin: left center;
   animation: mi-fuse linear forwards;
+  /* The length comes in as a custom property rather than as an inline
+     animation-duration, so the reduced-motion rule below can restore it: an
+     inline declaration cannot outrank the app-wide `* { … !important }`, and a
+     selector with one class can. */
+  animation-duration: var(--st-fuse-ms, 6500ms);
 }
 .mi-toast:hover .mi-toast-fuse,
 .mi-toast:focus-within .mi-toast-fuse {
@@ -969,6 +1011,21 @@
 @keyframes mi-fuse {
   to {
     transform: scaleX(0);
+  }
+}
+
+/*
+ * The fuse is a TIMER, not a decoration.
+ *
+ * The app-wide reduced-motion rule cuts every animation to 1ms, which here
+ * would end the fuse — and with it the undo window, and with it the deferred
+ * delete — the instant the toast appeared. The duration is restored to
+ * whatever the dock asked for; only the travel stays, and travel is the one
+ * thing this animation exists to measure.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .mi-toast-fuse {
+    animation-duration: var(--st-fuse-ms, 6500ms) !important;
   }
 }
 

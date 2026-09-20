@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/toast';
 import { Spinner } from '@/components/ui/spinner';
 import {
   DropdownMenu,
@@ -41,6 +42,7 @@ function readDismissed(): string[] {
 export function JoinRequestsBell({ requests, accepted = [] }: Props) {
   const [isPending, startTransition] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
+  const { toast } = useToast();
   const [error, setError] = useState<string | null>(null);
   // Accepted notifications the user has already clicked. Persisted in
   // localStorage so they stay gone across reloads without any DB bookkeeping —
@@ -84,7 +86,21 @@ export function JoinRequestsBell({ requests, accepted = [] }: Props) {
     startTransition(async () => {
       const fn = action === 'approve' ? approveJoinRequest : declineJoinRequest;
       const { error: actionError } = await fn(request.id, request.group_id);
-      if (actionError) setError(actionError);
+      if (actionError) {
+        setError(actionError);
+      } else {
+        // The bell closes itself on a resolved request, so the receipt has to
+        // live outside it.
+        toast({
+          tone: action === 'approve' ? 'success' : 'neutral',
+          message: (
+            <>
+              {action === 'approve' ? 'Approved' : 'Declined'}{' '}
+              <b>{request.requester_nickname}</b> for {request.group_name}
+            </>
+          ),
+        });
+      }
       setBusyId(null);
     });
   }

@@ -48,7 +48,7 @@ interface Props {
 
 export function LandingPageContent({ isSignedIn, nickname }: Props) {
   return (
-    <main className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--color-background)' }}>
+    <main className="min-h-screen overflow-x-hidden">
       <LandingNav isSignedIn={isSignedIn} nickname={nickname} />
       <HeroSection isSignedIn={isSignedIn} />
       <MediaTypesStrip />

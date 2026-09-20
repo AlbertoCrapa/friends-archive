@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
+import { useToast } from '@/components/ui/toast';
 import {
   Dialog,
   DialogContent,
@@ -64,7 +65,7 @@ export function CommentsDialog({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const { toast } = useToast();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   function toggleExpanded(id: string) {
@@ -170,23 +171,40 @@ export function CommentsDialog({
     setSavingEdit(false);
   }
 
-  async function deleteComment(commentId: string) {
-    setDeletingId(commentId);
+  /**
+   * Same bargain as deleting a title: the comment leaves the thread now, the
+   * DELETE waits for the toast. The row is put back at the index it was
+   * taken from, so an undone deletion leaves the thread in the order it was
+   * written rather than moving the comment to the end.
+   */
+  function deleteComment(comment: CommentRow) {
     setError(null);
-    const supabase = createClient();
-    const { error: deleteError } = await supabase
-      .from('comments')
-      .delete()
-      .eq('id', commentId);
+    const list = comments ?? [];
+    const index = list.findIndex((c) => c.id === comment.id);
+    commit(list.filter((c) => c.id !== comment.id));
 
-    if (deleteError) {
-      setError('Could not delete that comment right now. Please try again.');
-      setDeletingId(null);
-      return;
-    }
+    const putBack = () => {
+      // The thread may have moved on — a new comment posted, the dialog
+      // reopened — so this works off the live cache, not the captured list.
+      const current = commentsCache.get(itemId) ?? [];
+      if (current.some((c) => c.id === comment.id)) return;
+      const next = [...current];
+      next.splice(Math.min(index < 0 ? current.length : index, current.length), 0, comment);
+      commit(next);
+    };
 
-    commit((comments ?? []).filter((c) => c.id !== commentId));
-    setDeletingId(null);
+    toast({
+      tone: 'destructive',
+      message: 'Comment deleted',
+      onUndo: putBack,
+      commit: async () => {
+        const supabase = createClient();
+        const { error: deleteError } = await supabase.from('comments').delete().eq('id', comment.id);
+        if (!deleteError) return;
+        putBack();
+        toast({ message: 'Could not delete that comment — it is back in the thread.' });
+      },
+    });
   }
 
   const count = comments?.length ?? 0;
@@ -320,14 +338,9 @@ export function CommentsDialog({
                                   size="icon"
                                   className="h-7 w-7 text-stone-500 hover:text-red-400"
                                   title="Delete"
-                                  disabled={deletingId === c.id}
-                                  onClick={() => deleteComment(c.id)}
+                                  onClick={() => deleteComment(c)}
                                 >
-                                  {deletingId === c.id ? (
-                                    <Spinner className="h-3 w-3" />
-                                  ) : (
-                                    <Trash2 className="h-3 w-3" />
-                                  )}
+                                  <Trash2 className="h-3 w-3" />
                                 </Button>
                               )}
                             </div>

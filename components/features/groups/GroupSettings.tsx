@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { FormBanner } from '@/components/ui/form-banner';
+import { useToast } from '@/components/ui/toast';
 import {
   Select,
   SelectContent,
@@ -52,6 +53,7 @@ interface Props {
 
 export function GroupSettings({ group, members, joinRequests, currentUserId, isOwner }: Props) {
   const router = useRouter();
+  const { toast } = useToast();
   const [name, setName] = useState(group.name);
   const [description, setDescription] = useState(group.description ?? '');
   const [visibility, setVisibility] = useState<'public' | 'private'>(group.visibility);
@@ -87,6 +89,7 @@ export function GroupSettings({ group, members, joinRequests, currentUserId, isO
     } else {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
+      toast({ tone: 'success', message: 'Group settings saved' });
       router.refresh();
     }
     setSaving(false);
@@ -95,12 +98,28 @@ export function GroupSettings({ group, members, joinRequests, currentUserId, isO
   async function removeMember(userId: string) {
     if (userId === currentUserId) return;
     setRemovingMember(userId);
+    const nickname = members.find((member) => member.user_id === userId)?.profiles?.nickname ?? 'That member';
     const supabase = createClient();
-    await supabase
+    // Not deferred like an item or a comment: the roster is server-rendered and
+    // re-read on refresh, so there is no on-screen change to hold back. The
+    // toast is a receipt, not a window.
+    const { error: removeError } = await supabase
       .from('group_members')
       .delete()
       .eq('group_id', group.id)
       .eq('user_id', userId);
+    toast(
+      removeError
+        ? { message: `Could not remove ${nickname}. Please try again.` }
+        : {
+            tone: 'destructive',
+            message: (
+              <>
+                Removed <b>{nickname}</b> from the group
+              </>
+            ),
+          },
+    );
     router.refresh();
     setRemovingMember(null);
   }
@@ -120,6 +139,16 @@ export function GroupSettings({ group, members, joinRequests, currentUserId, isO
           : 'We could not resolve the request. Please try again.'
       );
     } else {
+      const nickname =
+        joinRequests.find((request) => request.id === requestId)?.profiles?.nickname ?? 'Request';
+      toast({
+        tone: action === 'approve' ? 'success' : 'neutral',
+        message: (
+          <>
+            {action === 'approve' ? 'Approved' : 'Declined'} <b>{nickname}</b>
+          </>
+        ),
+      });
       router.refresh();
     }
     setResolvingRequest(null);
@@ -128,7 +157,22 @@ export function GroupSettings({ group, members, joinRequests, currentUserId, isO
   async function deleteGroup() {
     setDeletingGroup(true);
     const supabase = createClient();
-    await supabase.from('groups').delete().eq('id', group.id);
+    const { error: deleteError } = await supabase.from('groups').delete().eq('id', group.id);
+    if (deleteError) {
+      toast({ message: 'Could not delete this group. Please try again.' });
+      setDeletingGroup(false);
+      return;
+    }
+    // The toast dock lives at the root of the app, so this survives the
+    // navigation and lands on the dashboard with you.
+    toast({
+      tone: 'destructive',
+      message: (
+        <>
+          Deleted <b>{group.name}</b>
+        </>
+      ),
+    });
     router.push('/dashboard');
   }
 
@@ -146,6 +190,13 @@ export function GroupSettings({ group, members, joinRequests, currentUserId, isO
       setLeavingGroup(false);
       return;
     }
+    toast({
+      message: (
+        <>
+          You left <b>{group.name}</b>
+        </>
+      ),
+    });
     router.push('/dashboard');
   }
 

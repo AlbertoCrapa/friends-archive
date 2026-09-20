@@ -253,6 +253,61 @@ body {
   background-color: var(--color-background);
 }
 
+/* ============================================================================
+   THE GROUND
+   ----------------------------------------------------------------------------
+   One background for the whole product, painted once on the body and never
+   again: three very wide, very low-opacity washes over the near-black, in the
+   three hues the app already owns — gold at the top left where the eye starts,
+   the chart blue at the top right, the chart magenta lifting the bottom edge.
+   Nowhere does a stop get near enough to full strength to read as a colour;
+   what it reads as is depth, which is the only thing a ground is allowed to do
+   behind type this fine.
+
+   FIXED, in the strict sense: `position: fixed` pins it to the viewport, so it
+   neither scrolls with a long archive nor re-renders between routes. It is
+   attached to the BODY rather than to any page wrapper, which is what carries
+   it through `loading.tsx`, `not-found`, auth screens and every navigation —
+   the wrappers come and go underneath it, the ground does not move.
+
+   `z-index: -1` puts it above the body's own background colour and below every
+   piece of content, so nothing in the app has to know it is there.
+   ========================================================================= */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  /* Written out as rgba rather than color-mix over the tokens on purpose: the
+     build emits a NON-color-mix fallback for any declaration that uses it, and
+     the fallback it emits drops the percentage — which would paint these three
+     washes at full strength on any engine without color-mix support. These are
+     --color-accent, --chart-video_game and --chart-book at 5–7%; change them
+     here if those ever change. */
+  background:
+    radial-gradient(118% 86% at 6% -12%, rgba(245, 180, 0, 0.07) 0%, transparent 58%),
+    radial-gradient(96% 74% at 104% -4%, rgba(44, 153, 248, 0.07) 0%, transparent 60%),
+    radial-gradient(108% 70% at 52% 116%, rgba(215, 101, 182, 0.05) 0%, transparent 62%),
+    linear-gradient(180deg, #101016 0%, #0b0b0f 62%);
+}
+
+/*
+ * The toast dock, moved off the add button.
+ *
+ * Both want the bottom-right corner on a phone: the archive's add button is a
+ * fixed 56px disc 1rem in from that corner, and the dock's own mobile offset
+ * puts a full-width toast straight on top of it — covering the one control the
+ * page exists for, for as long as the toast is up. Below the breakpoint where
+ * that disc appears (`md`), the dock is lifted clear of it by the disc's height
+ * plus a gap. The component keeps its own default everywhere else.
+ */
+@media (max-width: 767px) {
+  .mi-toast-dock {
+    bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
 /*
  * One size for the top of every page.
  *
@@ -562,6 +617,25 @@ body {
 @layer base {
   tr {
     transition: background-color var(--duration-fast) var(--ease-standard);
+  }
+
+  /*
+   * Artwork is not a file to be dragged out of the page.
+   *
+   * Every <img> is draggable by default, so pressing a poster and moving even
+   * slightly starts a native drag: a translucent ghost of the cover follows
+   * the cursor, the browser takes the pointer, and whatever the press was
+   * actually for is cancelled underneath it — pulling a list row aside,
+   * scrolling a grid with a finger, or just the hover drift stalling because
+   * the pointer never came back. None of these images are downloads; they are
+   * surface.
+   *
+   * Both halves are needed: `-webkit-user-drag` is what Chrome and Safari
+   * read, `draggable={false}` on the element is what Firefox reads.
+   */
+  img {
+    -webkit-user-drag: none;
+    user-select: none;
   }
 
   /* Every press in the component set answers with a squeeze, not a nudge. */

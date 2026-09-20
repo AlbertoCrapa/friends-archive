@@ -11,7 +11,7 @@ export default async function RegisterPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-stone-950 px-6">
+    <main className="min-h-screen flex items-center justify-center px-6">
       <div className="w-full max-w-sm space-y-8">
         <div className="text-center space-y-2">
           <h1 className="font-serif text-3xl text-stone-100">Create your archive</h1>

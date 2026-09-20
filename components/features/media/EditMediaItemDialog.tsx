@@ -8,6 +8,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { FormBanner } from '@/components/ui/form-banner';
+import { useToast } from '@/components/ui/toast';
 import { ExternalLink, ImageDown, Link2, Search, X } from 'lucide-react';
 import {
   Dialog,
@@ -103,6 +104,7 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
   const [enriching, setEnriching] = useState(false);
 
   const statusOptions = useMemo(() => getStatusOptions(), []);
@@ -294,6 +296,14 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
     onUpdated(merged);
     setOpen(false);
     setLoading(false);
+    toast({
+      tone: 'success',
+      message: (
+        <>
+          Saved <b>{merged.title}</b>
+        </>
+      ),
+    });
   }
 
   return (

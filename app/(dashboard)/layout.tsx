@@ -16,7 +16,7 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-stone-950">
+    <div className="min-h-screen">
       <Header />
       <PageTransition>
         <main className="max-w-6xl mx-auto px-6 py-8">{children}</main>
