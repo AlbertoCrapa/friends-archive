@@ -206,7 +206,7 @@ export function JoinRequestsBell({ requests, accepted = [] }: Props) {
           </div>
         )}
         {error && (
-          <p className="px-2 py-2 text-[11px] font-mono" style={{ color: 'oklch(0.6 0.18 15)' }}>
+          <p className="px-2 py-2 text-[11px] font-mono" style={{ color: '#e5484d' }}>
             {error}
           </p>
         )}

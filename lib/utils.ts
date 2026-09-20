@@ -237,7 +237,11 @@ export function serializeTags(tags: string[]): string {
 
 type TaggableItem = { genre?: string | null; metadata?: unknown };
 
-/** Collects normalized (UPPERCASE), de-duplicated tags in insertion order. */
+/**
+ * Collects de-duplicated tags in insertion order, in the casing they were
+ * written in. Only the de-dup KEY is case-folded, so "Sci-Fi" and "sci-fi"
+ * still count as one tag while the chip reads the way a person typed it.
+ */
 function collectTags(item: TaggableItem, includePeople: boolean): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
@@ -247,7 +251,7 @@ function collectTags(item: TaggableItem, includePeople: boolean): string[] {
     const key = value.toUpperCase();
     if (seen.has(key)) return;
     seen.add(key);
-    out.push(key);
+    out.push(value);
   };
 
   for (const tag of parseTags(item.genre)) push(tag);
@@ -288,19 +292,48 @@ export function getSearchTags(item: TaggableItem): string[] {
  * Returns Tailwind colour classes for a given item status value.
  */
 export function getStatusColor(status: string): string {
+  const planned = 'bg-stone-800 text-stone-300 border-transparent';
+  const active = 'bg-amber-500/15 text-amber-300 border-transparent';
+  const done = 'bg-emerald-500/15 text-emerald-300 border-transparent';
   const colors: Record<string, string> = {
-    plan_to_consume: 'bg-amber-900/30 text-amber-300 border-amber-700/50',
-    consuming: 'bg-sky-900/30 text-sky-300 border-sky-700/50',
-    completed: 'bg-emerald-900/30 text-emerald-300 border-emerald-700/50',
+    plan_to_consume: planned,
+    consuming: active,
+    completed: done,
     // Opt-out: deliberately colourless, so it reads as "switched off".
-    not_interested: 'bg-stone-800/40 text-stone-400 border-stone-700/60',
+    not_interested: 'bg-stone-800/60 text-stone-500 border-transparent',
     // Legacy string values — kept for graceful degradation during migration
-    'Plan to Watch': 'bg-amber-900/30 text-amber-300 border-amber-700/50',
-    Watching: 'bg-sky-900/30 text-sky-300 border-sky-700/50',
-    Watched: 'bg-emerald-900/30 text-emerald-300 border-emerald-700/50',
-    'Plan to Read': 'bg-amber-900/30 text-amber-300 border-amber-700/50',
-    Reading: 'bg-sky-900/30 text-sky-300 border-sky-700/50',
-    Read: 'bg-emerald-900/30 text-emerald-300 border-emerald-700/50',
+    'Plan to Watch': planned,
+    Watching: active,
+    Watched: done,
+    'Plan to Read': planned,
+    Reading: active,
+    Read: done,
   };
-  return colors[status] ?? 'bg-stone-800/30 text-stone-400 border-stone-700/50';
+  return colors[status] ?? 'bg-stone-800/60 text-stone-500 border-transparent';
+}
+
+
+/**
+ * True when every current member who has not opted out has completed the item.
+ *
+ * Opting out is not a vote against finishing: a member who marked an item
+ * 'not interested' is skipped, so one person's opt-out never blocks the
+ * marker for the rest of the group. With nobody left deciding, it is false.
+ */
+export function isFinishedByEveryone(options: {
+  itemId: string;
+  consumerIds: string[];
+  memberIds: string[];
+  notInterestedByItem: Record<string, string[]>;
+  viewerId?: string;
+  viewerConsumed?: boolean;
+}): boolean {
+  const { itemId, consumerIds, memberIds, notInterestedByItem, viewerId, viewerConsumed } = options;
+  const optedOut = new Set(notInterestedByItem[itemId] ?? []);
+  const deciding = memberIds.filter((id) => !optedOut.has(id));
+  if (deciding.length === 0) return false;
+  const consumers = new Set(consumerIds);
+  return deciding.every((id) =>
+    id === viewerId && viewerConsumed !== undefined ? viewerConsumed : consumers.has(id)
+  );
 }

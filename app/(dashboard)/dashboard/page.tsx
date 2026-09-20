@@ -24,18 +24,36 @@ export default async function DashboardPage() {
 
   // Fetch item rows per group in one query (counts + type breakdown)
   const groupIds = (memberships ?? []).map((m) => (m.groups as unknown as Group)?.id).filter(Boolean);
+  // One pass over the same rows feeds three things: the per-group counts, the
+  // overall type breakdown, and the handful of covers each group card wears.
+  // Artwork is already on the row, so none of it costs another round trip.
   const { data: itemCountRows } = groupIds.length
     ? await supabase
         .from('media_items')
-        .select('group_id, type')
+        .select('group_id, type, image_url, created_at')
         .in('group_id', groupIds)
-    : { data: [] as Array<{ group_id: string; type: MediaType }> };
+        .order('created_at', { ascending: false })
+    : { data: [] as Array<{ group_id: string; type: MediaType; image_url: string | null; created_at: string }> };
 
   const itemCountMap = new Map<string, number>();
   const typeCounts: Record<MediaType, number> = { movie: 0, tv_series: 0, book: 0, video_game: 0 };
+  const typeCountsByGroup = new Map<string, Record<MediaType, number>>();
+  const coversByGroup = new Map<string, string[]>();
   for (const row of itemCountRows ?? []) {
     itemCountMap.set(row.group_id, (itemCountMap.get(row.group_id) ?? 0) + 1);
     if (row.type in typeCounts) typeCounts[row.type as MediaType] += 1;
+
+    const perGroup =
+      typeCountsByGroup.get(row.group_id) ??
+      ({ movie: 0, tv_series: 0, book: 0, video_game: 0 } as Record<MediaType, number>);
+    if (row.type in perGroup) perGroup[row.type as MediaType] += 1;
+    typeCountsByGroup.set(row.group_id, perGroup);
+
+    if (row.image_url) {
+      const covers = coversByGroup.get(row.group_id) ?? [];
+      if (covers.length < 5) covers.push(row.image_url);
+      coversByGroup.set(row.group_id, covers);
+    }
   }
 
   // Status breakdown is PERSONAL: the current user's own item_statuses rows for
@@ -81,16 +99,29 @@ export default async function DashboardPage() {
       groupIds.length
         ? supabase
             .from('media_items')
-            .select('id, title, type, group_id, created_at')
+            .select('id, title, type, group_id, created_at, image_url')
             .in('group_id', groupIds)
             .order('created_at', { ascending: false })
-            .limit(5)
+            .limit(6)
         : Promise.resolve({
-            data: [] as Array<{ id: string; title: string; type: MediaType; group_id: string; created_at: string }>,
+            data: [] as Array<{
+              id: string;
+              title: string;
+              type: MediaType;
+              group_id: string;
+              created_at: string;
+              image_url: string | null;
+            }>,
           }),
     ]);
 
-  type GroupRow = Group & { role: GroupRole; itemCount: number; memberCount: number };
+  type GroupRow = Group & {
+    role: GroupRole;
+    itemCount: number;
+    memberCount: number;
+    typeCounts: Record<MediaType, number>;
+    covers: string[];
+  };
   const groups: GroupRow[] = (memberships ?? []).map((m) => {
     const g = m.groups as unknown as Group;
     return {
@@ -98,6 +129,10 @@ export default async function DashboardPage() {
       role: m.role as GroupRole,
       itemCount: itemCountMap.get(g?.id) ?? 0,
       memberCount: memberCountMap.get(g?.id) ?? 0,
+      typeCounts:
+        typeCountsByGroup.get(g?.id) ??
+        ({ movie: 0, tv_series: 0, book: 0, video_game: 0 } as Record<MediaType, number>),
+      covers: coversByGroup.get(g?.id) ?? [],
     };
   });
 
@@ -122,6 +157,7 @@ export default async function DashboardPage() {
     groupId: row.group_id,
     groupName: groupNames.get(row.group_id) ?? 'Unknown group',
     createdAt: row.created_at,
+    imageUrl: row.image_url,
   }));
 
   return (

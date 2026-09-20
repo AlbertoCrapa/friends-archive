@@ -9,6 +9,7 @@ interface Props {
   isOwner: boolean;
   initialActiveType: 'all' | MediaType;
   initialPage: number;
+  initialView?: 'list' | 'grid' | 'stats';
 }
 
 export async function GroupMediaLoader({
@@ -18,6 +19,7 @@ export async function GroupMediaLoader({
   isOwner,
   initialActiveType,
   initialPage,
+  initialView = 'list',
 }: Props) {
   const supabase = await createClient();
 
@@ -32,7 +34,7 @@ export async function GroupMediaLoader({
       .select('id, group_id, title, type, genre, metadata, added_by, external_id, external_source, external_url, image_url, created_at, updated_at')
       .eq('group_id', groupId)
       .order('created_at', { ascending: false }),
-    supabase.from('group_members').select('user_id').eq('group_id', groupId),
+    supabase.from('group_members').select('user_id, profiles(nickname)').eq('group_id', groupId),
   ]);
 
   const itemIds = (items ?? []).map((item) => item.id);
@@ -124,6 +126,13 @@ export async function GroupMediaLoader({
 
   const memberIds = (memberRows ?? []).map((row) => row.user_id);
 
+  // Nicknames for the stats view. The join can come back as an object or a
+  // one-element array depending on how PostgREST resolves the relationship.
+  const members = (memberRows ?? []).map((row) => {
+    const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+    return { id: row.user_id, nickname: profile?.nickname ?? 'Member' };
+  });
+
   // itemId -> user_ids that marked it 'not interested'.
   const notInterestedByItem: Record<string, string[]> = {};
   for (const row of optOutRows ?? []) {
@@ -138,11 +147,13 @@ export async function GroupMediaLoader({
       isMember={isMember}
       isOwner={isOwner}
       memberIds={memberIds}
+      members={members}
       notInterestedByItem={notInterestedByItem}
       initialItems={enrichedItems}
       initialConsumedSet={consumedSet}
       initialActiveType={initialActiveType}
       initialPage={initialPage}
+      initialView={initialView}
     />
   );
 }

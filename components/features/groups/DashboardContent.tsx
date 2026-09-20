@@ -1,14 +1,31 @@
 'use client';
 
+// ============================================================================
+// DashboardContent — the page you land on, which has exactly one job: get you
+// into the right archive.
+//
+// So the groups come first and they are made of their own artwork: a strip of
+// the covers most recently added to each one, which is both the quickest way
+// to recognise a group and the most honest summary of what is in it. The
+// counting comes after, because nobody logs in to read a number.
+// ============================================================================
+
 import Link from 'next/link';
 import { motion } from 'framer-motion';
+import { Compass, Globe, Lock, Plus, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Plus, Lock, Globe, Compass } from 'lucide-react';
+import { MediaPoster, TYPE_ICONS } from '@/components/features/media/MediaPoster';
+import { cn, safeImageUrl } from '@/lib/utils';
 import type { Group, GroupRole, ItemStatus, MediaType } from '@/types';
-import { getTypeLabel, getTypePluralLabel } from '@/types';
+import { getTypePluralLabel } from '@/types';
 
-type GroupRow = Group & { role: GroupRole; itemCount: number; memberCount: number };
+type GroupRow = Group & {
+  role: GroupRole;
+  itemCount: number;
+  memberCount: number;
+  typeCounts: Record<MediaType, number>;
+  covers: string[];
+};
 
 interface RecentItem {
   id: string;
@@ -17,6 +34,7 @@ interface RecentItem {
   groupId: string;
   groupName: string;
   createdAt: string;
+  imageUrl: string | null;
 }
 
 interface Props {
@@ -33,21 +51,23 @@ interface Props {
   recentItems: RecentItem[];
 }
 
-const EASE = [0.22, 1, 0.36, 1] as const;
+const EASE = [0.23, 1, 0.32, 1] as const;
+const TYPES: MediaType[] = ['movie', 'tv_series', 'book', 'video_game'];
 
-const cardVariants = {
-  hidden: { opacity: 0, y: 16 },
-  visible: (i: number) => ({
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.45, ease: EASE, delay: i * 0.055 },
-  }),
-};
+/** Your own progress. These are states, not categories, and each one is
+ *  written out beside its colour so the colour never has to carry it alone. */
+const STATUS_STEPS: { key: ItemStatus; label: string; className: string }[] = [
+  { key: 'completed', label: 'Finished', className: 'bg-emerald-500' },
+  { key: 'consuming', label: 'In progress', className: 'bg-amber-500' },
+  { key: 'plan_to_consume', label: 'Planned', className: 'bg-stone-500' },
+  { key: 'not_interested', label: 'Skipped', className: 'bg-stone-700' },
+];
 
-const MEDIA_TYPE_ORDER: MediaType[] = ['movie', 'tv_series', 'book', 'video_game'];
-
-function formatDay(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+// The locale is pinned, not inherited. Node and the browser disagree about the
+// default one, and a date that renders "16 Sept" on the server and "Sep 16" in
+// the browser throws away the whole hydrated tree.
+function formatDay(value: string): string {
+  return new Date(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
 export function DashboardContent({
@@ -63,277 +83,413 @@ export function DashboardContent({
   statusCounts,
   recentItems,
 }: Props) {
+  const typeData = TYPES.map((type) => ({ type, count: typeCounts[type] ?? 0 })).filter(
+    (row) => row.count > 0,
+  );
+  const statusTotal = STATUS_STEPS.reduce((sum, step) => sum + (statusCounts[step.key] ?? 0), 0);
+
   return (
     <div className="space-y-8">
-      {/* Page header */}
-      <motion.div
-        className="flex items-start justify-between gap-4 flex-wrap"
-        initial={{ opacity: 0, y: 12 }}
+      {/* Stacked on a phone: the title gets its own line instead of sharing one
+          with a button that ends up hanging off the subtitle. */}
+      <motion.header
+        className="flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between sm:gap-4"
+        initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: EASE }}
+        transition={{ duration: 0.35, ease: EASE }}
       >
         <div>
-          <h1 className="font-serif text-3xl sm:text-4xl text-stone-100">My Archives</h1>
-          <p className="text-stone-500 text-sm font-mono mt-1">
-            {groups.length} group{groups.length !== 1 ? 's' : ''} · {ownedCount} owned
-            {plan !== 'free' && (
-              <span
-                className="ml-3 uppercase tracking-wider text-[10px] px-1.5 py-0.5 border"
-                style={{
-                  borderColor: 'oklch(0.55 0.12 60 / 0.4)',
-                  color: 'var(--color-accent)',
-                }}
-              >
+          <h1 className="page-title">My archives</h1>
+          <p className="mt-1 text-[13.5px] text-stone-500">
+            {groups.length} {groups.length === 1 ? 'group' : 'groups'}, you own {ownedCount}
+            {maxOwned !== null ? ` of ${maxOwned}` : ''}
+            {plan !== 'free' ? (
+              <span className="ml-2 rounded-[var(--radius-sm)] bg-amber-500/15 px-1.5 py-0.5 text-[11.5px] font-medium text-amber-300">
                 {plan}
               </span>
-            )}
+            ) : null}
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          {atLimit ? (
-            <Button variant="outline" size="sm" className="gap-2" disabled>
+        {atLimit ? (
+          <Button variant="secondary" size="sm" className="gap-2" disabled>
+            <Plus className="h-3.5 w-3.5" />
+            Group limit reached
+          </Button>
+        ) : (
+          <Link href="/groups/new">
+            <Button size="sm" className="gap-2">
               <Plus className="h-3.5 w-3.5" />
-              Group limit reached
+              New group
             </Button>
-          ) : (
-            <Link href="/groups/new">
-              <Button size="sm" className="gap-2">
-                <Plus className="h-3.5 w-3.5" />
-                New group
-              </Button>
-            </Link>
-          )}
-        </div>
-      </motion.div>
+          </Link>
+        )}
+      </motion.header>
 
       {groups.length === 0 ? (
         <EmptyState />
       ) : (
         <>
-          {/* Overview stats */}
-          <motion.div
-            className="grid grid-cols-2 sm:grid-cols-4 border border-stone-800/50 divide-x divide-y sm:divide-y-0 divide-stone-800/50"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35, ease: EASE, delay: 0.08 }}
-          >
-            {[
-              { value: groups.length, label: 'groups' },
-              { value: totalItems, label: 'total items' },
-              { value: consumedCount, label: 'consumed by me' },
-              { value: addedCount, label: 'added by me' },
-            ].map(({ value, label }) => (
-              <div key={label} className="px-4 sm:px-6 py-4 text-center">
-                <p className="font-serif text-2xl sm:text-3xl text-stone-100">{value}</p>
-                <p className="font-mono text-[10px] uppercase tracking-widest text-stone-600 mt-0.5">{label}</p>
-              </div>
-            ))}
-          </motion.div>
-
-          {/* Breakdown + recent activity */}
-          <motion.div
-            className="grid grid-cols-1 lg:grid-cols-2 gap-4"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35, ease: EASE, delay: 0.16 }}
-          >
-            {/* Library breakdown */}
-            <div className="border border-stone-800/50 p-5 sm:p-6 space-y-5">
-              <h2 className="font-mono uppercase tracking-[0.3em] text-xs" style={{ color: 'oklch(0.42 0.005 60)' }}>
-                Library breakdown
-              </h2>
-              <div className="space-y-3.5">
-                {MEDIA_TYPE_ORDER.map((type) => {
-                  const count = typeCounts[type] ?? 0;
-                  const pct = totalItems > 0 ? (count / totalItems) * 100 : 0;
-                  return (
-                    <div key={type} className="space-y-1.5">
-                      <div className="flex items-baseline justify-between gap-3">
-                        <span className="font-mono text-[11px] uppercase tracking-wider text-stone-400">
-                          {getTypePluralLabel(type)}
-                        </span>
-                        <span className="font-mono text-[11px] text-stone-500">{count}</span>
-                      </div>
-                      <div className="h-1.5 w-full" style={{ backgroundColor: 'oklch(0.2 0.005 60)' }}>
-                        <div
-                          className="h-full transition-[width] duration-700 ease-[var(--ease-emphasized)]"
-                          style={{
-                            width: `${pct}%`,
-                            backgroundColor: 'oklch(0.62 0.13 60 / 0.85)',
-                          }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Group progress */}
-              <div className="pt-1 flex items-center gap-4 flex-wrap">
-                {[
-                  { label: 'completed', count: statusCounts.completed, color: 'oklch(0.72 0.14 160)' },
-                  { label: 'in progress', count: statusCounts.consuming, color: 'oklch(0.78 0.13 62)' },
-                  { label: 'planned', count: statusCounts.plan_to_consume, color: 'oklch(0.42 0.005 60)' },
-                  // Opt-outs only earn a slot once there are any — an always-on
-                  // zero would read as a fourth progress step, which it isn't.
-                  ...(statusCounts.not_interested > 0
-                    ? [{ label: 'not interested', count: statusCounts.not_interested, color: 'oklch(0.34 0.004 60)' }]
-                    : []),
-                ].map(({ label, count, color }) => (
-                  <span key={label} className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-stone-500">
-                    <span className="w-1.5 h-1.5 rotate-45 shrink-0" style={{ backgroundColor: color }} />
-                    {count} {label}
-                  </span>
-                ))}
-              </div>
-
-              {/* Plan usage */}
-              {maxOwned !== null && (
-                <div className="border-t border-stone-800/40 pt-4 space-y-2">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <span className="font-mono text-[10px] uppercase tracking-wider text-stone-600">
-                      Owned groups · {plan} plan
-                    </span>
-                    <span className="font-mono text-[11px] text-stone-500">
-                      {ownedCount} / {maxOwned}
-                    </span>
-                  </div>
-                  <div className="h-1.5 w-full" style={{ backgroundColor: 'oklch(0.2 0.005 60)' }}>
-                    <div
-                      className="h-full"
-                      style={{
-                        width: `${Math.min((ownedCount / maxOwned) * 100, 100)}%`,
-                        backgroundColor: atLimit ? 'oklch(0.62 0.18 30 / 0.85)' : 'oklch(0.62 0.13 60 / 0.85)',
-                      }}
-                    />
-                  </div>
-                  {atLimit && (
-                    <p className="font-mono text-[10px] text-stone-600">
-                      Limit reached for your plan.
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Recent additions */}
-            <div className="border border-stone-800/50 p-5 sm:p-6 space-y-5">
-              <h2 className="font-mono uppercase tracking-[0.3em] text-xs" style={{ color: 'oklch(0.42 0.005 60)' }}>
-                Recent additions
-              </h2>
-              {recentItems.length === 0 ? (
-                <p className="text-stone-600 text-sm font-light py-6 text-center">
-                  Nothing added yet. Open a group and add the first title.
-                </p>
-              ) : (
-                <ul className="-my-1">
-                  {recentItems.map((item) => (
-                    <li key={item.id} className="border-b border-stone-800/30 last:border-b-0">
-                      <Link
-                        href={`/groups/${item.groupId}`}
-                        className="flex items-center gap-4 py-2.5 group/recent"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm text-stone-200 font-light truncate group-hover/recent:text-amber-400 transition-colors">
-                            {item.title}
-                          </p>
-                          <p className="font-mono text-[10px] text-stone-600 truncate mt-0.5">
-                            {item.groupName}
-                          </p>
-                        </div>
-                        <span className="font-mono text-[10px] uppercase tracking-wider text-stone-600 shrink-0 hidden sm:block">
-                          {getTypeLabel(item.type)}
-                        </span>
-                        <span className="font-mono text-[10px] text-stone-600 shrink-0">
-                          {formatDay(item.createdAt)}
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </motion.div>
-
-          {/* Groups grid */}
-          <div className="space-y-4">
-            <h2 className="font-mono uppercase tracking-[0.3em] text-xs" style={{ color: 'oklch(0.42 0.005 60)' }}>
-              Your groups
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <section className="space-y-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {groups.map((group, i) => (
                 <motion.div
                   key={group.id}
-                  custom={i}
-                  variants={cardVariants}
-                  initial="hidden"
-                  animate="visible"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.35, ease: EASE, delay: Math.min(i * 0.05, 0.3) }}
                 >
-                  <Link href={`/groups/${group.id}`} className="group block cursor-pointer h-full">
-                    <div className="h-full border border-stone-800/50 p-5 hover:border-amber-800/50 hover:bg-stone-900/30 hover:shadow-[var(--shadow-2)] hover:-translate-y-0.5 transition-all duration-[var(--duration-standard)] ease-[var(--ease-standard)] space-y-3 flex flex-col">
-                      <div className="flex items-start justify-between gap-2">
-                        <h3 className="font-serif text-lg text-stone-100 group-hover:text-amber-400 transition-colors line-clamp-2 leading-snug">
-                          {group.name}
-                        </h3>
-                        <div className="shrink-0">
-                          {group.visibility === 'public' ? (
-                            <Badge variant="public" className="gap-1">
-                              <Globe className="h-2.5 w-2.5" /> Public
-                            </Badge>
-                          ) : (
-                            <Badge variant="private" className="gap-1">
-                              <Lock className="h-2.5 w-2.5" /> Private
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-
-                      {group.description && (
-                        <p className="text-stone-500 text-sm font-light line-clamp-2 flex-1">
-                          {group.description}
-                        </p>
-                      )}
-
-                      <div className="flex items-center justify-between pt-1 mt-auto">
-                        <div className="flex items-center gap-3 text-xs font-mono" style={{ color: 'oklch(0.4 0.005 60)' }}>
-                          <span>{group.memberCount} member{group.memberCount !== 1 ? 's' : ''}</span>
-                          <span>·</span>
-                          <span>{group.itemCount} item{group.itemCount !== 1 ? 's' : ''}</span>
-                        </div>
-                        <span
-                          className="text-[10px] font-mono uppercase tracking-wider"
-                          style={{ color: group.role === 'owner' ? 'var(--color-accent)' : 'oklch(0.4 0.005 60)' }}
-                        >
-                          {group.role}
-                        </span>
-                      </div>
-                    </div>
-                  </Link>
+                  <GroupCard group={group} />
                 </motion.div>
               ))}
             </div>
-          </div>
+          </section>
+
+          <section className="grid gap-4 lg:grid-cols-5">
+            {/*
+              Four equal boxes holding four unrelated numbers is a scoreboard,
+              not a summary: nothing in the arrangement says which number matters
+              or how any of them relate, and two of them were the same fact told
+              twice. One sentence with its own breakdown under it says all four
+              and means something: how far through everything you are, what the
+              rest of it is doing, and the two counts that give it scale.
+            */}
+            <Panel
+              className="lg:col-span-3"
+              title="Your progress"
+              caption="Everything you can reach, and how far through it you are."
+            >
+              {totalItems === 0 ? (
+                <p className="text-[13px] text-stone-500">Nothing to track yet.</p>
+              ) : (
+                <>
+                  <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <span
+                      className="text-[34px] font-semibold leading-none tracking-[-0.03em] text-stone-50"
+                      style={{ fontVariationSettings: '"opsz" 64' }}
+                    >
+                      {consumedCount}
+                    </span>
+                    <span className="text-[14px] text-stone-400">
+                      of {totalItems} {totalItems === 1 ? 'title' : 'titles'} finished
+                    </span>
+                  </p>
+
+                  <div className="mt-3.5 flex h-2.5 gap-[2px] overflow-hidden rounded-full">
+                    {STATUS_STEPS.map((step) => {
+                      const count = statusCounts[step.key] ?? 0;
+                      if (count === 0) return null;
+                      return (
+                        <span
+                          key={step.key}
+                          className={cn(
+                            'h-full first:rounded-l-full last:rounded-r-full',
+                            step.className,
+                          )}
+                          style={{ width: `${(count / statusTotal) * 100}%` }}
+                        />
+                      );
+                    })}
+                  </div>
+
+                  <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
+                    {STATUS_STEPS.filter(
+                      // An opt-out count of zero is not a fourth state, it is
+                      // the absence of one.
+                      (step) => step.key !== 'not_interested' || (statusCounts[step.key] ?? 0) > 0,
+                    ).map((step) => (
+                      <li key={step.key} className="flex items-center gap-1.5 text-[12.5px]">
+                        <span aria-hidden className={cn('h-2 w-2 rounded-[3px]', step.className)} />
+                        <span className="text-stone-400">{step.label}</span>
+                        <span className="font-semibold tabular-nums text-stone-200">
+                          {statusCounts[step.key] ?? 0}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  <p className="mt-4 border-t border-white/[0.07] pt-3 text-[12.5px] text-stone-500">
+                    Across {groups.length} {groups.length === 1 ? 'group' : 'groups'}
+                    <span aria-hidden className="px-1.5 text-stone-700">
+                      ·
+                    </span>
+                    {addedCount} added by you
+                  </p>
+                </>
+              )}
+            </Panel>
+
+            <Panel
+              className="lg:col-span-2"
+              title="Collection"
+              caption="Every title across your groups, by kind."
+            >
+              {typeData.length === 0 ? (
+                <p className="text-[13px] text-stone-500">Nothing collected yet.</p>
+              ) : (
+                <div className="flex items-center gap-4">
+                  <div className="relative h-[132px] w-[132px] shrink-0">
+                    <TypeRing slices={typeData} total={totalItems} />
+                    <span className="pointer-events-none absolute inset-0 grid place-items-center text-[20px] font-semibold tracking-[-0.03em] text-stone-50">
+                      {totalItems}
+                    </span>
+                  </div>
+                  <ul className="min-w-0 flex-1 space-y-1.5">
+                    {TYPES.map((type) => {
+                      const Icon = TYPE_ICONS[type];
+                      return (
+                        <li key={type} className="flex items-center gap-2 text-[12.5px]">
+                          <span
+                            aria-hidden
+                            className="h-2.5 w-2.5 shrink-0 rounded-[3px]"
+                            style={{ background: `var(--chart-${type})` }}
+                          />
+                          <Icon className="h-3.5 w-3.5 shrink-0 text-stone-500" aria-hidden />
+                          <span className="truncate text-stone-400">{getTypePluralLabel(type)}</span>
+                          <span className="ml-auto font-semibold tabular-nums text-stone-200">
+                            {typeCounts[type] ?? 0}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+            </Panel>
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="text-[15px] font-semibold tracking-[-0.02em] text-stone-100">
+              Recently added
+            </h2>
+            {recentItems.length === 0 ? (
+              <div className="rounded-[var(--radius-lg)] bg-stone-900 p-8 text-center border border-white/[0.07]">
+                <p className="text-[13.5px] text-stone-500">
+                  Nothing added yet. Open a group and put the first title in.
+                </p>
+              </div>
+            ) : (
+              <ul className="grid grid-cols-3 gap-x-3 gap-y-5 sm:grid-cols-4 lg:grid-cols-6">
+                {recentItems.map((item) => (
+                  <li key={item.id}>
+                    {/* No lift. A grid of covers that each hop when the
+                        pointer crosses them is a field of twitching tiles;
+                        what you want is the one you are looking at to warm up
+                        and lean in slightly, and nothing else to move. */}
+                    <Link href={`/groups/${item.groupId}`} className="group block">
+                      <MediaPoster
+                        src={item.imageUrl}
+                        type={item.type}
+                        size="xl"
+                        zoomOnHover="subtle"
+                      />
+                      <div className="mt-2 space-y-0.5">
+                        <p className="truncate text-[12.5px] font-semibold leading-snug tracking-[-0.015em] text-stone-100 transition-colors duration-[var(--duration-drift)] ease-[var(--ease-drift)] group-hover:text-amber-300">
+                          {item.title}
+                        </p>
+                        <p className="truncate text-[11.5px] leading-snug text-stone-500">
+                          {item.groupName} · {formatDay(item.createdAt)}
+                        </p>
+                      </div>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         </>
       )}
     </div>
   );
 }
 
+/**
+ * One group, wearing its own shelf. The covers are cropped into a band rather
+ * than shown as posters: at this size they are a texture that says "this is
+ * the horror group" faster than the name does.
+ */
+function GroupCard({ group }: { group: GroupRow }) {
+  const covers = group.covers.map(safeImageUrl).filter(Boolean) as string[];
+  const total = TYPES.reduce((sum, type) => sum + (group.typeCounts[type] ?? 0), 0);
+
+  return (
+    <Link href={`/groups/${group.id}`} className="group block h-full">
+      <article className="flex h-full translate-y-0 flex-col overflow-hidden rounded-[var(--radius-lg)] bg-stone-900 border border-white/[0.07] transition-[border-color,translate] duration-[var(--duration-standard)] ease-[var(--ease-standard)] hover:-translate-y-0.5 hover:border-white/25">
+        <div className="relative h-[78px] overflow-hidden bg-stone-800">
+          {covers.length > 0 ? (
+            // The band is a collage, not five pictures: the transform lives on
+            // the strip so the whole thing pushes in together. Scaling each
+            // image separately made five little zooms with the seams between
+            // them sliding about, which reads as five things, not one shelf.
+            //
+            // And it drifts rather than zooms — 3% more, on a curve with no
+            // snap in it. A shelf of covers leaning in is atmosphere; a shelf
+            // of covers jumping is a button.
+            //
+            // It also rests ABOVE 1. A strip scaled to exactly fill its band
+            // lands its bottom edge on a fractional pixel while it animates,
+            // and the surface behind shows through as a hairline along the
+            // bottom. Resting at 1.03 keeps the collage permanently larger
+            // than the window it is seen through, so there is no edge to
+            // catch.
+            <div className="flex h-full scale-[1.03] opacity-80 transition-[opacity,scale] duration-[var(--duration-drift)] ease-[var(--ease-drift)] group-hover:scale-[1.06] group-hover:opacity-100">
+              {covers.map((src, i) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={`${src}-${i}`}
+                  src={src}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  referrerPolicy="no-referrer"
+                  className="h-full min-w-0 flex-1 object-cover"
+                />
+              ))}
+            </div>
+          ) : null}
+          <span className="pointer-events-none absolute inset-0 bg-gradient-to-t from-stone-900 via-stone-900/45 to-stone-900/10" />
+          <span className="absolute right-2 top-2">
+            {group.visibility === 'public' ? (
+              <span className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] bg-stone-950/75 px-1.5 py-0.5 text-[11px] font-medium text-stone-300">
+                <Globe className="h-2.5 w-2.5" /> Public
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] bg-stone-950/75 px-1.5 py-0.5 text-[11px] font-medium text-stone-400">
+                <Lock className="h-2.5 w-2.5" /> Private
+              </span>
+            )}
+          </span>
+        </div>
+
+        <div className="flex flex-1 flex-col gap-2 p-4 pt-3">
+          <h3 className="line-clamp-2 text-[16px] font-semibold leading-snug tracking-[-0.02em] text-stone-50 transition-colors group-hover:text-amber-300">
+            {group.name}
+          </h3>
+          {group.description ? (
+            <p className="line-clamp-2 text-[12.5px] leading-snug text-stone-500">
+              {group.description}
+            </p>
+          ) : null}
+
+          {total > 0 ? (
+            <div
+              className="mt-auto flex h-[4px] gap-[2px]"
+              title={TYPES.filter((type) => group.typeCounts[type] > 0)
+                .map((type) => `${group.typeCounts[type]} ${getTypePluralLabel(type).toLowerCase()}`)
+                .join(', ')}
+            >
+              {TYPES.map((type) => {
+                const count = group.typeCounts[type] ?? 0;
+                if (count === 0) return null;
+                return (
+                  <span
+                    key={type}
+                    className="h-full rounded-full"
+                    style={{ width: `${(count / total) * 100}%`, background: `var(--chart-${type})` }}
+                  />
+                );
+              })}
+            </div>
+          ) : (
+            <div className="mt-auto" />
+          )}
+
+          <div className="flex items-center gap-3 pt-1 text-[12px] text-stone-500">
+            <span className="inline-flex items-center gap-1">
+              <Users className="h-3 w-3" />
+              {group.memberCount}
+            </span>
+            <span>
+              {group.itemCount} {group.itemCount === 1 ? 'title' : 'titles'}
+            </span>
+            {group.role === 'owner' ? (
+              <span className="ml-auto text-[11.5px] text-amber-400/80">Owner</span>
+            ) : null}
+          </div>
+        </div>
+      </article>
+    </Link>
+  );
+}
+
+/**
+ * The composition ring. Four slices and no interaction: the list beside it
+ * already spells out every kind and its count, so a charting library here would
+ * be a hundred kilobytes spent on a circle. The 2px gaps are cut out of the
+ * dash pattern rather than drawn, so the surface shows through cleanly.
+ */
+function TypeRing({ slices, total }: { slices: { type: MediaType; count: number }[]; total: number }) {
+  const RADIUS = 46;
+  const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+  const GAP = slices.length > 1 ? 3 : 0;
+  let offset = 0;
+
+  return (
+    <svg viewBox="0 0 132 132" className="h-full w-full -rotate-90" role="img" aria-hidden>
+      <circle cx="66" cy="66" r={RADIUS} fill="none" stroke="var(--chart-grid)" strokeWidth="14" />
+      {slices.map((slice) => {
+        const length = total > 0 ? (slice.count / total) * CIRCUMFERENCE : 0;
+        const dash = Math.max(0, length - GAP);
+        const node = (
+          <circle
+            key={slice.type}
+            cx="66"
+            cy="66"
+            r={RADIUS}
+            fill="none"
+            stroke={`var(--chart-${slice.type})`}
+            strokeWidth="14"
+            strokeDasharray={`${dash} ${CIRCUMFERENCE - dash}`}
+            strokeDashoffset={-offset}
+          />
+        );
+        offset += length;
+        return node;
+      })}
+    </svg>
+  );
+}
+
+function Panel({
+  title,
+  caption,
+  className,
+  children,
+}: {
+  title: string;
+  caption: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section
+      className={cn(
+        'rounded-[var(--radius-lg)] bg-stone-900 p-4 border border-white/[0.07]',
+        className,
+      )}
+    >
+      <h3 className="text-[14px] font-semibold tracking-[-0.015em] text-stone-100">{title}</h3>
+      <p className="mb-3 mt-0.5 text-[12.5px] leading-snug text-stone-500">{caption}</p>
+      {children}
+    </section>
+  );
+}
+
 function EmptyState() {
   return (
     <motion.div
-      className="border border-stone-800/50 py-24 px-8 text-center space-y-6"
+      className="rounded-[var(--radius-lg)] bg-stone-900 px-8 py-20 text-center border border-white/[0.07]"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1], delay: 0.15 }}
+      transition={{ duration: 0.4, ease: EASE, delay: 0.1 }}
     >
-      <div className="space-y-3">
-        <p className="font-serif text-2xl text-stone-500">No archives yet</p>
-        <p className="text-stone-600 text-sm font-mono max-w-sm mx-auto">
-          Create a group for your crew, or discover what others are archiving together.
-        </p>
-      </div>
-      <div className="flex justify-center gap-3 flex-wrap">
+      <h2 className="text-[20px] font-semibold tracking-[-0.02em] text-stone-100">
+        No archives yet
+      </h2>
+      <p className="mx-auto mt-2 max-w-sm text-[13.5px] leading-relaxed text-stone-500">
+        An archive is a shelf you and your friends keep together. Start one, or look at what other
+        people are keeping.
+      </p>
+      <div className="mt-6 flex flex-wrap justify-center gap-3">
         <Link href="/groups/new">
           <Button size="sm" className="gap-2">
             <Plus className="h-3.5 w-3.5" />
@@ -341,7 +497,7 @@ function EmptyState() {
           </Button>
         </Link>
         <Link href="/discover">
-          <Button variant="outline" size="sm" className="gap-2">
+          <Button variant="secondary" size="sm" className="gap-2">
             <Compass className="h-3.5 w-3.5" />
             Discover
           </Button>

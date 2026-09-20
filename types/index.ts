@@ -365,11 +365,14 @@ export function getStatusLabel(status: ItemStatus): string {
  * item_statuses row means and what every status control starts on.
  */
 export function getStatusOptions(): { value: ItemStatus; label: string }[] {
+  // Life-cycle order. Opting out is last because it is the rarest choice and
+  // the only one that takes an item out of the count, so it should never be the
+  // row a finger lands on first.
   return [
-    { value: 'not_interested', label: getStatusLabel('not_interested') },
     { value: 'plan_to_consume', label: getStatusLabel('plan_to_consume') },
     { value: 'consuming', label: getStatusLabel('consuming') },
     { value: 'completed', label: getStatusLabel('completed') },
+    { value: 'not_interested', label: getStatusLabel('not_interested') },
   ];
 }
 

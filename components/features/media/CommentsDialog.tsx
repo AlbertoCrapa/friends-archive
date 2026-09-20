@@ -39,6 +39,8 @@ interface Props {
   isMember?: boolean;
   /** Group owner — may delete anyone's comment (moderation). */
   isOwner?: boolean;
+  /** Sizing for the trigger, which sits in rows and in grid cards alike. */
+  triggerClassName?: string;
 }
 
 // Per-item cache so re-opening a thread doesn't re-fetch.
@@ -51,6 +53,7 @@ export function CommentsDialog({
   currentUserNickname,
   isMember = false,
   isOwner = false,
+  triggerClassName,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [comments, setComments] = useState<CommentRow[] | null>(null);
@@ -192,7 +195,12 @@ export function CommentsDialog({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-11 w-11" title="Comments">
+        <Button
+          variant="ghost"
+          size="icon"
+          className={cn('h-11 w-11', triggerClassName)}
+          title="Comments"
+        >
           <MessageSquare className="h-3.5 w-3.5" />
         </Button>
       </DialogTrigger>
@@ -210,7 +218,7 @@ export function CommentsDialog({
           <div className="space-y-4">
             {/* Comment thread — oldest first */}
             {count > 0 && (
-              <p className="text-stone-500 text-[11px] font-mono uppercase tracking-wider">
+              <p className="text-stone-500 text-[11px] font-mono">
                 {count} comment{count !== 1 ? 's' : ''}
               </p>
             )}
@@ -336,7 +344,7 @@ export function CommentsDialog({
             {isMember && userId && (
               <div className="space-y-2 border-t border-stone-800 pt-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-stone-400 text-xs font-mono uppercase tracking-wider">
+                  <span className="text-stone-400 text-xs font-mono">
                     Add a comment
                   </span>
                   <span

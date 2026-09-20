@@ -15,7 +15,7 @@ export function PageLoader({ label = 'Loading', className }: PageLoaderProps) {
       className={cn('flex flex-col items-center justify-center gap-4 py-32', className)}
     >
       <Spinner className="h-8 w-8 text-[var(--color-accent)]" />
-      <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-stone-600">
+      <span className="font-mono text-[10px] text-stone-600">
         {label}
       </span>
     </div>

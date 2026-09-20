@@ -40,9 +40,11 @@ export const TYPE_ICONS: Record<MediaType, LucideIcon> = {
 /** Frame sizes, all 2:3. xs = suggestion row, sm = table row, md = mobile card, lg = dialog. */
 const SIZES = {
   xs: { frame: 'h-10 w-7', icon: 'h-3 w-3' },
-  sm: { frame: 'h-12 w-8', icon: 'h-3.5 w-3.5' },
+  sm: { frame: 'h-14 w-[38px]', icon: 'h-4 w-4' },
   md: { frame: 'h-[72px] w-12', icon: 'h-5 w-5' },
   lg: { frame: 'h-[84px] w-14', icon: 'h-5 w-5' },
+  /** Grid card: fills its column and keeps the 2:3 frame. */
+  xl: { frame: 'aspect-[2/3] w-full', icon: 'h-8 w-8' },
 } as const;
 
 interface Props {
@@ -50,8 +52,14 @@ interface Props {
   src?: string | null;
   type: MediaType;
   size?: keyof typeof SIZES;
-  /** Lift the artwork slightly when the surrounding `group` row is hovered. */
-  zoomOnHover?: boolean;
+  /**
+   * Push the artwork in when the surrounding `group` is hovered.
+   * `true`    — a list row: a definite 1.06 in 300ms, read as a response.
+   * 'subtle'  — artwork that IS the tile: a 1.02 drift on the shared drift
+   *             timing, slow enough and small enough that you notice it only
+   *             on the picture you are actually looking at.
+   */
+  zoomOnHover?: boolean | 'subtle';
   /**
    * Above the fold: load immediately instead of waiting for the lazy-load
    * observer, so the first screenful never arrives late on a cold cache.
@@ -93,12 +101,12 @@ export function MediaPoster({
   return (
     <div
       className={cn(
-        'relative shrink-0 overflow-hidden border border-stone-800/70 bg-stone-900/80',
+        'relative shrink-0 overflow-hidden rounded-[var(--radius-md)] bg-stone-800 border border-white/[0.07]',
         frame,
         className
       )}
     >
-      <span className="absolute inset-0 grid place-items-center text-stone-700">
+      <span className="absolute inset-0 grid place-items-center text-stone-600">
         <Icon className={icon} aria-hidden="true" />
       </span>
       {url && !failed && (
@@ -117,21 +125,88 @@ export function MediaPoster({
           onError={() => setFailed(true)}
           className={cn(
             'relative h-full w-full object-cover',
-            zoomOnHover && 'group-hover:scale-[1.06]',
+            // `scale-100` is not decoration, it is the FROM of the animation.
+            // Tailwind v4 writes zoom into the standalone `scale` property,
+            // whose initial value is `none` — and Chrome will not interpolate
+            // `none` into a number, it swaps it. Without a resting `scale: 1`
+            // every "zoom on hover" in the app was a jump cut with a duration
+            // written next to it that never ran.
+            zoomOnHover === 'subtle'
+              ? 'scale-100 group-hover:scale-[1.02]'
+              : zoomOnHover
+                ? 'scale-100 group-hover:scale-[1.06]'
+                : '',
             // ONE transition declaration — two would collide and twMerge would
             // keep only the last. Opacity animates only for a real download; a
             // cache hit ('instant') must jump straight to full opacity.
             paint === 'faded'
               ? zoomOnHover
-                ? 'transition-[opacity,transform] duration-300 ease-out'
-                : 'transition-opacity duration-300 ease-out'
+                ? 'transition-[opacity,scale]'
+                : 'transition-opacity'
               : zoomOnHover
-                ? 'transition-transform duration-300 ease-out'
+                ? 'transition-[scale]'
                 : '',
+            zoomOnHover === 'subtle'
+              ? 'duration-[var(--duration-drift)] ease-[var(--ease-drift)]'
+              : 'duration-300 ease-out',
             paint === 'pending' ? 'opacity-0' : 'opacity-100'
           )}
         />
       )}
     </div>
+  );
+}
+
+
+/**
+ * The artwork, blurred out of focus behind whatever it belongs to.
+ *
+ * A poster is mostly two or three colours, so a heavily blurred copy of it is
+ * the cheapest honest way to tint a surface with the film's own palette: no
+ * canvas, no pixel sampling, nothing to go wrong when the provider's CDN does
+ * not send CORS headers. The mask keeps it to the side the artwork sits on so
+ * the text never loses contrast.
+ */
+export function PosterGlow({
+  src,
+  shape = 'row',
+  className,
+}: {
+  src?: string | null;
+  /** 'row' fades out to the right; 'card' pools behind the whole tile. */
+  shape?: 'row' | 'card';
+  className?: string;
+}) {
+  const url = safeImageUrl(src);
+  if (!url) return null;
+  return (
+    <span
+      aria-hidden="true"
+      className={cn('pointer-events-none absolute inset-0 overflow-hidden', className)}
+      style={{
+        maskImage:
+          shape === 'row'
+            ? 'linear-gradient(to right, black, transparent 44%)'
+            : 'linear-gradient(to bottom, transparent 40%, black 56%, transparent 94%)',
+        WebkitMaskImage:
+          shape === 'row'
+            ? 'linear-gradient(to right, black, transparent 44%)'
+            : 'linear-gradient(to bottom, transparent 40%, black 56%, transparent 94%)',
+      }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={url}
+        alt=""
+        aria-hidden="true"
+        loading="lazy"
+        decoding="async"
+        referrerPolicy="no-referrer"
+        className={cn(
+          'h-full w-full object-cover saturate-150',
+          shape === 'row' ? 'scale-[1.6] opacity-[0.13] blur-2xl' : 'scale-[1.35] opacity-[0.45] blur-2xl'
+        )}
+      />
+    </span>
   );
 }

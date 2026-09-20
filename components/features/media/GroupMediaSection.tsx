@@ -1,16 +1,23 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import dynamic from 'next/dynamic';
 import { AddMediaDialog } from './AddMediaDialog';
+import { ArchiveControls, type ArchiveView, type SortKey, type StatusFilter, type TypeFilter } from './ArchiveControls';
+// The stats view is one of three, and the only one that needs a charting
+// library. Loading it on demand keeps ~100kB of Recharts off the archive for
+// everyone who came to read the list.
+const ArchiveStats = dynamic(() => import('./ArchiveStats').then((m) => m.ArchiveStats), {
+  ssr: false,
+  loading: () => (
+    <div className="h-[520px] animate-pulse rounded-[var(--radius-lg)] bg-stone-900 border border-white/[0.07]" />
+  ),
+});
+import { MediaGrid } from './MediaGrid';
 import { MediaTable } from './MediaTable';
-import { Input } from '@/components/ui/input';
-import { Search, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { getSearchTags } from '@/lib/utils';
 import type { MediaItemWithDetails, MediaType } from '@/types';
-
-type MediaFilterType = 'all' | MediaType;
-type StatusFilter = 'all' | 'plan_to_consume' | 'consuming' | 'completed' | 'not_interested';
 
 const PAGE_SIZE = 20;
 
@@ -22,38 +29,28 @@ interface Props {
   isOwner: boolean;
   /** user_ids of the group's CURRENT members — drives the "everyone completed" star */
   memberIds: string[];
+  /** Nicknames for those members, for the stats view. */
+  members: { id: string; nickname: string }[];
   /** itemId -> user_ids that marked the item 'not interested'. Those members are
    *  skipped by the "everyone completed" marker. */
   notInterestedByItem: Record<string, string[]>;
   initialItems: MediaItemWithDetails[];
   initialConsumedSet: Set<string>;
-  initialActiveType: MediaFilterType;
+  initialActiveType: TypeFilter;
   initialPage: number;
+  /** Which of the three views to open in. Kept in the URL so a link carries it. */
+  initialView?: ArchiveView;
 }
 
-const typeFilters: Array<{ value: MediaFilterType; label: string }> = [
-  { value: 'all', label: 'All' },
-  { value: 'movie', label: 'Movies' },
-  { value: 'tv_series', label: 'TV' },
-  { value: 'book', label: 'Books' },
-  { value: 'video_game', label: 'Games' },
-];
+function yearOf(item: MediaItemWithDetails): number {
+  const metadata = item.metadata as { release_year?: number; publication_year?: number };
+  return metadata?.release_year ?? metadata?.publication_year ?? 0;
+}
 
-const statusFilters: Array<{ value: StatusFilter; label: string }> = [
-  { value: 'all', label: 'Any status' },
-  { value: 'plan_to_consume', label: 'Planned' },
-  { value: 'consuming', label: 'In progress' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'not_interested', label: 'Not interested' },
-];
+function finishedCount(item: MediaItemWithDetails): number {
+  return item.consumption_records?.length ?? 0;
+}
 
-const STATUS_ACTIVE_CLASSES: Record<StatusFilter, string> = {
-  all: 'border-stone-600/70 text-stone-300 bg-stone-800/40',
-  plan_to_consume: 'border-amber-700/60 text-amber-400 bg-amber-950/25',
-  consuming: 'border-sky-700/60 text-sky-400 bg-sky-950/25',
-  completed: 'border-emerald-700/60 text-emerald-400 bg-emerald-950/25',
-  not_interested: 'border-stone-700/70 text-stone-400 bg-stone-800/30',
-};
 
 export function GroupMediaSection({
   groupId,
@@ -62,20 +59,24 @@ export function GroupMediaSection({
   isMember,
   isOwner,
   memberIds,
+  members,
   notInterestedByItem,
   initialItems,
   initialConsumedSet,
   initialActiveType,
   initialPage,
+  initialView = 'list',
 }: Props) {
-  const [activeType, setActiveType] = useState<MediaFilterType>(initialActiveType);
+  const [view, setView] = useState<ArchiveView>(initialView);
+  const [activeType, setActiveType] = useState<TypeFilter>(initialActiveType);
   const [activeStatus, setActiveStatus] = useState<StatusFilter>('all');
   const [activeTags, setActiveTags] = useState<string[]>([]);
+  const [sort, setSort] = useState<SortKey>('recent');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(Math.max(1, initialPage));
   const [items, setItems] = useState<MediaItemWithDetails[]>(initialItems);
 
-  // Filter pipeline: type → status → tags → search
+  // Filter pipeline: type → status → tags → search → order
   const filteredItems = useMemo(() => {
     let result = items;
     if (activeType !== 'all') result = result.filter((item) => item.type === activeType);
@@ -106,13 +107,25 @@ export function GroupMediaSection({
         .sort((a, b) => b.score - a.score)
         .map((entry) => entry.item);
     }
+
+    // 'recent' is the order the archive already arrives in, and it is also what
+    // keeps search relevance intact, so it does not re-sort.
+    if (sort === 'title') return [...result].sort((a, b) => a.title.localeCompare(b.title));
+    if (sort === 'year') return [...result].sort((a, b) => yearOf(b) - yearOf(a));
+    if (sort === 'unfinished') return [...result].sort((a, b) => finishedCount(a) - finishedCount(b));
+    if (sort === 'finished') return [...result].sort((a, b) => finishedCount(b) - finishedCount(a));
     return result;
-  }, [items, activeType, activeStatus, activeTags, search]);
+  }, [items, activeType, activeStatus, activeTags, search, sort]);
+
+  // The stats view answers questions about the shelf, not about the current
+  // search, so it only honours the kind filter.
+  const statsItems = useMemo(
+    () => (activeType === 'all' ? items : items.filter((item) => item.type === activeType)),
+    [items, activeType],
+  );
 
   function toggleTag(tag: string) {
-    setActiveTags((prev) =>
-      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
-    );
+    setActiveTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
     setPage(1);
   }
 
@@ -121,19 +134,28 @@ export function GroupMediaSection({
   const pageStart = (currentPage - 1) * PAGE_SIZE;
   const pageItems = filteredItems.slice(pageStart, pageStart + PAGE_SIZE);
 
-  function switchType(nextType: MediaFilterType) {
+  function switchType(nextType: TypeFilter) {
     setActiveType(nextType);
     setPage(1);
     syncUrl(nextType, 1);
   }
 
-  function getCountForType(type: MediaFilterType) {
+  function countForType(type: TypeFilter) {
     if (type === 'all') return items.length;
     return items.filter((item) => item.type === type).length;
   }
 
   function handleAddedItem(item: MediaItemWithDetails) {
     setItems((prev) => [item, ...prev]);
+  }
+
+  /** A new item arrives with the adder's own nickname and no records yet. */
+  function handleAdded(item: MediaItemWithDetails) {
+    handleAddedItem({
+      ...item,
+      added_by_profile: currentUserNickname ? { nickname: currentUserNickname } : undefined,
+      consumption_records: [],
+    } satisfies MediaItemWithDetails);
   }
 
   function handleDeletedItem(itemId: string) {
@@ -150,221 +172,165 @@ export function GroupMediaSection({
     syncUrl(activeType, bounded);
   }
 
-  function syncUrl(type: MediaFilterType, nextPage: number) {
+  function switchView(next: ArchiveView) {
+    setView(next);
+    syncUrl(activeType, currentPage, next);
+  }
+
+  function syncUrl(type: TypeFilter, nextPage: number, nextView: ArchiveView = view) {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     if (type === 'all') params.delete('type');
     else params.set('type', type);
     if (nextPage <= 1) params.delete('page');
     else params.set('page', String(nextPage));
+    if (nextView === 'list') params.delete('view');
+    else params.set('view', nextView);
     const query = params.toString();
     window.history.replaceState({}, '', query ? `${window.location.pathname}?${query}` : window.location.pathname);
   }
 
-  const hasActiveFilter =
-    search.trim() || activeStatus !== 'all' || activeType !== 'all' || activeTags.length > 0;
+  const hasActiveFilter = Boolean(
+    search.trim() || activeStatus !== 'all' || activeType !== 'all' || activeTags.length > 0,
+  );
+
+  function clearFilters() {
+    setSearch('');
+    setActiveStatus('all');
+    setActiveType('all');
+    setActiveTags([]);
+    setPage(1);
+    syncUrl('all', 1);
+  }
 
   return (
-    <div className="space-y-0 pb-28">
-      {/* Add item — fixed bottom-right FAB (members only). */}
-      {isMember && (
+    // Room at the foot for the floating add button, which only floats on a phone.
+    <div className="pb-24 md:pb-10">
+      {/* Touch: the same action as a disc in the thumb corner. */}
+      {isMember ? (
         <AddMediaDialog
+          variant="fab"
           groupId={groupId}
           userId={userId}
-          activeType={activeType}
-          onAdded={(item) => {
-            const optimistic = {
-              ...item,
-              added_by_profile: currentUserNickname ? { nickname: currentUserNickname } : undefined,
-              consumption_records: [],
-            } satisfies MediaItemWithDetails;
-            handleAddedItem(optimistic);
-          }}
+          activeType={activeType as 'all' | MediaType}
+          onAdded={handleAdded}
         />
-      )}
+      ) : null}
 
-      {/* ── Sticky control bar ────────────────────────────────────────── */}
-      <div className="sticky top-[56px] z-20 bg-stone-950/96 backdrop-blur-sm border-b border-stone-900 -mx-6 px-6 pb-0">
-
-        {/* Type filter tabs — all five always visible (no scroll): an equal
-            5-column grid on mobile, inline on desktop. The Add action is a
-            fixed bottom-right FAB (rendered below), so this row is tabs only. */}
-        <div
-          className="grid grid-cols-5 md:flex md:gap-0"
-          style={{ marginBottom: '-1px' }}
-        >
-          {typeFilters.map(({ value, label }) => {
-            const isActive = activeType === value;
-            const count = getCountForType(value);
-            return (
-              <button
-                key={value}
-                type="button"
-                onClick={() => switchType(value)}
-                className={`cursor-pointer min-h-[44px] px-1 sm:px-4 py-2 text-[11px] sm:text-sm font-mono uppercase tracking-wide sm:tracking-wider transition-colors border-b-2
-                  ${isActive
-                    ? 'text-amber-500 border-amber-500'
-                    : 'text-stone-500 border-transparent hover:text-stone-300'
-                  }`}
-              >
-                <span className="flex flex-col items-center leading-tight md:flex-row md:gap-1.5">
-                  <span className="truncate max-w-full">{label}</span>
-                  <span className={`text-[9px] sm:text-[10px] ${isActive ? 'opacity-70' : 'opacity-40'}`}>
-                    {count}
-                  </span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Search + status filters. Stacks on mobile (search on top, status
-            grid below); on desktop they share one row — search left (constrained
-            width), status pills to its right. */}
-        <div className="flex flex-col gap-2 py-2.5 md:flex-row md:items-center md:justify-between">
-          {/* Search — constrained on desktop so the status filters sit to its right */}
-          <div className="relative w-full md:w-72 md:shrink-0">
-            <Search
-              className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 pointer-events-none"
-              style={{ color: 'oklch(0.42 0.005 60)' }}
+      <ArchiveControls
+        view={view}
+        onView={switchView}
+        type={activeType}
+        onType={switchType}
+        countForType={countForType}
+        status={activeStatus}
+        onStatus={(next) => {
+          setActiveStatus(next);
+          setPage(1);
+        }}
+        sort={sort}
+        onSort={(next) => {
+          setSort(next);
+          setPage(1);
+        }}
+        search={search}
+        onSearch={(next) => {
+          setSearch(next);
+          setPage(1);
+        }}
+        shown={filteredItems.length}
+        activeTags={activeTags}
+        onToggleTag={toggleTag}
+        hasActiveFilter={hasActiveFilter}
+        onClear={clearFilters}
+        action={
+          isMember ? (
+            <AddMediaDialog
+              groupId={groupId}
+              userId={userId}
+              activeType={activeType as 'all' | MediaType}
+              onAdded={handleAdded}
             />
-            <Input
-              type="search"
-              placeholder="Search titles, people or tags..."
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-              className="h-11 md:h-9 pl-9 pr-9 text-sm font-light w-full"
-              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
-            />
-            {search && (
-              <button
-                type="button"
-                onClick={() => setSearch('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 cursor-pointer"
-                style={{ color: 'oklch(0.42 0.005 60)' }}
-                aria-label="Clear search"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
+          ) : null
+        }
+      />
 
-          {/* Status filter — all five always visible (no scroll): a 3-column
-              grid on phones (two rows, so "Not interested" keeps its full
-              label), 5 columns from sm up, inline on desktop. */}
-          <div className="grid grid-cols-3 gap-1.5 pb-0.5 sm:grid-cols-5 md:flex md:shrink-0 md:pb-0">
-            {statusFilters.map(({ value, label }) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => { setActiveStatus(value); setPage(1); }}
-                className={`cursor-pointer min-h-11 md:min-h-9 px-1 sm:px-3 text-center text-[10px] sm:text-[11px] font-mono uppercase tracking-wide sm:tracking-wider leading-tight border transition-colors
-                  ${activeStatus === value
-                    ? STATUS_ACTIVE_CLASSES[value]
-                    : 'border-stone-800/60 text-stone-500 hover:text-stone-300 hover:border-stone-700'
-                  }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* ── Results count when filtering ─────────────────────────────── */}
-      <AnimatePresence>
-        {hasActiveFilter && (
-          <motion.div
-            className="flex flex-col gap-2 px-0 py-3 mt-4"
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.2 }}
-          >
-            {activeTags.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="font-mono text-[10px] uppercase tracking-wider text-stone-600">
-                  Tags:
-                </span>
-                {activeTags.map((tag) => (
-                  <button
-                    key={tag}
-                    type="button"
-                    onClick={() => toggleTag(tag)}
-                    className="inline-flex items-center gap-1 cursor-pointer border border-amber-700/60 bg-amber-950/30 px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wider text-amber-400 hover:border-amber-600 transition-colors"
-                    title={`Remove tag filter: ${tag}`}
-                  >
-                    {tag}
-                    <X className="h-2.5 w-2.5" />
-                  </button>
-                ))}
-              </div>
-            )}
-            <div className="flex items-center justify-between">
-              <p className="font-mono text-xs" style={{ color: 'oklch(0.42 0.005 60)' }}>
-                {filteredItems.length} result{filteredItems.length !== 1 ? 's' : ''}
-                {search && <span> matching <em className="not-italic text-stone-300">"{search}"</em></span>}
-              </p>
-              {hasActiveFilter && (
-                <button
-                  type="button"
-                  onClick={() => { setSearch(''); setActiveStatus('all'); setActiveType('all'); setActiveTags([]); setPage(1); }}
-                  className="font-mono text-xs cursor-pointer transition-colors"
-                  style={{ color: 'oklch(0.72 0.12 65 / 0.65)' }}
-                >
-                  Clear filters
-                </button>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Media table ───────────────────────────────────────────────── */}
       <div className="mt-4">
-        <MediaTable
-          items={pageItems}
-          consumedSet={initialConsumedSet}
-          activeType={activeType}
-          isMember={isMember}
-          isOwner={isOwner}
-          userId={userId}
-          currentUserNickname={currentUserNickname}
-          memberIds={memberIds}
-          notInterestedByItem={notInterestedByItem}
-          activeTags={activeTags}
-          onToggleTag={toggleTag}
-          onDeleted={handleDeletedItem}
-          onUpdated={handleUpdatedItem}
-        />
+        {view === 'stats' ? (
+          <ArchiveStats
+            items={statsItems}
+            members={members}
+            memberIds={memberIds}
+            notInterestedByItem={notInterestedByItem}
+            userId={userId}
+            consumedSet={initialConsumedSet}
+          />
+        ) : filteredItems.length === 0 ? (
+          <div className="rounded-[var(--radius-lg)] bg-stone-900 p-10 text-center border border-white/[0.07]">
+            <h3 className="text-[15px] font-semibold text-stone-100">Nothing matches</h3>
+            <p className="mx-auto mt-1 max-w-sm text-sm text-stone-500">
+              {hasActiveFilter
+                ? 'Loosen a filter and the archive comes back.'
+                : 'This archive is empty. Add the first title to start it.'}
+            </p>
+            {hasActiveFilter ? (
+              <Button variant="secondary" size="sm" className="mt-4" onClick={clearFilters}>
+                Clear filters
+              </Button>
+            ) : null}
+          </div>
+        ) : view === 'grid' ? (
+          <MediaGrid
+            items={pageItems}
+            consumedSet={initialConsumedSet}
+            isMember={isMember}
+            isOwner={isOwner}
+            userId={userId}
+            currentUserNickname={currentUserNickname}
+            memberIds={memberIds}
+            notInterestedByItem={notInterestedByItem}
+            onUpdated={handleUpdatedItem}
+          />
+        ) : (
+          <MediaTable
+            items={pageItems}
+            consumedSet={initialConsumedSet}
+            activeType={activeType as 'all' | MediaType}
+            isMember={isMember}
+            isOwner={isOwner}
+            userId={userId}
+            currentUserNickname={currentUserNickname}
+            memberIds={memberIds}
+            members={members}
+            notInterestedByItem={notInterestedByItem}
+            activeTags={activeTags}
+            onToggleTag={toggleTag}
+            onDeleted={handleDeletedItem}
+            onUpdated={handleUpdatedItem}
+          />
+        )}
       </div>
 
-      {/* ── Pagination ────────────────────────────────────────────────── */}
-      {filteredItems.length > PAGE_SIZE && (
-        <div className="flex items-center justify-between border-t border-stone-800/50 pt-5 mt-2">
-          <p className="text-xs font-mono" style={{ color: 'oklch(0.38 0.005 60)' }}>
+      {view !== 'stats' && filteredItems.length > PAGE_SIZE && (
+        <div className="mt-4 flex items-center justify-between border-t border-stone-800/70 pt-4">
+          <p className="text-[12.5px] text-stone-500">
             {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, filteredItems.length)} of {filteredItems.length}
           </p>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="cursor-pointer min-h-[44px] px-4 text-xs font-mono uppercase tracking-wider border border-stone-700 text-stone-300 hover:text-stone-100 hover:border-stone-600 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
-              disabled={currentPage <= 1}
-              onClick={() => goToPage(currentPage - 1)}
-            >
-              Prev
-            </button>
-            <span className="text-xs font-mono px-2" style={{ color: 'oklch(0.4 0.005 60)' }}>
+            <Button variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => goToPage(currentPage - 1)}>
+              Previous
+            </Button>
+            <span className="px-1 text-[12.5px] text-stone-500">
               {currentPage} / {totalPages}
             </span>
-            <button
-              type="button"
-              className="cursor-pointer min-h-[44px] px-4 text-xs font-mono uppercase tracking-wider border border-stone-700 text-stone-300 hover:text-stone-100 hover:border-stone-600 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
+            <Button
+              variant="outline"
+              size="sm"
               disabled={currentPage >= totalPages}
               onClick={() => goToPage(currentPage + 1)}
             >
               Next
-            </button>
+            </Button>
           </div>
         </div>
       )}

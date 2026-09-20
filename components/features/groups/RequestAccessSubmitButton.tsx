@@ -9,18 +9,20 @@ interface Props {
   label?: string;
   /** Label shown while the action is in flight */
   pendingLabel?: string;
-  variant?: 'outline' | 'ghost' | 'default';
+  variant?: 'outline' | 'ghost' | 'default' | 'secondary';
+  className?: string;
 }
 
 export function RequestAccessSubmitButton({
   label = 'Request to join',
   pendingLabel = 'Requesting...',
   variant = 'outline',
+  className,
 }: Props) {
   const { pending } = useFormStatus();
 
   return (
-    <Button type="submit" variant={variant} size="sm" disabled={pending}>
+    <Button type="submit" variant={variant} size="sm" className={className} disabled={pending}>
       {pending ? (
         <span className="inline-flex items-center gap-2">
           <Spinner className="h-3 w-3" />

@@ -74,8 +74,8 @@ export function ProfileContent({
       >
         <div className="space-y-2">
           <p
-            className="font-mono text-xs uppercase tracking-[0.3em]"
-            style={{ color: 'oklch(0.72 0.12 65 / 0.6)' }}
+            className="font-mono text-xs "
+            style={{ color: '#d69b0099' }}
           >
             {isOwnProfile ? 'Your profile' : 'Member profile'}
           </p>
@@ -84,7 +84,7 @@ export function ProfileContent({
           </h1>
           <p
             className="font-mono text-xs"
-            style={{ color: 'oklch(0.38 0.005 60)' }}
+            style={{ color: '#52525b' }}
           >
             Member since {formatDate(profile.created_at)}
           </p>
@@ -104,8 +104,8 @@ export function ProfileContent({
             >
               <p className="font-serif text-2xl text-stone-100">{stat.value}</p>
               <p
-                className="font-mono text-[10px] uppercase tracking-wider"
-                style={{ color: 'oklch(0.4 0.005 60)' }}
+                className="font-mono text-[10px]"
+                style={{ color: '#52525b' }}
               >
                 {stat.label}
               </p>
@@ -123,11 +123,11 @@ export function ProfileContent({
           transition={{ duration: 0.3, delay: 0.2 }}
         >
           <h2
-            className="font-mono text-xs uppercase tracking-[0.3em]"
-            style={{ color: 'oklch(0.42 0.005 60)' }}
+            className="font-mono text-xs "
+            style={{ color: '#52525b' }}
           >
             {isOwnProfile ? 'Your archives' : 'Public archives'}
-            <span className="ml-2" style={{ color: 'oklch(0.32 0.005 60)' }}>
+            <span className="ml-2" style={{ color: '#3f3f46' }}>
               ({visibleGroups.length})
             </span>
           </h2>
@@ -148,7 +148,7 @@ export function ProfileContent({
             animate={{ opacity: 1 }}
             transition={{ duration: 0.4, delay: 0.25 }}
           >
-            <p className="font-serif text-xl" style={{ color: 'oklch(0.38 0.005 60)' }}>
+            <p className="font-serif text-xl" style={{ color: '#52525b' }}>
               {isOwnProfile ? 'No archives yet' : 'No public archives'}
             </p>
             {isOwnProfile && (
@@ -196,7 +196,7 @@ export function ProfileContent({
                     {g.description && (
                       <p
                         className="text-sm font-light line-clamp-1"
-                        style={{ color: 'oklch(0.42 0.005 60)' }}
+                        style={{ color: '#52525b' }}
                       >
                         {g.description}
                       </p>
@@ -207,17 +207,17 @@ export function ProfileContent({
                   <div className="shrink-0 text-right space-y-1">
                     <p
                       className="font-mono text-xs"
-                      style={{ color: 'oklch(0.38 0.005 60)' }}
+                      style={{ color: '#52525b' }}
                     >
                       {g.itemCount} item{g.itemCount !== 1 ? 's' : ''}
                     </p>
                     <p
-                      className="font-mono text-[10px] uppercase tracking-wider"
+                      className="font-mono text-[10px]"
                       style={{
                         color:
                           g.role === 'owner'
                             ? 'var(--color-accent)'
-                            : 'oklch(0.36 0.005 60)',
+                            : '#52525b',
                       }}
                     >
                       {g.role}
@@ -238,12 +238,12 @@ export function ProfileContent({
         transition={{ duration: 0.4, delay: 0.3 }}
       >
         <p
-          className="font-mono text-[10px] uppercase tracking-[0.3em]"
-          style={{ color: 'oklch(0.72 0.12 65 / 0.5)' }}
+          className="font-mono text-[10px] "
+          style={{ color: '#d69b0080' }}
         >
           Free &amp; open source
         </p>
-        <p className="font-mono text-[11px]" style={{ color: 'oklch(0.36 0.005 60)' }}>
+        <p className="font-mono text-[11px]" style={{ color: '#52525b' }}>
           The Friend Archive is a free hobby project — no paid plans, no commercial use intended.
         </p>
       </motion.div>

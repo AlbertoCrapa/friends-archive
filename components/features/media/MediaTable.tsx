@@ -1,45 +1,86 @@
 'use client';
 
+// ============================================================================
+// MediaTable — the archive read as a list.
+//
+// A list is what you use when you are looking something up, so every row
+// answers the same four questions in the same four places: what is it, what is
+// it about, how far has the GROUP got, and what did YOU say about it. Anything
+// that is not one of those four has been taken out of the row — who added a
+// title is not why anyone opens this page, and it is still one click away in
+// the item's menu.
+//
+// The row carries two ways to act on it: a gesture, which does the one thing a
+// gesture is good for, and a menu, which holds everything, always, for anyone
+// not holding a phone.
+// ============================================================================
+
 import { Fragment, useState } from 'react';
+import { motion } from 'framer-motion';
+import {
+  Check,
+  ExternalLink,
+  EyeOff,
+  MoreHorizontal,
+  Pencil,
+  RotateCcw,
+  Trash2,
+} from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import { Badge } from '@/components/ui/badge';
-import { motion } from 'framer-motion';
+import { GlideSelect } from '@/components/micro/GlideSelect';
+import { SwipeRow } from '@/components/micro/SwipeRow';
+import { WarmTooltip, WarmTooltipGroup } from '@/components/micro/WarmTooltip';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { ExternalLink, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
-import { getStatusLabel, getStatusOptions } from '@/types';
-import { getStatusColor, getPeople, getVisibleTags } from '@/lib/utils';
+import { useItemStatus } from '@/hooks/useItemStatus';
+import { getPeople, getVisibleTags, cn } from '@/lib/utils';
 import type { PersonKey } from '@/lib/utils';
+import { getStatusLabel, getStatusOptions, getTypeLabel } from '@/types';
 import type { ItemStatus, MediaItem, MediaItemWithDetails, MediaType } from '@/types';
-import { cn } from '@/lib/utils';
-import { SimpleTooltip, TooltipProvider } from '@/components/ui/tooltip';
 import { CommentsDialog } from './CommentsDialog';
+import { StatusDot, statusOptions } from './StatusDot';
 import { EditMediaItemDialog } from './EditMediaItemDialog';
-import { MediaPoster, TYPE_ICONS } from './MediaPoster';
+import { MediaPoster, PosterGlow, TYPE_ICONS } from './MediaPoster';
+
+// Tags earn less room on a phone: four of them wrap to a second line, which is
+// what made one row twice the height of its neighbour.
+const TAG_LIMIT = 4;
+const TAG_LIMIT_NARROW = 2;
+const PRIORITY_ROWS = 8;
+const STATUS_OPTIONS = statusOptions(getStatusOptions());
+
+const CREDIT_PREFIX: [string, PersonKey][] = [
+  ['dir.', 'director'],
+  ['cr.', 'creator'],
+  ['', 'author'],
+  ['', 'developer'],
+];
+
+export interface RosterMember {
+  id: string;
+  nickname: string;
+}
 
 interface Props {
   items: MediaItemWithDetails[];
   consumedSet: Set<string>;
-  activeType: MediaType | 'all';
+  activeType?: MediaType | 'all';
   isMember: boolean;
   isOwner: boolean;
   userId: string;
   currentUserNickname: string | null;
-  /** user_ids of the group's CURRENT members. When every one of them has
-   *  completed an item, its row gets the "everyone finished" green wash. */
+  /** user_ids of the group's CURRENT members — one meter slot each. */
   memberIds?: string[];
-  /** itemId -> user_ids that marked the item 'not interested'. Those members
-   *  opted out, so they are skipped by the "everyone finished" wash. */
+  /** Nicknames for those members, so the meter can say who is who. */
+  members?: RosterMember[];
+  /** itemId -> user_ids that marked the item 'not interested'. */
   notInterestedByItem?: Record<string, string[]>;
   activeTags?: string[];
   onToggleTag?: (tag: string) => void;
@@ -47,649 +88,490 @@ interface Props {
   onUpdated?: (item: MediaItemWithDetails) => void;
 }
 
-const TAG_DISPLAY_LIMIT = 6;
-
-// Rows whose artwork skips lazy-loading. Roughly the first screenful: waiting
-// for the intersection observer there is a visible delay for no saving, while
-// everything below still loads only when scrolled to.
-const PRIORITY_ROWS = 8;
-
-// One glyph per media type — the label lives in the tooltip / aria-label. The
-// map is shared with MediaPoster, whose fallback face is the same glyph.
-function TypeIcon({ type, className }: { type: MediaType; className?: string }) {
-  const Icon = TYPE_ICONS[type];
-  return (
-    <SimpleTooltip label={getTypeLabel(type)} side="top">
-      <span className="inline-flex">
-        <Icon className={className} aria-label={getTypeLabel(type)} />
-      </span>
-    </SimpleTooltip>
-  );
-}
-
 export function MediaTable({
   items,
   consumedSet,
-  activeType,
+  activeType = 'all',
   isMember,
   isOwner,
   userId,
   currentUserNickname,
   memberIds = [],
+  members = [],
   notInterestedByItem = {},
   activeTags = [],
   onToggleTag,
   onDeleted,
   onUpdated,
 }: Props) {
+  const { statusOf, isConsumed, setStatus, savingId } = useItemStatus({
+    userId,
+    consumedSet,
+    onUpdated,
+  });
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<MediaItemWithDetails | null>(null);
   const activeTagSet = new Set(activeTags);
-  const [optimisticConsumed, setOptimisticConsumed] = useState<Set<string>>(
-    new Set(consumedSet)
-  );
-  const [optimisticStatus, setOptimisticStatus] = useState<Record<string, ItemStatus>>({});
-  const [pendingStatusId, setPendingStatusId] = useState<string | null>(null);
-  const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
-  const [editingItem, setEditingItem] = useState<MediaItemWithDetails | null>(null);
+
+  // The meter has one slot per member, in a fixed order with the viewer first,
+  // so the same person is always the same slot on every row of the list.
+  const roster: RosterMember[] = (() => {
+    const named = new Map(members.map((member) => [member.id, member.nickname]));
+    const ids = memberIds.length > 0 ? memberIds : members.map((member) => member.id);
+    const ordered = [userId, ...ids.filter((id) => id !== userId)].filter((id) =>
+      ids.includes(id) || id === userId,
+    );
+    return ordered.map((id) => ({
+      id,
+      nickname: id === userId ? currentUserNickname ?? 'You' : named.get(id) ?? 'Member',
+    }));
+  })();
 
   async function deleteItem(itemId: string) {
-    setDeletingItemId(itemId);
+    setDeletingId(itemId);
     const supabase = createClient();
     const { error } = await supabase.from('media_items').delete().eq('id', itemId);
-    if (!error) {
-      onDeleted?.(itemId);
-    }
-    setDeletingItemId(null);
-  }
-
-  async function updateStatus(item: MediaItemWithDetails, nextStatus: ItemStatus) {
-    const previousStatus = item.status;
-    const wasConsumed = optimisticConsumed.has(item.id);
-    const willBeConsumed = nextStatus === 'completed';
-
-    setOptimisticStatus((prev) => ({ ...prev, [item.id]: nextStatus }));
-    setOptimisticConsumed((prev) => {
-      const next = new Set(prev);
-      if (willBeConsumed) {
-        next.add(item.id);
-      } else {
-        next.delete(item.id);
-      }
-      return next;
-    });
-
-    setPendingStatusId(item.id);
-    const supabase = createClient();
-    // Status is per-member: write only the current user's row in item_statuses.
-    // The shared media_items row is never touched by a status change.
-    const { error } = await supabase
-      .from('item_statuses')
-      .upsert(
-        { media_item_id: item.id, user_id: userId, status: nextStatus },
-        { onConflict: 'media_item_id,user_id' }
-      );
-
-    if (!error) {
-      if (willBeConsumed) {
-        await supabase
-          .from('consumption_records')
-          .upsert(
-            { user_id: userId, media_item_id: item.id },
-            { onConflict: 'media_item_id,user_id' }
-          );
-      } else {
-        await supabase
-          .from('consumption_records')
-          .delete()
-          .eq('user_id', userId)
-          .eq('media_item_id', item.id);
-      }
-    }
-
-    if (!error) {
-      onUpdated?.({
-        ...item,
-        status: nextStatus,
-      });
-      setOptimisticStatus((prev) => {
-        const { [item.id]: _unused, ...rest } = prev;
-        return rest;
-      });
-      setPendingStatusId(null);
-      return;
-    }
-
-    // Roll back visual status if update fails.
-    setOptimisticStatus((prev) => ({ ...prev, [item.id]: previousStatus }));
-    setOptimisticConsumed((prev) => {
-      const next = new Set(prev);
-      if (wasConsumed) {
-        next.add(item.id);
-      } else {
-        next.delete(item.id);
-      }
-      return next;
-    });
-    setPendingStatusId(null);
+    if (!error) onDeleted?.(itemId);
+    setDeletingId(null);
   }
 
   if (items.length === 0) {
-    const typeLabel = activeType === 'all' ? 'items' : `${getTypeLabel(activeType as MediaType).toLowerCase()}s`;
-
+    const label = activeType === 'all' ? 'items' : getTypeLabel(activeType).toLowerCase();
     return (
-      <div className="border border-stone-800/50 py-20 text-center space-y-3">
-        <p className="font-serif text-2xl" style={{ color: 'oklch(0.38 0.005 60)' }}>
-          No {typeLabel} yet
+      <div className="rounded-[var(--radius-lg)] bg-stone-900 p-12 text-center border border-white/[0.07]">
+        <p className="text-[15px] font-semibold text-stone-100">No {label} yet</p>
+        <p className="mt-1 text-sm text-stone-500">
+          {isMember ? 'Add the first one and the archive starts here.' : 'Nothing here yet.'}
         </p>
-        {isMember && (
-          <p className="text-sm font-mono" style={{ color: 'oklch(0.32 0.005 60)' }}>
-            Use the button above to add the first one.
-          </p>
-        )}
-        {!isMember && (
-          <p className="text-sm font-mono" style={{ color: 'oklch(0.32 0.005 60)' }}>
-            Nothing here yet.
-          </p>
-        )}
       </div>
     );
   }
 
   return (
-    <TooltipProvider delayDuration={150}>
-    <div className="space-y-0 border border-stone-800/50">
-      <div className="hidden md:grid md:grid-cols-[16px_2.4fr_148px_1.8fr_1fr_1.4fr_76px] gap-4 px-4 py-4 border-b border-stone-800/60 text-xs font-mono uppercase tracking-wider text-stone-500">
-        <span>
-          <span className="sr-only">Type</span>
-        </span>
-        <span>Title</span>
-        <span>Status</span>
-        <span>Tags</span>
-        <span>Added By</span>
-        <span>Consumed By</span>
-        <span className="text-right">View</span>
-      </div>
+    <WarmTooltipGroup>
+      <ul className="space-y-1.5">
+        {items.map((item, index) => (
+          <ArchiveRow
+            key={item.id}
+            item={item}
+            index={index}
+            roster={roster}
+            status={statusOf(item)}
+            consumed={isConsumed(item.id)}
+            saving={savingId === item.id}
+            deleting={deletingId === item.id}
+            optedOut={new Set(notInterestedByItem[item.id] ?? [])}
+            isMember={isMember}
+            isOwner={isOwner}
+            userId={userId}
+            currentUserNickname={currentUserNickname}
+            activeTagSet={activeTagSet}
+            onToggleTag={onToggleTag}
+            onStatus={(next) => setStatus(item, next)}
+            onEdit={() => setEditing(item)}
+            onDelete={() => deleteItem(item.id)}
+          />
+        ))}
+      </ul>
 
-      {items.map((item, index) => {
-        const effectiveStatus = optimisticStatus[item.id] ?? item.status;
-        const consumed = optimisticConsumed.has(item.id) || effectiveStatus === 'completed';
-        const statusLabel = getStatusLabel(effectiveStatus);
-        const statusClasses = getStatusColor(effectiveStatus);
-        const consumedUsers = getConsumedUsers(item, currentUserNickname, consumed, userId);
-        const isCurrentUserConsumed = currentUserNickname
-          ? consumedUsers.includes(currentUserNickname)
-          : consumed;
-        // Chips show the item's tags only — the credited people are hidden tags
-        // (searchable, never displayed) so the names aren't printed twice.
-        const tagChips = getVisibleTags(item);
-        // Personal opt-out: only THIS viewer's row is dimmed, and only when the
-        // viewer is the one who marked it. Everyone else sees the item normally.
-        const dimmed = effectiveStatus === 'not_interested';
-        // Members who said "not interested" step out of the group verdict — the
-        // viewer's own opt-out follows the optimistic status so the row reacts
-        // to the dropdown immediately.
-        const optedOut = new Set(notInterestedByItem[item.id] ?? []);
-        if (dimmed) optedOut.add(userId);
-        else optedOut.delete(userId);
-        // Everyone-finished marker: every CURRENT member who did NOT opt out has
-        // completed the item (completion ≡ having a consumption record; the
-        // viewer's own state uses the optimistic value so the marker
-        // appears/disappears immediately). One member opting out therefore no
-        // longer blocks the marker for the rest of the group.
-        const decidingMembers = memberIds.filter((memberId) => !optedOut.has(memberId));
-        const completedByAll =
-          decidingMembers.length > 0 &&
-          decidingMembers.every((memberId) =>
-            memberId === userId
-              ? consumed
-              : (item.consumption_records ?? []).some((record) => record.user_id === memberId)
-          );
-        // The opt-out reading wins over the green wash for the member who opted
-        // out: they get a greyed-out row, everybody else still gets the wash.
-        const showCompletedWash = completedByAll && !dimmed;
-        // Dimming is applied CELL BY CELL, never to the row itself: a child can
-        // never be more opaque than its parent, and the status selector has to
-        // be able to come back to full strength on hover.
-        const dimClass = dimmed ? 'opacity-45 saturate-0 transition-[opacity,filter] duration-200' : '';
-
-        return (
-          <Fragment key={item.id}>
-            <motion.div
-              className={cn(
-                'group hidden md:grid md:grid-cols-[16px_2.4fr_148px_1.8fr_1fr_1.4fr_76px] gap-4 px-4 py-4 border-b border-stone-800/50 items-start hover:bg-stone-900/20 transition-colors',
-                // Whole-group completion reads as a wash over the row, not a badge.
-                showCompletedWash && 'bg-gradient-to-br from-emerald-700/35 via-emerald-900/15 via-40% to-transparent',
-                // Opted out: every cell fades and loses its colour. The status
-                // cell (below) undoes it on row hover, so the one control you
-                // need to change your mind stays fully legible.
-                dimmed && '[&>*]:opacity-45 [&>*]:saturate-0 [&>*]:transition-[opacity,filter] [&>*]:duration-200'
-              )}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.2, delay: Math.min(0.012 * index, 0.2) }}
-            >
-            <div className="pt-0.5 text-stone-400">
-              <TypeIcon type={item.type} className="h-4 w-4" />
-            </div>
-
-            {/* Artwork leads the title cell: same 2:3 tile on every row, so the
-                titles stay on one vertical line whether or not a poster exists. */}
-            <div className="flex min-w-0 items-start gap-3">
-              <MediaPoster
-                src={item.image_url}
-                type={item.type}
-                size="sm"
-                zoomOnHover
-                priority={index < PRIORITY_ROWS}
-              />
-              <div className="space-y-1 min-w-0">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <p className="text-stone-100 font-light leading-snug truncate">{item.title}</p>
-                  {item.external_url && (
-                    <a
-                      href={item.external_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title={`View on ${item.external_source}`}
-                      aria-label={`View "${item.title}" on ${item.external_source}`}
-                      className="shrink-0 text-stone-600 hover:text-amber-500 transition-colors cursor-pointer"
-                    >
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
-                  )}
-                </div>
-                {item.metadata && (
-                  <p className="text-[11px] font-mono text-stone-600 truncate">
-                    <MetaSummary item={item} />
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div
-              className={cn(
-                'shrink-0',
-                // Hovering an opted-out row wakes up ONLY this cell.
-                dimmed && 'group-hover:opacity-100 group-hover:saturate-100'
-              )}
-            >
-              {isMember ? (
-                <Select
-                  value={effectiveStatus}
-                  onValueChange={(value) => updateStatus(item, value as ItemStatus)}
-                >
-                  {/* The pill hugs its label (w-fit) instead of stretching across
-                      the column, which left a dead stripe before the chevron;
-                      justify-start keeps the label hard against the left padding
-                      even when a long one has to be clipped. */}
-                  <SelectTrigger
-                    className={cn(
-                      'h-7 w-fit max-w-full justify-start gap-1.5 border text-[11px] font-mono px-2 py-0 text-left',
-                      statusClasses
-                    )}
-                    disabled={pendingStatusId === item.id}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getStatusOptions().map((statusOption) => (
-                      <SelectItem key={statusOption.value} value={statusOption.value}>
-                        {statusOption.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Badge className={cn('shrink-0 border text-xs', statusClasses)} variant={undefined}>
-                  {statusLabel}
-                </Badge>
-              )}
-            </div>
-
-            <div className="flex flex-wrap gap-1.5 pt-0.5">
-              <TagChipList
-                itemId={item.id}
-                tags={tagChips}
-                activeTagSet={activeTagSet}
-                onToggleTag={onToggleTag}
-                keyPrefix="d"
-                emptyLabel="-"
-              />
-            </div>
-
-            <div className="text-stone-200 text-sm font-mono pt-2 truncate">
-              {item.added_by_profile?.nickname ?? 'Unknown'}
-            </div>
-
-            <div className="min-w-0 pt-0.5">
-              {consumedUsers.length === 0 ? (
-                <span className="text-xs font-mono" style={{ color: 'oklch(0.32 0.005 60)' }}>Nobody</span>
-              ) : completedByAll ? (
-                <span
-                  className="inline-flex items-center gap-1 font-mono text-[10px] px-1.5 py-0.5 border border-emerald-700/50 bg-emerald-900/30 text-emerald-300"
-                  title={consumedUsers.join(', ')}
-                >
-                  Everyone ({consumedUsers.length})
-                </span>
-              ) : (
-                <div className="flex flex-wrap gap-1">
-                  {consumedUsers.slice(0, 3).map((name) => (
-                    <span
-                      key={name}
-                      className={`font-mono text-[10px] px-1.5 py-0.5 border truncate max-w-[90px] ${
-                        isCurrentUserConsumed && name === currentUserNickname
-                          ? 'border-amber-800/50 text-amber-400/80'
-                          : 'border-stone-800/50 text-stone-400'
-                      }`}
-                    >
-                      {name}
-                    </span>
-                  ))}
-                  {consumedUsers.length > 3 && (
-                    <span className="font-mono text-[10px] text-stone-600">+{consumedUsers.length - 3}</span>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center justify-end gap-1">
-              <CommentsDialog
-                itemId={item.id}
-                itemTitle={item.title}
-                userId={userId}
-                currentUserNickname={currentUserNickname}
-                isMember={isMember}
-                isOwner={isOwner}
-              />
-              {isMember && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-8 w-8">
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onSelect={() => setEditingItem(item)}>
-                      <Pencil className="h-3 w-3 mr-2" />
-                      Edit
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      className="text-red-400 focus:text-red-300"
-                      disabled={deletingItemId === item.id}
-                      onClick={() => deleteItem(item.id)}
-                    >
-                      {deletingItemId === item.id ? (
-                        <Spinner className="mr-2 h-3 w-3" />
-                      ) : (
-                        <Trash2 className="h-3 w-3 mr-2" />
-                      )}
-                      {deletingItemId === item.id ? 'Deleting...' : 'Delete'}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-            </div>
-            </motion.div>
-
-            <motion.div
-              className={cn(
-                'md:hidden border-b border-stone-800/50 p-4 space-y-3',
-                showCompletedWash && 'bg-gradient-to-br from-emerald-700/35 via-emerald-900/15 via-40% to-transparent'
-              )}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.2, delay: Math.min(0.012 * index, 0.2) }}
-            >
-            {/* Title + quick status (title leads; status reads as a colored pill).
-                Opted-out cards dim everything EXCEPT the status control — touch
-                has no hover, so it simply stays legible. */}
-            <div className="flex items-start justify-between gap-3">
-              <div className={cn('flex min-w-0 items-start gap-3', dimClass)}>
-                <MediaPoster
-                  src={item.image_url}
-                  type={item.type}
-                  size="md"
-                  priority={index < PRIORITY_ROWS}
-                />
-                <div className="min-w-0 space-y-1">
-                  <div className="flex items-start gap-1.5">
-                    <p className="text-base text-stone-100 leading-snug break-words">{item.title}</p>
-                    {item.external_url && (
-                      <a
-                        href={item.external_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        aria-label={`View "${item.title}" on ${item.external_source}`}
-                        className="shrink-0 mt-1 text-stone-600 hover:text-amber-500 transition-colors cursor-pointer"
-                      >
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </a>
-                    )}
-                  </div>
-                  <p className="flex items-center gap-1 text-[11px] font-mono text-stone-500">
-                    <TypeIcon type={item.type} className="h-3 w-3" />
-                    {getTypeLabel(item.type)}
-                  </p>
-                  {item.metadata && (
-                    <p className="text-[11px] font-mono text-stone-600"><MetaSummary item={item} /></p>
-                  )}
-                </div>
-              </div>
-
-              <div className="shrink-0">
-                {isMember ? (
-                  <Select value={effectiveStatus} onValueChange={(value) => updateStatus(item, value as ItemStatus)}>
-                    <SelectTrigger
-                      className={cn(
-                        'h-9 w-fit max-w-full justify-start gap-1.5 border text-[11px] font-mono px-2 text-left',
-                        statusClasses
-                      )}
-                      disabled={pendingStatusId === item.id}
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {getStatusOptions().map((statusOption) => (
-                        <SelectItem key={`${item.id}-mobile-${statusOption.value}`} value={statusOption.value}>
-                          {statusOption.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Badge className={cn('border text-[11px]', statusClasses)} variant={undefined}>
-                    {statusLabel}
-                  </Badge>
-                )}
-              </div>
-            </div>
-
-            {/* Tags — only when present; finger-sized + tappable to filter */}
-            {tagChips.length > 0 && (
-              <div className={cn('flex flex-wrap gap-1.5', dimClass)}>
-                <TagChipList
-                  itemId={item.id}
-                  tags={tagChips}
-                  activeTagSet={activeTagSet}
-                  onToggleTag={onToggleTag}
-                  keyPrefix="m"
-                  emptyLabel="No tags"
-                  size="md"
-                />
-              </div>
-            )}
-
-            {/* Footer: who consumed it + actions (comments inline, rest in overflow) */}
-            <div className={cn('flex items-end justify-between gap-2 pt-0.5', dimClass)}>
-              <div className="min-w-0">
-                <p className="text-[10px] font-mono uppercase tracking-wider text-stone-600 mb-1">Consumed by</p>
-                {consumedUsers.length === 0 ? (
-                  <p className="text-xs font-mono text-stone-600">Nobody yet</p>
-                ) : completedByAll ? (
-                  <span className="inline-flex items-center gap-1 font-mono text-[11px] px-1.5 py-0.5 border border-emerald-700/50 bg-emerald-900/30 text-emerald-300">
-                    Everyone ({consumedUsers.length})
-                  </span>
-                ) : (
-                  <div className="flex flex-wrap gap-1">
-                    {consumedUsers.slice(0, 4).map((name) => (
-                      <span
-                        key={name}
-                        className={cn(
-                          'font-mono text-[11px] px-1.5 py-0.5 border truncate max-w-[110px]',
-                          isCurrentUserConsumed && name === currentUserNickname
-                            ? 'border-amber-800/50 text-amber-400/80'
-                            : 'border-stone-800/60 text-stone-300'
-                        )}
-                      >
-                        {name}
-                      </span>
-                    ))}
-                    {consumedUsers.length > 4 && (
-                      <span className="font-mono text-[11px] text-stone-600 self-center">+{consumedUsers.length - 4}</span>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div className="flex items-center gap-1 shrink-0">
-                <CommentsDialog
-                  itemId={item.id}
-                  itemTitle={item.title}
-                  userId={userId}
-                  currentUserNickname={currentUserNickname}
-                  isMember={isMember}
-                  isOwner={isOwner}
-                />
-                {isMember && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-11 w-11">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onSelect={() => setEditingItem(item)}>
-                        <Pencil className="h-3 w-3 mr-2" />
-                        Edit
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        className="text-red-400 focus:text-red-300"
-                        disabled={deletingItemId === item.id}
-                        onClick={() => deleteItem(item.id)}
-                      >
-                        {deletingItemId === item.id ? (
-                          <Spinner className="mr-2 h-3 w-3" />
-                        ) : (
-                          <Trash2 className="h-3 w-3 mr-2" />
-                        )}
-                        {deletingItemId === item.id ? 'Deleting...' : 'Delete'}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-              </div>
-            </div>
-            </motion.div>
-          </Fragment>
-        );
-      })}
-      {editingItem ? (
+      {editing ? (
         <EditMediaItemDialog
-          item={editingItem}
+          item={editing}
           userId={userId}
-          onUpdated={(updated) => { onUpdated?.(updated); setEditingItem(null); }}
-          open={true}
-          onOpenChange={(open) => { if (!open) setEditingItem(null); }}
+          onUpdated={(updated) => {
+            onUpdated?.(updated);
+            setEditing(null);
+          }}
+          open
+          onOpenChange={(open) => {
+            if (!open) setEditing(null);
+          }}
         />
       ) : null}
-    </div>
-    </TooltipProvider>
+    </WarmTooltipGroup>
   );
 }
 
-/**
- * Renders an item's tags as chips. When onToggleTag is provided each chip is a
- * toggle button (active = currently filtering by it); without it they are plain
- * read-only badges. Shows up to TAG_DISPLAY_LIMIT, then a "+N" overflow count.
- */
-function TagChipList({
-  itemId,
-  tags,
-  activeTagSet,
-  onToggleTag,
-  keyPrefix,
-  emptyLabel,
-  size = 'sm',
-}: {
-  itemId: string;
-  tags: string[];
+interface RowProps {
+  item: MediaItemWithDetails;
+  index: number;
+  roster: RosterMember[];
+  status: ItemStatus;
+  consumed: boolean;
+  saving: boolean;
+  deleting: boolean;
+  optedOut: Set<string>;
+  isMember: boolean;
+  isOwner: boolean;
+  userId: string;
+  currentUserNickname: string | null;
   activeTagSet: Set<string>;
   onToggleTag?: (tag: string) => void;
-  keyPrefix: string;
-  emptyLabel: string;
-  /** 'md' gives finger-friendly chips for the mobile card. */
-  size?: 'sm' | 'md';
-}) {
-  if (tags.length === 0) {
-    return <span className="text-xs font-mono text-stone-700">{emptyLabel}</span>;
-  }
+  onStatus: (status: ItemStatus) => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}
 
-  const shown = tags.slice(0, TAG_DISPLAY_LIMIT);
-  const extra = tags.length - shown.length;
-  const sizeClasses =
-    size === 'md' ? 'px-2.5 py-1.5 text-[11px]' : 'px-1.5 py-0.5 text-[10px]';
+function ArchiveRow({
+  item,
+  index,
+  roster,
+  status,
+  consumed,
+  saving,
+  deleting,
+  optedOut,
+  isMember,
+  isOwner,
+  userId,
+  currentUserNickname,
+  activeTagSet,
+  onToggleTag,
+  onStatus,
+  onEdit,
+  onDelete,
+}: RowProps) {
+  const TypeGlyph = TYPE_ICONS[item.type];
+  const tags = getVisibleTags(item);
+  const skipped = status === 'not_interested';
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // The viewer's own state is optimistic, so the meter has to prefer it over
+  // the server's consumption records for their own slot.
+  const finished = new Set((item.consumption_records ?? []).map((record) => record.user_id));
+  if (consumed) finished.add(userId);
+  else finished.delete(userId);
+  const opted = new Set(optedOut);
+  if (skipped) opted.add(userId);
+  else opted.delete(userId);
+
+  const deciding = roster.filter((member) => !opted.has(member.id));
+  const everyone = deciding.length > 0 && deciding.every((member) => finished.has(member.id));
+
+  // Pulling the row aside offers one thing: remove it.
+  //
+  // Finishing something already has a control sitting on the row, in the same
+  // place on every row, one tap away — putting it behind a gesture as well made
+  // the drawer a second menu you had to read. A drawer with a single red button
+  // in it needs no reading at all, which is the only reason to pull a row.
+  //
+  // `commit: false` takes away the full-swipe shortcut: this destroys something
+  // for the whole group, so it costs a pull AND a tap, never a flick.
+  const actions = isMember
+    ? [
+        {
+          id: 'delete',
+          label: 'Delete',
+          tone: 'out' as const,
+          icon: <Trash2 className="h-4 w-4" />,
+          commit: false,
+          onSelect: onDelete,
+        },
+      ]
+    : [];
 
   return (
-    <>
-      {shown.map((tag) => {
-        const active = activeTagSet.has(tag);
-        if (!onToggleTag) {
-          return (
-            <Badge key={`${keyPrefix}-${itemId}-${tag}`} variant="tag" className={cn('uppercase', sizeClasses)}>
-              {tag}
-            </Badge>
-          );
-        }
-        return (
-          <button
-            key={`${keyPrefix}-${itemId}-${tag}`}
-            type="button"
-            onClick={() => onToggleTag(tag)}
-            aria-pressed={active}
-            title={active ? `Remove tag filter: ${tag}` : `Filter by ${tag}`}
-            className={cn(
-              'cursor-pointer border font-mono uppercase tracking-wider transition-colors',
-              sizeClasses,
-              active
-                ? 'border-amber-700/60 text-amber-400 bg-amber-950/30'
-                : 'border-stone-800/60 text-stone-400 hover:border-stone-600 hover:text-stone-200 active:bg-stone-800/40'
+    <li className="relative list-none">
+      <SwipeRow
+        label={`Actions for ${item.title}`}
+        actions={actions}
+        disabled={!isMember}
+        handle={false}
+        // The two ways of acting on a row must not be usable at the same time:
+        // while the menu is open the row is pinned, and while the row is being
+        // pulled the menu cannot open (see the trigger below).
+        locked={menuOpen}
+        className="mi-swipe-plain"
+      >
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.18, delay: Math.min(index * 0.01, 0.16) }}
+          className={cn(
+            // A grid, not a wrapping flex row.
+            //
+            // On a phone the controls belong UNDER the text and BESIDE the
+            // artwork — the poster spans both rows — so the row is as tall as
+            // its content and no taller. Wrapped in a flex row they were pushed
+            // below the poster instead, which left a band of dead space under
+            // every short row and made no two rows the same height.
+            // From sm up the same three pieces lay out in three columns.
+            'group relative isolate grid grid-cols-[48px_minmax(0,1fr)] items-start gap-x-3 gap-y-2 rounded-[12px] border p-2.5 transition-colors sm:grid-cols-[48px_minmax(0,1fr)_auto]',
+            everyone ? 'border-emerald-500/40' : 'border-white/[0.07]',
+            'hover:border-white/20',
+            skipped && 'opacity-55',
+          )}
+        >
+          {/* The row takes its tint from its own artwork: a blurred copy of the
+              poster, faded out well before it reaches any text. */}
+          <PosterGlow src={item.image_url} shape="row" className="-z-10" />
+
+          <MediaPoster
+            src={item.image_url}
+            type={item.type}
+            size="md"
+            zoomOnHover
+            priority={index < PRIORITY_ROWS}
+            className="row-span-2 sm:row-span-1"
+          />
+
+          <div className="min-w-0 space-y-1 py-0.5">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <h3 className="truncate text-[14.5px] font-semibold tracking-[-0.015em] text-stone-50">
+                {item.title}
+              </h3>
+              {item.external_url ? (
+                <a
+                  href={item.external_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Open ${item.title} on ${item.external_source}`}
+                  className="shrink-0 text-stone-600 transition-colors hover:text-amber-400"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              ) : null}
+            </div>
+
+            <p className="flex min-w-0 items-center gap-1.5 text-[12px] text-stone-500">
+              <TypeGlyph className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span className="sr-only">{getTypeLabel(item.type)}</span>
+              <span className="truncate">
+                <MetaSummary item={item} />
+              </span>
+            </p>
+
+            {tags.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-1">
+                {tags.slice(0, TAG_LIMIT).map((tag, i) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => onToggleTag?.(tag)}
+                    aria-pressed={activeTagSet.has(tag)}
+                    disabled={!onToggleTag}
+                    className={cn(
+                      'h-[20px] rounded-[var(--radius-sm)] px-1.5 text-[11px] font-medium transition-colors',
+                      onToggleTag && 'cursor-pointer',
+                      // Past the second one, the chips are a desktop luxury.
+                      i >= TAG_LIMIT_NARROW && 'hidden sm:inline-flex',
+                      activeTagSet.has(tag)
+                        ? 'bg-amber-500/20 text-amber-300'
+                        : 'bg-stone-800/80 text-stone-400 hover:bg-stone-700 hover:text-stone-200',
+                    )}
+                  >
+                    {tag}
+                  </button>
+                ))}
+                {tags.length > TAG_LIMIT_NARROW ? (
+                  <span className="text-[11px] text-stone-600 sm:hidden">
+                    +{tags.length - TAG_LIMIT_NARROW}
+                  </span>
+                ) : null}
+                {tags.length > TAG_LIMIT ? (
+                  <span className="hidden text-[11px] text-stone-600 sm:inline">
+                    +{tags.length - TAG_LIMIT}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
+          {/* Column 2 row 2 on a phone, column 3 on a desk. */}
+          <div className="flex items-center gap-2 sm:col-start-3 sm:row-start-1 sm:self-center sm:justify-end">
+            <FinishedMeter
+              roster={roster}
+              finished={finished}
+              opted={opted}
+              viewerId={userId}
+              everyone={everyone}
+            />
+
+            {isMember ? (
+              <span className={saving ? 'pointer-events-none opacity-60' : undefined}>
+                <GlideSelect
+                  ariaLabel={`Your status for ${item.title}`}
+                  align="right"
+                  value={status}
+                  onChange={(next) => onStatus(next as ItemStatus)}
+                  label={<StatusDot status={status} />}
+                  options={STATUS_OPTIONS}
+                />
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 text-[12px] text-stone-500">
+                <StatusDot status={status} />
+                {getStatusLabel(status)}
+              </span>
             )}
-          >
-            {tag}
-          </button>
-        );
-      })}
-      {extra > 0 && (
-        <span className="font-mono text-[10px] text-stone-600 self-center">+{extra}</span>
-      )}
-    </>
+
+            <CommentsDialog
+              itemId={item.id}
+              itemTitle={item.title}
+              userId={userId}
+              currentUserNickname={currentUserNickname}
+              isMember={isMember}
+              isOwner={isOwner}
+              triggerClassName="h-8 w-8"
+            />
+
+            {isMember ? (
+              <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    aria-label={`More actions for ${item.title}`}
+                    // Radix opens this on POINTERDOWN, which on a swipeable row
+                    // means the menu is already up by the time you have moved a
+                    // pixel — press the dots, pull, and you get a menu and a
+                    // half-open drawer at once. Opening on click instead makes
+                    // the two mutually exclusive: a pull is a pull, and the
+                    // click that ends it is swallowed by the row.
+                    onPointerDown={(event) => event.preventDefault()}
+                    onClick={() => setMenuOpen((open) => !open)}
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={() => onStatus(consumed ? 'plan_to_consume' : 'completed')}>
+                    {consumed ? (
+                      <RotateCcw className="mr-2 h-3.5 w-3.5" />
+                    ) : (
+                      <Check className="mr-2 h-3.5 w-3.5" />
+                    )}
+                    {consumed ? 'Mark not finished' : 'Mark finished'}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => onStatus(skipped ? 'plan_to_consume' : 'not_interested')}
+                  >
+                    <EyeOff className="mr-2 h-3.5 w-3.5" />
+                    {skipped ? 'Put it back' : 'Not interested'}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={onEdit}>
+                    <Pencil className="mr-2 h-3.5 w-3.5" />
+                    Edit
+                  </DropdownMenuItem>
+                  <DropdownMenuItem disabled className="opacity-100">
+                    <span className="text-[11.5px] text-stone-500">
+                      Added by {item.added_by_profile?.nickname ?? 'someone who left'}
+                    </span>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-red-400 focus:text-red-300"
+                    disabled={deleting}
+                    onSelect={onDelete}
+                  >
+                    {deleting ? (
+                      <Spinner className="mr-2 h-3.5 w-3.5" />
+                    ) : (
+                      <Trash2 className="mr-2 h-3.5 w-3.5" />
+                    )}
+                    {deleting ? 'Deleting' : 'Delete'}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
+          </div>
+        </motion.div>
+      </SwipeRow>
+    </li>
   );
 }
 
 /**
- * Renders the metadata summary line. Each credited person (director, creator,
- * author, developer) is listed by name — several are comma-separated — and each
- * name becomes a clickable external link when its page is known; everything else
- * is plain text. Returns null when empty.
+ * How far the GROUP has got with one title: one slot per member, always in the
+ * same order, the viewer's own slot taller than the rest so you can find
+ * yourself without reading anything. Names live in the tooltip, because the
+ * question the list has to answer at a glance is "how many", not "who".
+ */
+function FinishedMeter({
+  roster,
+  finished,
+  opted,
+  viewerId,
+  everyone,
+}: {
+  roster: RosterMember[];
+  finished: Set<string>;
+  opted: Set<string>;
+  viewerId: string;
+  everyone: boolean;
+}) {
+  if (roster.length === 0) return null;
+
+  const deciding = roster.filter((member) => !opted.has(member.id));
+  const done = deciding.filter((member) => finished.has(member.id));
+  const name = (member: RosterMember) => (member.id === viewerId ? 'You' : member.nickname);
+
+  const lines = [
+    done.length > 0 ? `${done.map(name).join(', ')} finished` : 'Nobody has finished this',
+    deciding.length - done.length > 0
+      ? `${deciding.filter((m) => !finished.has(m.id)).map(name).join(', ')} to go`
+      : null,
+    opted.size > 0
+      ? `${roster.filter((m) => opted.has(m.id)).map(name).join(', ')} opted out`
+      : null,
+  ].filter(Boolean) as string[];
+
+  return (
+    <WarmTooltip content={lines.join(' · ')}>
+      <div className="flex shrink-0 cursor-default items-center gap-1.5" aria-label={lines.join('. ')}>
+        {roster.length <= 10 ? (
+          <span aria-hidden className="flex items-end gap-[3px]">
+            {roster.map((member) => {
+              const isViewer = member.id === viewerId;
+              // Opting out is not the same as not having finished, so the slot
+              // stays — shorter and flatter, a member who stepped out of the
+              // count rather than one who is still in it.
+              const out = opted.has(member.id);
+              const state = out
+                ? 'bg-stone-600/50'
+                : finished.has(member.id)
+                  ? 'bg-emerald-500'
+                  : 'bg-stone-600';
+              const height = out ? 'h-[6px]' : isViewer ? 'h-[17px]' : 'h-[12px]';
+              return (
+                <span key={member.id} className={cn('w-[4px] rounded-full', state, height)} />
+              );
+            })}
+          </span>
+        ) : (
+          <span aria-hidden className="h-[6px] w-12 overflow-hidden rounded-full bg-stone-700">
+            <span
+              className="block h-full rounded-full bg-emerald-500"
+              style={{ width: `${deciding.length ? (done.length / deciding.length) * 100 : 0}%` }}
+            />
+          </span>
+        )}
+        <span
+          className={cn(
+            'text-[11.5px] tabular-nums',
+            everyone ? 'text-emerald-400' : 'text-stone-500',
+          )}
+        >
+          {everyone ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : `${done.length}/${deciding.length}`}
+        </span>
+      </div>
+    </WarmTooltip>
+  );
+}
+
+/**
+ * The line under the title: who made it and when. Each credited person is a
+ * link when the provider gave us a page for them.
  */
 function MetaSummary({ item }: { item: MediaItem }) {
-  const m = (item.metadata ?? {}) as Record<string, unknown>;
+  const meta = (item.metadata ?? {}) as Record<string, unknown>;
   const nodes: React.ReactNode[] = [];
 
-  const pushCredit = (prefix: string, key: PersonKey) => {
-    const people = getPeople(m, key);
-    if (people.length === 0) return;
+  for (const [prefix, key] of CREDIT_PREFIX) {
+    const people = getPeople(meta, key);
+    if (people.length === 0) continue;
     nodes.push(
       <span key={key}>
         {prefix ? `${prefix} ` : ''}
@@ -701,8 +583,8 @@ function MetaSummary({ item }: { item: MediaItem }) {
                 href={person.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="hover:text-amber-500 underline decoration-dotted underline-offset-2 transition-colors"
+                onClick={(event) => event.stopPropagation()}
+                className="underline decoration-dotted underline-offset-2 transition-colors hover:text-amber-400"
               >
                 {person.name}
               </a>
@@ -711,62 +593,27 @@ function MetaSummary({ item }: { item: MediaItem }) {
             )}
           </Fragment>
         ))}
-      </span>
+      </span>,
     );
-  };
+  }
 
-  pushCredit('dir.', 'director');
-  pushCredit('cr.', 'creator');
-  pushCredit('', 'author');
-  pushCredit('', 'developer');
-  if (m.release_year) nodes.push(<span key={nodes.length}>{String(m.release_year)}</span>);
-  if (m.seasons) nodes.push(<span key={nodes.length}>{`${m.seasons} seasons`}</span>);
-  if (m.duration_minutes) nodes.push(<span key={nodes.length}>{`${m.duration_minutes} min`}</span>);
+  // Films and games carry a release year, books a publication year. Same fact,
+  // two provider spellings.
+  const year = meta.release_year ?? meta.publication_year;
+  if (year) nodes.push(<span key="year">{String(year)}</span>);
+  if (meta.seasons) nodes.push(<span key="seasons">{`${meta.seasons} seasons`}</span>);
+  if (meta.duration_minutes) nodes.push(<span key="runtime">{`${meta.duration_minutes} min`}</span>);
 
-  if (nodes.length === 0) return null;
+  if (nodes.length === 0) return <>{getTypeLabel(item.type)}</>;
 
   return (
     <>
       {nodes.map((node, i) => (
         <Fragment key={i}>
-          {i > 0 && ' · '}
+          {i > 0 && <span className="text-stone-700"> / </span>}
           {node}
         </Fragment>
       ))}
     </>
   );
-}
-
-function getTypeLabel(type: MediaType): string {
-  switch (type) {
-    case 'movie':
-      return 'Movie';
-    case 'tv_series':
-      return 'TV Series';
-    case 'book':
-      return 'Book';
-    case 'video_game':
-      return 'Game';
-  }
-}
-
-function getConsumedUsers(
-  item: MediaItemWithDetails,
-  currentUserNickname: string | null,
-  consumed: boolean,
-  userId: string
-): string[] {
-  const names = new Set(
-    (item.consumption_records ?? [])
-      .map((record) => {
-        if (record.user_id === userId && currentUserNickname) return currentUserNickname;
-        return record.profile?.nickname ?? null;
-      })
-      .filter((name): name is string => !!name)
-  );
-
-  if (consumed && currentUserNickname) names.add(currentUserNickname);
-  if (!consumed && currentUserNickname) names.delete(currentUserNickname);
-
-  return Array.from(names);
 }

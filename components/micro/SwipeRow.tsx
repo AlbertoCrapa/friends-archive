@@ -11,7 +11,12 @@ export interface SwipeAction {
   label: string;
   tone?: 'out' | 'start' | 'neutral';
   icon?: ReactNode;
-  /** A full swipe runs the first action. Set false to require a deliberate tap. */
+  /**
+   * A full swipe runs the FIRST action. Set false to take that away, so the
+   * row can only be pulled as far as the drawer and the action needs a
+   * deliberate tap — which is what anything destructive should need.
+   */
+  commit?: boolean;
   onSelect: () => void;
 }
 
@@ -23,6 +28,19 @@ interface Props {
   /** Run when a full swipe commits the first action, after the row has left. */
   onCommit?: (action: SwipeAction) => void;
   disabled?: boolean;
+  /**
+   * The built-in dots button that opens the drawer without a gesture. Turn it
+   * off where the row already carries its own overflow menu — two of them in
+   * the same corner is one too many.
+   */
+  handle?: boolean;
+  /**
+   * Freeze the gesture. Something inside the row has taken over the pointer —
+   * an open menu, most often — and a row that slides out from under its own
+   * open menu is a bug you can feel.
+   */
+  locked?: boolean;
+  className?: string;
 }
 
 /**
@@ -34,7 +52,16 @@ interface Props {
  * a phone where the whole queue is triage. Everything the gesture can do is
  * also on a button, because a gesture no one discovers is not a feature.
  */
-export function SwipeRow({ children, actions, label, onCommit, disabled }: Props) {
+export function SwipeRow({
+  children,
+  actions,
+  label,
+  onCommit,
+  disabled,
+  handle = true,
+  locked = false,
+  className,
+}: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const x = useMotionValue(0);
   const [open, setOpen] = useState(false);
@@ -44,7 +71,14 @@ export function SwipeRow({ children, actions, label, onCommit, disabled }: Props
 
   const rail = actions.length * ACTION_W;
   const primary = actions[0];
+  // A full swipe is a shortcut, and a shortcut is only safe when the action it
+  // runs is one you would not mind running by accident.
+  const canCommit = !!primary && primary.commit !== false;
   const commitPoint = Math.max(rail + ACTION_W * 0.6, width * 0.52);
+  // A click that ends a drag is not a click. The gesture claims the pointer, so
+  // it also claims the click the browser fires when you let go — otherwise
+  // pressing a button and then pulling the row does both.
+  const swallowClick = useRef(false);
   const grip = useRef<{ id: number; x0: number; y0: number; from: number; axis: 'x' | 'y' | null; samples: [number, number][] } | null>(null);
 
   useLayoutEffect(() => {
@@ -89,9 +123,9 @@ export function SwipeRow({ children, actions, label, onCommit, disabled }: Props
   });
 
   return (
-    <div className="mi mi-swipe" ref={rootRef}>
+    <div className={`mi mi-swipe${className ? ` ${className}` : ''}`} ref={rootRef}>
       <div className="mi-swipe-rail" aria-hidden={!open}>
-        {primary ? <span className="mi-swipe-flood" data-armed={armed} data-tone={primary.tone ?? 'neutral'} /> : null}
+        {canCommit ? <span className="mi-swipe-flood" data-armed={armed} data-tone={primary.tone ?? 'neutral'} /> : null}
         {actions.map((action) => (
           <button
             key={action.id}
@@ -113,8 +147,15 @@ export function SwipeRow({ children, actions, label, onCommit, disabled }: Props
       <motion.div
         className="mi-swipe-surface"
         style={{ x }}
+        onClickCapture={(e) => {
+          if (!swallowClick.current) return;
+          swallowClick.current = false;
+          e.preventDefault();
+          e.stopPropagation();
+        }}
         onPointerDown={(e) => {
-          if (disabled) return;
+          swallowClick.current = false;
+          if (disabled || locked) return;
           grip.current = { id: e.pointerId, x0: e.clientX, y0: e.clientY, from: x.get(), axis: null, samples: [[performance.now(), e.clientX]] };
         }}
         onPointerMove={(e) => {
@@ -135,20 +176,24 @@ export function SwipeRow({ children, actions, label, onCommit, disabled }: Props
           g.samples.push([performance.now(), e.clientX]);
           if (g.samples.length > 6) g.samples.shift();
           const raw = g.from + dx;
-          // Pulling the wrong way is resisted hard; past the drawer it is
-          // resisted gently, because that stretch is the commit gesture.
-          const next = raw > 0 ? raw * 0.14 : raw < -rail ? -rail + (raw + rail) * 0.72 : raw;
+          // Pulling the wrong way is resisted hard. Past the drawer it is
+          // resisted gently WHEN that stretch is the commit gesture, and just
+          // as hard as the wrong way when it is not — with nothing waiting at
+          // the end of the pull, the end of the drawer should feel like a wall.
+          const beyond = canCommit ? 0.72 : 0.14;
+          const next = raw > 0 ? raw * 0.14 : raw < -rail ? -rail + (raw + rail) * beyond : raw;
           x.set(next);
-          setArmed(-next > commitPoint);
+          setArmed(canCommit && -next > commitPoint);
         }}
         onPointerUp={(e) => {
           const g = grip.current;
           grip.current = null;
           if (!g || g.axis !== 'x') return;
+          swallowClick.current = true;
           const [t0, p0] = g.samples[0];
           const v = ((e.clientX - p0) / Math.max(1, performance.now() - t0)) * 1000;
           const projected = x.get() + v * 0.09;
-          if (-projected > commitPoint && primary) return commit();
+          if (canCommit && -projected > commitPoint) return commit();
           if (v > 420) return settle(0);
           if (v < -420) return settle(-rail);
           settle(-x.get() > rail * 0.5 ? -rail : 0);
@@ -159,19 +204,21 @@ export function SwipeRow({ children, actions, label, onCommit, disabled }: Props
         }}
       >
         {children}
-        <button
-          type="button"
-          className="mi-swipe-handle"
-          aria-label={label}
-          aria-expanded={open}
-          onClick={() => settle(open ? 0 : -rail)}
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-            <circle cx="3" cy="7" r="1.3" fill="currentColor" />
-            <circle cx="7" cy="7" r="1.3" fill="currentColor" />
-            <circle cx="11" cy="7" r="1.3" fill="currentColor" />
-          </svg>
-        </button>
+        {handle ? (
+          <button
+            type="button"
+            className="mi-swipe-handle"
+            aria-label={label}
+            aria-expanded={open}
+            onClick={() => settle(open ? 0 : -rail)}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+              <circle cx="3" cy="7" r="1.3" fill="currentColor" />
+              <circle cx="7" cy="7" r="1.3" fill="currentColor" />
+              <circle cx="11" cy="7" r="1.3" fill="currentColor" />
+            </svg>
+          </button>
+        ) : null}
       </motion.div>
     </div>
   );

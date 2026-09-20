@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { PROVIDER_IMAGE_HOSTS } from '@/lib/utils';
+import '@/components/micro/micro.css';
 import './globals.css';
 
 export const metadata: Metadata = {

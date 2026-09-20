@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { JoinRequestsBell } from '@/components/features/groups/JoinRequestsBell';
 import { PrimaryNavButton } from '@/components/layout/PrimaryNavButton';
+import { Wordmark } from '@/components/layout/Wordmark';
 import { SignOutMenuItem } from '@/components/layout/SignOutMenuItem';
 import { User } from 'lucide-react';
 import type { PendingJoinRequest, AcceptedJoinRequest } from '@/types';
@@ -91,7 +92,7 @@ export async function Header() {
   return (
     <header className="sticky top-0 z-40 border-b border-stone-800/50 bg-stone-950/80 backdrop-blur-sm">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
-        <Link href="/dashboard" className="font-serif text-base sm:text-lg tracking-[0.18em] text-stone-100 uppercase hover:text-amber-500 transition-colors whitespace-nowrap leading-none shrink-0">
+        <Link href="/dashboard" aria-label="The Friend Archive" className="shrink-0 leading-none">
           {/* Mobile: the wordmark plus nav buttons can overflow, so the brand
               collapses to the two-friends logo (same mark as the favicon). */}
           <svg viewBox="0 0 64 64" className="h-8 w-8 sm:hidden" aria-hidden="true">
@@ -102,7 +103,7 @@ export async function Header() {
             <path d="M35.06 39.74 A13.5 13.5 0 0 1 27.49 45.04" fill="none" stroke="#d97706" strokeWidth="4.5" />
             <path d="M32 27.75 L36.25 32 L32 36.25 L27.75 32 Z" fill="#fbbf24" />
           </svg>
-          <span className="sr-only sm:not-sr-only">The Friend Archive</span>
+          <Wordmark className="hidden sm:inline-flex" />
         </Link>
 
         <nav className="flex items-center gap-1 sm:gap-2">

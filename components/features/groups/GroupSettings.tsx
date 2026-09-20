@@ -153,7 +153,7 @@ export function GroupSettings({ group, members, joinRequests, currentUserId, isO
     <div className="space-y-10">
       {/* Info form */}
       <section className="space-y-5">
-        <h2 className="font-mono uppercase tracking-[0.3em] text-xs" style={{ color: 'oklch(0.42 0.005 60)' }}>Group info</h2>
+        <h2 className="font-mono text-xs" style={{ color: '#52525b' }}>Group info</h2>
         <form onSubmit={handleSave} className="space-y-5">
           <div className="space-y-2">
             <Label htmlFor="name">Name</Label>
@@ -216,7 +216,7 @@ export function GroupSettings({ group, members, joinRequests, currentUserId, isO
       {/* Pending access requests */}
       {joinRequests.length > 0 && (
         <section className="space-y-4">
-          <h2 className="font-mono uppercase tracking-[0.3em] text-xs" style={{ color: 'oklch(0.42 0.005 60)' }}>
+          <h2 className="font-mono text-xs" style={{ color: '#52525b' }}>
             Access requests
           </h2>
           <div className="border border-stone-800/50">
@@ -265,7 +265,7 @@ export function GroupSettings({ group, members, joinRequests, currentUserId, isO
 
       {/* Members */}
       <section className="space-y-4">
-        <h2 className="font-mono uppercase tracking-[0.3em] text-xs" style={{ color: 'oklch(0.42 0.005 60)' }}>Members</h2>
+        <h2 className="font-mono text-xs" style={{ color: '#52525b' }}>Members</h2>
         <div className="border border-stone-800/50">
           {members.map((m) => (
             <div key={m.user_id} className="flex items-center justify-between px-5 py-3.5 border-b border-stone-800/30 last:border-b-0">
@@ -274,8 +274,8 @@ export function GroupSettings({ group, members, joinRequests, currentUserId, isO
                   {m.profiles?.nickname ?? 'Unknown'}
                 </span>
                 <span
-                  className="font-mono text-[10px] uppercase tracking-wider shrink-0"
-                  style={{ color: m.role === 'owner' ? 'var(--color-accent)' : 'oklch(0.4 0.005 60)' }}
+                  className="font-mono text-[10px] shrink-0"
+                  style={{ color: m.role === 'owner' ? 'var(--color-accent)' : '#52525b' }}
                 >
                   {m.role}
                 </span>
@@ -303,20 +303,20 @@ export function GroupSettings({ group, members, joinRequests, currentUserId, isO
 
       {/* Archive data */}
       <section className="space-y-4">
-        <h2 className="font-mono uppercase tracking-[0.3em] text-xs" style={{ color: 'oklch(0.42 0.005 60)' }}>Archive data</h2>
+        <h2 className="font-mono text-xs" style={{ color: '#52525b' }}>Archive data</h2>
         <GroupArchiveData group={group} userId={currentUserId} />
       </section>
 
       {/* Danger zone */}
       <section className="space-y-5">
         <div className="border-t border-stone-800/50 pt-5">
-          <h2 className="font-mono uppercase tracking-[0.3em] text-xs" style={{ color: 'oklch(0.6 0.18 15)' }}>
+          <h2 className="font-mono text-xs" style={{ color: '#e5484d' }}>
             Danger zone
           </h2>
         </div>
         <div
           className="border p-5 space-y-4"
-          style={{ borderColor: 'oklch(0.5 0.18 15 / 0.3)', backgroundColor: 'oklch(0.12 0.04 15 / 0.15)' }}
+          style={{ borderColor: '#b3272b4c', backgroundColor: '#b3272b26' }}
         >
           {isOwner ? (
             <>
@@ -341,7 +341,7 @@ export function GroupSettings({ group, members, joinRequests, currentUserId, isO
                 </Button>
               ) : (
                 <div className="flex items-center gap-3 flex-wrap">
-                  <p className="text-sm font-mono" style={{ color: 'oklch(0.72 0.18 15)' }}>
+                  <p className="text-sm font-mono" style={{ color: '#fca5a5' }}>
                     Are you sure? This cannot be undone.
                   </p>
                   <div className="flex gap-2">
@@ -400,7 +400,7 @@ export function GroupSettings({ group, members, joinRequests, currentUserId, isO
                 </Button>
               ) : (
                 <div className="flex items-center gap-3 flex-wrap">
-                  <p className="text-sm font-mono" style={{ color: 'oklch(0.72 0.18 15)' }}>
+                  <p className="text-sm font-mono" style={{ color: '#fca5a5' }}>
                     Are you sure you want to leave?
                   </p>
                   <div className="flex gap-2">

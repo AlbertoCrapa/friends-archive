@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useExternalSearch } from '@/hooks/useExternalSearch';
@@ -44,6 +45,18 @@ interface Props {
   groupId: string;
   userId: string;
   activeType: MediaType | 'all';
+  /**
+   * 'bar'  — a labelled button that lives in the archive toolbar (desktop).
+   * 'fab'  — a disc pinned to the corner of the screen (touch).
+   *
+   * The disc is rendered through a PORTAL. `position: fixed` resolves against
+   * the nearest ancestor that has a transform, a filter or a backdrop-filter,
+   * not against the viewport — and this app has a page transition that
+   * animates one and a sticky toolbar that used to blur another. Pinned to the
+   * body, the button is pinned to the screen, which is the only thing it was
+   * ever supposed to be pinned to.
+   */
+  variant?: 'bar' | 'fab';
   /** Receives the inserted item plus the creator's own (per-member) status. */
   onAdded?: (item: MediaItem & { status: ItemStatus }) => void;
 }
@@ -51,14 +64,24 @@ interface Props {
 const SELECT_COLUMNS =
   'id, group_id, title, type, genre, metadata, added_by, external_id, external_source, external_url, image_url, created_at, updated_at';
 
-export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) {
+export function AddMediaDialog({
+  groupId,
+  userId,
+  activeType,
+  variant = 'bar',
+  onAdded,
+}: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  // The portaled trigger can only mount once the document exists.
+  const [mounted, setMounted] = useState(false);
   const [title, setTitle] = useState('');
   const [status, setStatus] = useState<ItemStatus>('plan_to_consume');
   const [type, setType] = useState<MediaType>(
     activeType === 'all' ? 'movie' : activeType
   );
+
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     if (activeType !== 'all') {
@@ -319,17 +342,34 @@ export function AddMediaDialog({ groupId, userId, activeType, onAdded }: Props) 
         else resetForm();
       }}
     >
-      <DialogTrigger asChild>
-        {/* Fixed FAB, bottom-right of the screen. Round icon on mobile, a
-            labelled pill on desktop. */}
-        <Button
-          aria-label="Add item"
-          className="gap-2 fixed bottom-5 right-5 z-30 h-14 w-14 rounded-full p-0 shadow-xl shadow-black/40 md:h-10 md:w-auto md:rounded-none md:px-4"
-        >
-          <Plus className="h-5 w-5" />
-          <span className="hidden md:inline">Add item</span>
-        </Button>
-      </DialogTrigger>
+      {variant === 'fab' ? (
+        mounted ? (
+          createPortal(
+            <DialogTrigger asChild>
+              <Button
+                aria-label="Add item"
+                // Hard into the corner, and clear of the home indicator / rounded
+                // display cutouts that env() reports on a phone.
+                style={{
+                  bottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))',
+                  right: 'calc(1rem + env(safe-area-inset-right, 0px))',
+                }}
+                className="fixed z-40 h-14 w-14 rounded-full p-0 shadow-[var(--shadow-3)] md:hidden"
+              >
+                <Plus className="h-5 w-5" />
+              </Button>
+            </DialogTrigger>,
+            document.body,
+          )
+        ) : null
+      ) : (
+        <DialogTrigger asChild>
+          <Button aria-label="Add item" className="hidden gap-2 md:inline-flex">
+            <Plus className="h-4 w-4" />
+            Add item
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent className="max-w-md sm:max-w-md w-full">
         <DialogHeader>
           <DialogTitle>Add an item</DialogTitle>

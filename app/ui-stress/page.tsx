@@ -3,11 +3,14 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MediaTable } from '@/components/features/media/MediaTable';
-import { Check, Minus, Globe, Lock, Plus, Compass } from 'lucide-react';
+import { GroupMediaSection } from '@/components/features/media/GroupMediaSection';
+import { DashboardContent } from '@/components/features/groups/DashboardContent';
+import { DiscoverList } from '@/components/features/groups/DiscoverList';
+import { Check, Minus, Globe, Lock, Users } from 'lucide-react';
 import type { ItemStatus, MediaItemWithDetails, MediaType } from '@/types';
 
 interface Props {
-  searchParams: Promise<{ scenario?: string; surface?: string }>;
+  searchParams: Promise<{ scenario?: string; surface?: string; view?: string }>;
 }
 
 type ScenarioKey = 'empty' | 'minimal' | 'typical' | 'dense' | 'overflow';
@@ -20,7 +23,7 @@ const scenarios: Array<{ key: ScenarioKey; label: string; count: number }> = [
   { key: 'overflow', label: 'Overflow', count: 140 },
 ];
 
-const surfaces = ['all', 'landing', 'dashboard', 'discover', 'group', 'pricing', 'loading', 'media-table', 'profile', 'settings'] as const;
+const surfaces = ['all', 'landing', 'dashboard', 'discover', 'group', 'archive', 'pricing', 'loading', 'media-table', 'profile', 'settings'] as const;
 type Surface = (typeof surfaces)[number];
 
 export default async function UIStressPage({ searchParams }: Props) {
@@ -43,7 +46,7 @@ export default async function UIStressPage({ searchParams }: Props) {
       <div className="mx-auto max-w-7xl space-y-10">
         {/* Header */}
         <header className="space-y-3 border-b border-stone-800/50 pb-8">
-          <p className="font-mono text-xs uppercase tracking-[0.2em] text-stone-500">
+          <p className="font-mono text-xs text-stone-500">
             Stress validation surface — no auth required
           </p>
           <h1 className="font-serif text-4xl text-stone-100">UI Stress Preview</h1>
@@ -90,10 +93,10 @@ export default async function UIStressPage({ searchParams }: Props) {
             <div className="border border-stone-800/50 p-10 text-center space-y-6 bg-stone-950 relative overflow-hidden">
               <div
                 className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] pointer-events-none"
-                style={{ background: 'radial-gradient(ellipse at center, oklch(0.65 0.14 60 / 0.04) 0%, transparent 70%)' }}
+                style={{ background: 'radial-gradient(ellipse at center, #a87a000a 0%, transparent 70%)' }}
                 aria-hidden
               />
-              <p className="font-mono uppercase tracking-[0.35em] text-xs" style={{ color: 'oklch(0.72 0.12 65 / 0.65)' }}>
+              <p className="font-mono text-xs" style={{ color: '#d69b00a6' }}>
                 Track together. Remember always.
               </p>
               <h1
@@ -114,14 +117,14 @@ export default async function UIStressPage({ searchParams }: Props) {
 
             {/* How it works mock */}
             <div className="border border-stone-800/50 p-8 space-y-8">
-              <p className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: 'oklch(0.72 0.12 65 / 0.65)' }}>
+              <p className="font-mono text-xs " style={{ color: '#d69b00a6' }}>
                 How it works
               </p>
               <h2 className="font-serif text-4xl text-stone-100 font-light">Simple by design. Shared by nature.</h2>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-0">
                 {['Create a group', 'Add what you want to experience', 'Track and remember together'].map((title, i) => (
                   <div key={title} className="pt-8 pb-10 pr-0 sm:pr-10 border-t-2 border-stone-800/60 space-y-3">
-                    <span className="font-mono font-light block" style={{ fontSize: '4.8rem', color: 'oklch(0.20 0.005 60)' }}>
+                    <span className="font-mono font-light block" style={{ fontSize: '4.8rem', color: '#27272a' }}>
                       {String(i + 1).padStart(2, '0')}
                     </span>
                     <h3 className="font-serif text-xl text-stone-100">{title}</h3>
@@ -153,82 +156,16 @@ export default async function UIStressPage({ searchParams }: Props) {
         {/* ── DASHBOARD surface ──────────────────────────────────────────── */}
         {show('dashboard') && (
           <section className="space-y-6">
-            <SectionHeading>Dashboard cards — {groups.length > 0 ? `${groups.length} groups` : 'empty state'}</SectionHeading>
-
-            {groups.length === 0 ? (
-              <div className="border border-stone-800/50 py-24 text-center space-y-6">
-                <p className="font-serif text-2xl text-stone-500">No archives yet</p>
-                <p className="text-stone-600 text-sm font-mono max-w-sm mx-auto">
-                  Create a group for your crew, or discover what others are archiving together.
-                </p>
-                <div className="flex justify-center gap-3">
-                  <Button size="sm" className="gap-2"><Plus className="h-3.5 w-3.5" />Create a group</Button>
-                  <Button variant="outline" size="sm" className="gap-2"><Compass className="h-3.5 w-3.5" />Discover</Button>
-                </div>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {groups.slice(0, 12).map((g) => (
-                  <div
-                    key={g.id}
-                    className="border border-stone-800/50 p-5 hover:border-amber-800/50 hover:bg-stone-900/30 cursor-pointer transition-all space-y-3 flex flex-col"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <h3 className="font-serif text-lg text-stone-100 line-clamp-2 leading-snug">{g.name}</h3>
-                      <Badge variant={g.visibility === 'public' ? 'public' : 'private'} className="shrink-0 gap-1">
-                        {g.visibility === 'public' ? <Globe className="h-2.5 w-2.5" /> : <Lock className="h-2.5 w-2.5" />}
-                        {g.visibility === 'public' ? 'Public' : 'Private'}
-                      </Badge>
-                    </div>
-                    <p className="text-stone-500 text-sm font-light line-clamp-2 flex-1">{g.description}</p>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-mono" style={{ color: 'oklch(0.4 0.005 60)' }}>
-                        {g.memberCount} members · {g.itemCount} items
-                      </span>
-                      <span className="text-[10px] font-mono uppercase" style={{ color: 'var(--color-accent)' }}>owner</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            <SectionHeading>Dashboard — the real component, mock data</SectionHeading>
+            <DashboardContent {...buildDashboardProps(groups)} />
           </section>
         )}
 
         {/* ── DISCOVER surface ──────────────────────────────────────────── */}
         {show('discover') && (
           <section className="space-y-6">
-            <SectionHeading>Discover grid — public groups with join/view</SectionHeading>
-            {groups.length === 0 ? (
-              <div className="border border-stone-800/50 py-24 text-center space-y-5">
-                <p className="font-serif text-2xl text-stone-500">No public archives yet</p>
-                <Button size="sm" className="gap-2"><Plus className="h-3.5 w-3.5" />Create a group</Button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {groups.filter((g) => g.visibility === 'public').slice(0, 9).map((g, i) => (
-                  <div
-                    key={g.id}
-                    className="border border-stone-800/50 p-5 space-y-3 flex flex-col hover:border-amber-800/50 hover:bg-stone-900/30 cursor-pointer transition-all"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <h3 className="font-serif text-lg text-stone-100 line-clamp-2 leading-snug">{g.name}</h3>
-                      <Badge variant="public" className="shrink-0 gap-1"><Globe className="h-2.5 w-2.5" /> Public</Badge>
-                    </div>
-                    <p className="text-stone-500 text-sm font-light line-clamp-2 flex-1">{g.description}</p>
-                    <div className="flex items-center justify-between mt-auto">
-                      <span className="text-xs font-mono" style={{ color: 'oklch(0.4 0.005 60)' }}>
-                        {g.memberCount} members · {g.itemCount} items
-                      </span>
-                      {i % 2 === 0 ? (
-                        <Button variant="outline" size="sm">Join</Button>
-                      ) : (
-                        <Button variant="ghost" size="sm">View</Button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            <SectionHeading>Discover — the real component, mock data</SectionHeading>
+            <DiscoverList groups={buildDiscoverGroups(groups)} isAuthenticated />
           </section>
         )}
 
@@ -237,25 +174,39 @@ export default async function UIStressPage({ searchParams }: Props) {
           <section className="space-y-6">
             <SectionHeading>Group detail — header + media table</SectionHeading>
 
-            {/* Group header */}
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-2 min-w-0">
-                <Button variant="ghost" size="sm">← Back to dashboard</Button>
-                <div className="flex items-center gap-3 flex-wrap">
-                  <h2 className="font-serif text-3xl text-stone-100">
-                    {groups[0]?.name ?? 'Cinema Crew'}
-                  </h2>
-                  <Badge variant="public" className="gap-1"><Globe className="h-2.5 w-2.5" /> Public</Badge>
+            {/* Group header — mirrors app/(dashboard)/groups/[groupId]/page.tsx */}
+            <header className="space-y-3">
+              <span className="inline-flex items-center gap-1.5 text-[12.5px] text-stone-500">
+                ← My archives
+              </span>
+              <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+                <div className="min-w-0 space-y-2">
+                  <h2 className="page-title">{groups[0]?.name ?? 'Cinema Crew'}</h2>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] bg-stone-800 px-1.5 py-0.5 text-[11.5px] font-medium text-stone-400">
+                      <Globe className="h-2.5 w-2.5" /> Public
+                    </span>
+                  </div>
+
+                  <p className="max-w-2xl text-[13.5px] leading-relaxed text-stone-500">
+                    {groups[0]?.description ?? 'A group for tracking movies and series together.'}
+                  </p>
+
+                  <p className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-stone-500">
+                    <Users className="h-3.5 w-3.5 shrink-0 text-stone-600" aria-hidden />
+                    <span className="shrink-0 font-medium text-stone-400">6 members</span>
+                    <span aria-hidden className="shrink-0 text-stone-700">·</span>
+                    <span className="truncate">maya, theo, ines, bruno, nico and 1 more</span>
+                  </p>
                 </div>
-                <p className="text-stone-500 text-sm font-light">
-                  {groups[0]?.description ?? 'A group for tracking movies and series together.'}
-                </p>
-                <p className="text-xs font-mono text-stone-600">
-                  {groups[0]?.memberCount ?? 4} members
-                </p>
+
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button variant="secondary" size="sm">Share</Button>
+                  <Button variant="secondary" size="sm">Settings</Button>
+                </div>
               </div>
-              <Button variant="outline" size="sm">Settings</Button>
-            </div>
+            </header>
 
             {/* Filter tabs */}
             <div className="border-b border-stone-900 pb-3 flex gap-0 overflow-x-auto">
@@ -263,7 +214,7 @@ export default async function UIStressPage({ searchParams }: Props) {
                 <button
                   key={tab}
                   type="button"
-                  className={`cursor-pointer min-h-11 px-4 py-2 text-sm font-mono uppercase tracking-wider border-b-2 -mb-px whitespace-nowrap transition-colors ${
+                  className={`cursor-pointer min-h-11 px-4 py-2 text-sm font-mono border-b-2 -mb-px whitespace-nowrap transition-colors ${
                     i === 0
                       ? 'text-amber-500 border-amber-500'
                       : 'text-stone-500 border-transparent hover:text-stone-300'
@@ -283,6 +234,8 @@ export default async function UIStressPage({ searchParams }: Props) {
               isOwner={true}
               userId="stress-user"
               currentUserNickname="stress-user"
+              memberIds={ARCHIVE_MEMBERS.map((m) => m.id)}
+              members={ARCHIVE_MEMBERS}
             />
           </section>
         )}
@@ -302,25 +255,25 @@ export default async function UIStressPage({ searchParams }: Props) {
                 <div
                   key={plan.name}
                   className="p-8 space-y-6 border-b sm:border-b-0 sm:border-r border-stone-800/50 last:border-r-0 relative"
-                  style={plan.highlight ? { backgroundColor: 'oklch(0.115 0.015 60)' } : {}}
+                  style={plan.highlight ? { backgroundColor: '#0b0b0f' } : {}}
                 >
                   {plan.highlight && (
                     <div className="absolute top-0 inset-x-0 h-0.5" style={{ backgroundColor: 'var(--color-accent)' }} />
                   )}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <p className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: plan.highlight ? 'var(--color-accent)' : 'var(--color-text-muted)' }}>
+                      <p className="font-mono text-xs " style={{ color: plan.highlight ? 'var(--color-accent)' : 'var(--color-text-muted)' }}>
                         {plan.name}
                       </p>
                       {plan.popular && (
-                        <span className="font-mono text-[10px] uppercase tracking-wider px-2 py-0.5 border" style={{ borderColor: 'oklch(0.55 0.12 60 / 0.4)', color: 'var(--color-accent)' }}>
+                        <span className="font-mono text-[10px] px-2 py-0.5 border" style={{ borderColor: '#7a590066', color: 'var(--color-accent)' }}>
                           Popular
                         </span>
                       )}
                     </div>
                     <div className="flex items-baseline gap-2">
                       <span className="font-serif text-5xl text-stone-100 font-light">{plan.price}</span>
-                      <span className="font-mono text-xs" style={{ color: 'oklch(0.38 0.005 60)' }}>/ {plan.period}</span>
+                      <span className="font-mono text-xs" style={{ color: '#52525b' }}>/ {plan.period}</span>
                     </div>
                   </div>
                   <Button variant={plan.highlight ? 'default' : 'outline'} className="w-full">
@@ -335,8 +288,8 @@ export default async function UIStressPage({ searchParams }: Props) {
               <div className="grid border-b border-stone-800/50" style={{ gridTemplateColumns: '1fr repeat(3, minmax(80px, 140px))' }}>
                 <div className="p-4" />
                 {['Free', 'Premium', 'Enterprise'].map((p, i) => (
-                  <div key={p} className="p-4 text-center border-l border-stone-800/50" style={i === 1 ? { backgroundColor: 'oklch(0.115 0.015 60)' } : {}}>
-                    <p className="font-mono text-xs uppercase tracking-[0.25em]" style={{ color: i === 1 ? 'var(--color-accent)' : 'var(--color-text-muted)' }}>{p}</p>
+                  <div key={p} className="p-4 text-center border-l border-stone-800/50" style={i === 1 ? { backgroundColor: '#0b0b0f' } : {}}>
+                    <p className="font-mono text-xs " style={{ color: i === 1 ? 'var(--color-accent)' : 'var(--color-text-muted)' }}>{p}</p>
                   </div>
                 ))}
               </div>
@@ -351,12 +304,12 @@ export default async function UIStressPage({ searchParams }: Props) {
                 <div key={i} className="grid border-b border-stone-800/30 last:border-b-0" style={{ gridTemplateColumns: '1fr repeat(3, minmax(80px, 140px))' }}>
                   <div className="px-4 py-3.5 text-sm text-stone-200 font-light">{row[0] as string}</div>
                   {([1, 2, 3] as const).map((col) => (
-                    <div key={col} className="px-4 py-3.5 flex items-center justify-center border-l border-stone-800/30" style={col === 2 ? { backgroundColor: 'oklch(0.115 0.015 60)' } : {}}>
+                    <div key={col} className="px-4 py-3.5 flex items-center justify-center border-l border-stone-800/30" style={col === 2 ? { backgroundColor: '#0b0b0f' } : {}}>
                       {typeof row[col] === 'boolean' ? (
                         row[col] ? (
                           <Check className="h-4 w-4" style={{ color: 'var(--color-success)' }} />
                         ) : (
-                          <Minus className="h-4 w-4" style={{ color: 'oklch(0.32 0.005 60)' }} />
+                          <Minus className="h-4 w-4" style={{ color: '#3f3f46' }} />
                         )
                       ) : (
                         <span className="font-mono text-xs" style={{ color: 'var(--color-text-secondary)' }}>{row[col] as string}</span>
@@ -376,7 +329,7 @@ export default async function UIStressPage({ searchParams }: Props) {
 
             {/* Dashboard loading */}
             <div className="space-y-3">
-              <p className="font-mono text-xs uppercase tracking-wider text-stone-600">Dashboard</p>
+              <p className="font-mono text-xs text-stone-600">Dashboard</p>
               <div className="space-y-6">
                 <div className="flex items-start justify-between gap-4">
                   <div className="space-y-2">
@@ -401,7 +354,7 @@ export default async function UIStressPage({ searchParams }: Props) {
 
             {/* Group detail loading */}
             <div className="space-y-3">
-              <p className="font-mono text-xs uppercase tracking-wider text-stone-600">Group detail</p>
+              <p className="font-mono text-xs text-stone-600">Group detail</p>
               <div className="space-y-6">
                 <div className="flex items-start justify-between gap-4">
                   <div className="space-y-2">
@@ -428,6 +381,27 @@ export default async function UIStressPage({ searchParams }: Props) {
         )}
 
         {/* ── MEDIA TABLE standalone ────────────────────────────────────── */}
+        {show('archive') && (
+          <section className="space-y-6">
+            <SectionHeading>Group archive — list, covers and stats views, with real artwork</SectionHeading>
+            <GroupMediaSection
+              groupId="stress-group"
+              userId={ARCHIVE_MEMBERS[0].id}
+              currentUserNickname={ARCHIVE_MEMBERS[0].nickname}
+              isMember
+              isOwner
+              memberIds={ARCHIVE_MEMBERS.map((m) => m.id)}
+              members={ARCHIVE_MEMBERS}
+              notInterestedByItem={ARCHIVE_OPT_OUTS}
+              initialItems={buildArchiveItems()}
+              initialConsumedSet={new Set(['arch-1', 'arch-3', 'arch-6'])}
+              initialActiveType="all"
+              initialPage={1}
+              initialView={params.view === 'grid' || params.view === 'stats' ? params.view : 'list'}
+            />
+          </section>
+        )}
+
         {show('media-table') && (
           <section className="space-y-6">
             <SectionHeading>Media table — {mediaItems.length} items, all types, member view</SectionHeading>
@@ -439,6 +413,8 @@ export default async function UIStressPage({ searchParams }: Props) {
               isOwner={true}
               userId="stress-user"
               currentUserNickname="stress-user"
+              memberIds={ARCHIVE_MEMBERS.map((m) => m.id)}
+              members={ARCHIVE_MEMBERS}
             />
 
             <SectionHeading>Media table — read-only (non-member)</SectionHeading>
@@ -450,6 +426,8 @@ export default async function UIStressPage({ searchParams }: Props) {
               isOwner={false}
               userId="stress-user"
               currentUserNickname={null}
+              memberIds={ARCHIVE_MEMBERS.map((m) => m.id)}
+              members={ARCHIVE_MEMBERS}
             />
 
             <SectionHeading>Media table — empty state</SectionHeading>
@@ -461,6 +439,8 @@ export default async function UIStressPage({ searchParams }: Props) {
               isOwner={true}
               userId="stress-user"
               currentUserNickname="stress-user"
+              memberIds={ARCHIVE_MEMBERS.map((m) => m.id)}
+              members={ARCHIVE_MEMBERS}
             />
           </section>
         )}
@@ -473,9 +453,9 @@ export default async function UIStressPage({ searchParams }: Props) {
             {/* Stats bar */}
             <div className="max-w-2xl space-y-6">
               <div className="space-y-2">
-                <p className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: 'oklch(0.72 0.12 65 / 0.6)' }}>Your profile</p>
+                <p className="font-mono text-xs " style={{ color: '#d69b0099' }}>Your profile</p>
                 <h2 className="font-serif text-5xl text-stone-100 font-light">stress_user</h2>
-                <p className="font-mono text-xs" style={{ color: 'oklch(0.38 0.005 60)' }}>Member since 1 January 2025</p>
+                <p className="font-mono text-xs" style={{ color: '#52525b' }}>Member since 1 January 2025</p>
               </div>
               <div className="flex items-stretch border border-stone-800/50 overflow-hidden">
                 {[
@@ -489,14 +469,14 @@ export default async function UIStressPage({ searchParams }: Props) {
                     style={i === 0 ? { backgroundColor: 'var(--color-surface)' } : {}}
                   >
                     <p className="font-serif text-2xl text-stone-100">{stat.value}</p>
-                    <p className="font-mono text-[10px] uppercase tracking-wider" style={{ color: 'oklch(0.4 0.005 60)' }}>{stat.label}</p>
+                    <p className="font-mono text-[10px]" style={{ color: '#52525b' }}>{stat.label}</p>
                   </div>
                 ))}
               </div>
 
               {/* Group list */}
               <div className="space-y-4">
-                <p className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: 'oklch(0.42 0.005 60)' }}>
+                <p className="font-mono text-xs " style={{ color: '#52525b' }}>
                   Your archives ({groups.length})
                 </p>
                 <div className="border border-stone-800/50">
@@ -511,11 +491,11 @@ export default async function UIStressPage({ searchParams }: Props) {
                               {g.visibility === 'public' ? 'Public' : 'Private'}
                             </Badge>
                           </div>
-                          <p className="text-sm font-light line-clamp-1" style={{ color: 'oklch(0.42 0.005 60)' }}>{g.description}</p>
+                          <p className="text-sm font-light line-clamp-1" style={{ color: '#52525b' }}>{g.description}</p>
                         </div>
                         <div className="shrink-0 text-right space-y-1">
-                          <p className="font-mono text-xs" style={{ color: 'oklch(0.38 0.005 60)' }}>{g.itemCount} items</p>
-                          <p className="font-mono text-[10px] uppercase tracking-wider" style={{ color: 'var(--color-accent)' }}>owner</p>
+                          <p className="font-mono text-xs" style={{ color: '#52525b' }}>{g.itemCount} items</p>
+                          <p className="font-mono text-[10px]" style={{ color: 'var(--color-accent)' }}>owner</p>
                         </div>
                       </div>
                     </div>
@@ -533,15 +513,15 @@ export default async function UIStressPage({ searchParams }: Props) {
             <div className="max-w-2xl space-y-10">
               {/* Group info form */}
               <div className="space-y-5">
-                <h3 className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: 'oklch(0.42 0.005 60)' }}>Group info</h3>
+                <h3 className="font-mono text-xs " style={{ color: '#52525b' }}>Group info</h3>
                 <div className="space-y-2">
-                  <label className="font-mono text-xs uppercase tracking-wider text-stone-500">Name</label>
+                  <label className="font-mono text-xs text-stone-500">Name</label>
                   <div className="h-11 border border-stone-700 px-3 flex items-center">
                     <span className="text-stone-300 text-sm">{groups[0]?.name ?? 'Cinema Crew'}</span>
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="font-mono text-xs uppercase tracking-wider text-stone-500">Description</label>
+                  <label className="font-mono text-xs text-stone-500">Description</label>
                   <div className="h-24 border border-stone-700 px-3 py-2">
                     <span className="text-stone-300 text-sm font-light">{groups[0]?.description ?? 'Group description...'}</span>
                   </div>
@@ -551,13 +531,13 @@ export default async function UIStressPage({ searchParams }: Props) {
 
               {/* Members */}
               <div className="space-y-4">
-                <h3 className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: 'oklch(0.42 0.005 60)' }}>Members</h3>
+                <h3 className="font-mono text-xs " style={{ color: '#52525b' }}>Members</h3>
                 <div className="border border-stone-800/50">
                   {Array.from({ length: Math.min(5, Math.max(1, groups.length)) }).map((_, i) => (
                     <div key={i} className="flex items-center justify-between px-5 py-3.5 border-b border-stone-800/30 last:border-b-0">
                       <div className="flex items-center gap-3">
                         <span className="font-mono text-sm text-stone-200">user{i + 1}</span>
-                        <span className="font-mono text-[10px] uppercase" style={{ color: i === 0 ? 'var(--color-accent)' : 'oklch(0.4 0.005 60)' }}>
+                        <span className="font-mono text-[10px] " style={{ color: i === 0 ? 'var(--color-accent)' : '#52525b' }}>
                           {i === 0 ? 'owner' : 'member'}
                         </span>
                       </div>
@@ -574,9 +554,9 @@ export default async function UIStressPage({ searchParams }: Props) {
               {/* Danger zone */}
               <div className="space-y-5">
                 <div className="border-t border-stone-800/50 pt-5">
-                  <h3 className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: 'oklch(0.6 0.18 15)' }}>Danger zone</h3>
+                  <h3 className="font-mono text-xs " style={{ color: '#e5484d' }}>Danger zone</h3>
                 </div>
-                <div className="border p-5 space-y-4" style={{ borderColor: 'oklch(0.5 0.18 15 / 0.3)', backgroundColor: 'oklch(0.12 0.04 15 / 0.15)' }}>
+                <div className="border p-5 space-y-4" style={{ borderColor: '#b3272b4c', backgroundColor: '#b3272b26' }}>
                   <p className="text-stone-200 text-sm font-light">Delete <span className="font-mono text-stone-100">{groups[0]?.name ?? 'Cinema Crew'}</span></p>
                   <p className="text-stone-500 text-sm font-light">Permanently removes all media items and consumption records. This cannot be undone.</p>
                   <Button variant="outline" size="sm" className="gap-2 border-red-900/50 text-red-400">
@@ -597,7 +577,7 @@ export default async function UIStressPage({ searchParams }: Props) {
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
     <div className="border-b border-stone-800/50 pb-3">
-      <h2 className="font-mono text-xs uppercase tracking-[0.2em] text-stone-500">{children}</h2>
+      <h2 className="font-mono text-xs text-stone-500">{children}</h2>
     </div>
   );
 }
@@ -696,4 +676,170 @@ function metadataFor(type: MediaType, i: number): Record<string, unknown> {
   if (type === 'book')
     return { author: i % 3 === 0 ? 'Author With Long Name Variant For Layout' : 'Author', publication_year: 1960 + (i % 60) };
   return { developer: i % 2 === 0 ? 'Studio' : 'Very Long Developer Studio Name For Edge Testing', release_year: 1980 + (i % 40) };
+}
+
+// ── Archive fixture ────────────────────────────────────────────────────────
+// Real cover art (Open Library, one of the three allowed provider hosts) so the
+// artwork-led views can be judged on actual images rather than empty frames.
+
+const ARCHIVE_MEMBERS = [
+  { id: 'stress-user', nickname: 'you' },
+  { id: 'member-2', nickname: 'maya' },
+  { id: 'member-3', nickname: 'theo' },
+  { id: 'member-4', nickname: 'ines' },
+  { id: 'member-5', nickname: 'bruno' },
+];
+
+const ARCHIVE_OPT_OUTS: Record<string, string[]> = {
+  'arch-4': ['member-3'],
+  'arch-7': ['member-2', 'member-5'],
+};
+
+const cover = (isbn: string) => `https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg`;
+
+const ARCHIVE_SEED: Array<{
+  id: string;
+  title: string;
+  type: MediaType;
+  status: ItemStatus;
+  credit: string;
+  year: number;
+  isbn: string;
+  tags: string;
+  finishedBy: string[];
+  daysAgo: number;
+}> = [
+  { id: 'arch-1', title: 'The Hobbit', type: 'book', status: 'completed', credit: 'J.R.R. Tolkien', year: 1937, isbn: '9780547928227', tags: 'fantasy, comfort read', finishedBy: ['stress-user', 'member-2', 'member-3'], daysAgo: 4 },
+  { id: 'arch-2', title: 'Nineteen Eighty-Four', type: 'book', status: 'consuming', credit: 'George Orwell', year: 1949, isbn: '9780451524935', tags: 'dystopia', finishedBy: ['member-2'], daysAgo: 12 },
+  { id: 'arch-3', title: 'Dune', type: 'book', status: 'completed', credit: 'Frank Herbert', year: 1965, isbn: '9780441172719', tags: 'sci-fi, very long', finishedBy: ['stress-user', 'member-2', 'member-3', 'member-4', 'member-5'], daysAgo: 40 },
+  { id: 'arch-4', title: 'Neuromancer', type: 'book', status: 'plan_to_consume', credit: 'William Gibson', year: 1984, isbn: '9780441569595', tags: 'cyberpunk', finishedBy: ['member-4'], daysAgo: 66 },
+  { id: 'arch-5', title: 'Piranesi', type: 'book', status: 'plan_to_consume', credit: 'Susanna Clarke', year: 2020, isbn: '9781635575637', tags: 'strange, short', finishedBy: ['member-2', 'member-4'], daysAgo: 9 },
+  { id: 'arch-6', title: 'Project Hail Mary', type: 'book', status: 'completed', credit: 'Andy Weir', year: 2021, isbn: '9780593135204', tags: 'space', finishedBy: ['stress-user', 'member-5'], daysAgo: 95 },
+  { id: 'arch-7', title: 'The Catcher in the Rye', type: 'book', status: 'not_interested', credit: 'J.D. Salinger', year: 1951, isbn: '9780316769488', tags: 'classic', finishedBy: ['member-3'], daysAgo: 150 },
+  { id: 'arch-8', title: 'The Goldfinch', type: 'book', status: 'consuming', credit: 'Donna Tartt', year: 2013, isbn: '9780385534260', tags: 'long, slow burn', finishedBy: [], daysAgo: 200 },
+];
+
+function buildArchiveItems(): MediaItemWithDetails[] {
+  return ARCHIVE_SEED.map((seed) => ({
+    id: seed.id,
+    group_id: 'stress-group',
+    title: seed.title,
+    type: seed.type,
+    status: seed.status,
+    genre: seed.tags,
+    metadata: { author: seed.credit, publication_year: seed.year },
+    external_id: null,
+    external_source: null,
+    external_url: null,
+    image_url: cover(seed.isbn),
+    added_by: 'member-2',
+    created_at: new Date(Date.now() - seed.daysAgo * 86400000).toISOString(),
+    updated_at: new Date(Date.now() - seed.daysAgo * 86400000).toISOString(),
+    added_by_profile: { nickname: 'maya' },
+    consumption_records: seed.finishedBy.map((userId, index) => ({
+      id: `${seed.id}-c${index}`,
+      media_item_id: seed.id,
+      user_id: userId,
+      consumed_at: new Date(Date.now() - seed.daysAgo * 43200000).toISOString(),
+      note: null,
+      created_at: new Date(Date.now() - seed.daysAgo * 43200000).toISOString(),
+      updated_at: new Date(Date.now() - seed.daysAgo * 43200000).toISOString(),
+      profile: { nickname: ARCHIVE_MEMBERS.find((m) => m.id === userId)?.nickname ?? 'member' },
+    })),
+  }));
+}
+
+
+/** The covers the mock groups wear, rotated out of the archive seed so the
+ *  dashboard and discover cards are judged against real artwork. */
+function mockCovers(seed: number, count: number): string[] {
+  return Array.from({ length: count }, (_, i) =>
+    cover(ARCHIVE_SEED[(seed + i) % ARCHIVE_SEED.length].isbn),
+  );
+}
+
+function mockTypeCounts(seed: number, total: number): Record<MediaType, number> {
+  const weights = [3, 2, 2, 1];
+  const order: MediaType[] = ['movie', 'tv_series', 'book', 'video_game'];
+  const sum = weights.reduce((a, b) => a + b, 0);
+  const counts = { movie: 0, tv_series: 0, book: 0, video_game: 0 } as Record<MediaType, number>;
+  order.forEach((_, i) => {
+    counts[order[(i + seed) % order.length]] = Math.round((weights[i] / sum) * total);
+  });
+  return counts;
+}
+
+type MockGroup = ReturnType<typeof buildGroups>[number];
+
+function buildDashboardProps(groups: MockGroup[]) {
+  const rows = groups.map((group, i) => ({
+    id: group.id,
+    name: group.name,
+    description: group.description,
+    visibility: group.visibility as 'public' | 'private',
+    owner_id: 'stress-user',
+    created_at: new Date(Date.now() - i * 86400000).toISOString(),
+    updated_at: new Date(Date.now() - i * 86400000).toISOString(),
+    role: (i % 3 === 0 ? 'owner' : 'member') as 'owner' | 'member',
+    itemCount: group.itemCount,
+    memberCount: group.memberCount,
+    typeCounts: mockTypeCounts(i, group.itemCount),
+    covers: group.itemCount > 0 ? mockCovers(i, Math.min(5, group.itemCount)) : [],
+  }));
+  const totalItems = rows.reduce((sum, row) => sum + row.itemCount, 0);
+  const typeCounts = rows.reduce(
+    (acc, row) => {
+      (Object.keys(acc) as MediaType[]).forEach((type) => {
+        acc[type] += row.typeCounts[type];
+      });
+      return acc;
+    },
+    { movie: 0, tv_series: 0, book: 0, video_game: 0 } as Record<MediaType, number>,
+  );
+
+  return {
+    groups: rows,
+    ownedCount: rows.filter((row) => row.role === 'owner').length,
+    atLimit: false,
+    plan: 'free',
+    maxOwned: 2,
+    totalItems,
+    consumedCount: Math.round(totalItems * 0.38),
+    addedCount: Math.round(totalItems * 0.22),
+    typeCounts,
+    statusCounts: {
+      completed: Math.round(totalItems * 0.38),
+      consuming: Math.round(totalItems * 0.12),
+      plan_to_consume: Math.round(totalItems * 0.44),
+      not_interested: Math.round(totalItems * 0.06),
+    } as Record<ItemStatus, number>,
+    recentItems: ARCHIVE_SEED.slice(0, 6).map((seed, i) => ({
+      id: seed.id,
+      title: seed.title,
+      type: seed.type,
+      groupId: rows[i % Math.max(1, rows.length)]?.id ?? 'group-1',
+      groupName: rows[i % Math.max(1, rows.length)]?.name ?? 'Group',
+      createdAt: new Date(Date.now() - seed.daysAgo * 86400000).toISOString(),
+      imageUrl: cover(seed.isbn),
+    })),
+  };
+}
+
+function buildDiscoverGroups(groups: MockGroup[]) {
+  return groups
+    .filter((group) => group.visibility === 'public')
+    .map((group, i) => ({
+      id: group.id,
+      name: group.name,
+      description: group.description,
+      created_at: new Date(Date.now() - i * 86400000).toISOString(),
+      owner_id: `owner-${i}`,
+      ownerNickname: ['maya', 'theo', 'ines', 'bruno'][i % 4],
+      memberCount: group.memberCount,
+      itemCount: group.itemCount,
+      isMember: i % 3 === 0,
+      requestStatus: (i % 5 === 1 ? 'pending' : null) as 'pending' | null,
+      typeCounts: mockTypeCounts(i, group.itemCount),
+      covers: group.itemCount > 0 ? mockCovers(i + 2, Math.min(5, group.itemCount)) : [],
+    }));
 }

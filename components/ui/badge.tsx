@@ -5,17 +5,17 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
 const badgeVariants = cva(
-  'inline-flex items-center border px-2 py-0.5 text-xs font-mono uppercase tracking-wider transition-colors focus:outline-none focus:ring-1 focus:ring-amber-500',
+ 'inline-flex h-[22px] items-center gap-1 rounded-[var(--radius-sm)] border px-2 text-[11.5px] font-medium leading-none transition-colors focus:outline-none focus:ring-1 focus:ring-stone-50/60 [&_svg]:size-3',
   {
     variants: {
       variant: {
-        default: 'border-transparent bg-amber-600/20 text-amber-300 hover:bg-amber-600/30',
-        secondary: 'border-transparent bg-stone-700 text-stone-300 hover:bg-stone-600',
-        destructive: 'border-transparent bg-red-900/50 text-red-300 hover:bg-red-900/70',
-        outline: 'border-stone-600 text-stone-300 hover:bg-stone-800',
-        tag: 'border-stone-600 bg-stone-800/50 text-stone-300 hover:bg-stone-700 cursor-pointer',
-        public: 'border-emerald-700/50 bg-emerald-900/30 text-emerald-300',
-        private: 'border-stone-600 bg-stone-800/30 text-stone-400',
+        default: 'border-transparent bg-amber-500/15 text-amber-300 hover:bg-amber-500/25',
+        secondary: 'border-transparent bg-stone-700 text-stone-200 hover:bg-stone-600',
+        destructive: 'border-transparent bg-red-500/15 text-red-300 hover:bg-red-500/25',
+        outline: 'border-stone-700 text-stone-300 hover:bg-stone-800',
+        tag: 'cursor-pointer border-transparent bg-stone-800 text-stone-300 hover:bg-stone-700',
+        public: 'border-transparent bg-emerald-500/15 text-emerald-300',
+        private: 'border-transparent bg-stone-800 text-stone-400',
       },
     },
     defaultVariants: {

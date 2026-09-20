@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { DiscoverList } from '@/components/features/groups/DiscoverList';
-import type { JoinRequestStatus } from '@/types';
+import type { JoinRequestStatus, MediaType } from '@/types';
 
 export default async function DiscoverPage() {
   const supabase = await createClient();
@@ -36,9 +36,22 @@ export default async function DiscoverPage() {
     groupIds.length
       ? supabase.from('group_members').select('group_id').in('group_id', groupIds)
       : Promise.resolve({ data: [] as Array<{ group_id: string }> }),
+    // The same rows carry the count, the composition and the covers each card
+    // wears, so none of that costs an extra query.
     groupIds.length
-      ? supabase.from('media_items').select('group_id').in('group_id', groupIds)
-      : Promise.resolve({ data: [] as Array<{ group_id: string }> }),
+      ? supabase
+          .from('media_items')
+          .select('group_id, type, image_url, created_at')
+          .in('group_id', groupIds)
+          .order('created_at', { ascending: false })
+      : Promise.resolve({
+          data: [] as Array<{
+            group_id: string;
+            type: MediaType;
+            image_url: string | null;
+            created_at: string;
+          }>,
+        }),
     ownerIds.length
       ? supabase.from('profiles').select('id, nickname').in('id', ownerIds)
       : Promise.resolve({ data: [] as Array<{ id: string; nickname: string }> }),
@@ -55,8 +68,22 @@ export default async function DiscoverPage() {
   }
 
   const itemCounts = new Map<string, number>();
+  const typeCountsByGroup = new Map<string, Record<MediaType, number>>();
+  const coversByGroup = new Map<string, string[]>();
   for (const row of itemRows ?? []) {
     itemCounts.set(row.group_id, (itemCounts.get(row.group_id) ?? 0) + 1);
+
+    const perGroup =
+      typeCountsByGroup.get(row.group_id) ??
+      ({ movie: 0, tv_series: 0, book: 0, video_game: 0 } as Record<MediaType, number>);
+    if (row.type in perGroup) perGroup[row.type as MediaType] += 1;
+    typeCountsByGroup.set(row.group_id, perGroup);
+
+    if (row.image_url) {
+      const covers = coversByGroup.get(row.group_id) ?? [];
+      if (covers.length < 5) covers.push(row.image_url);
+      coversByGroup.set(row.group_id, covers);
+    }
   }
 
   const ownerNicknames = new Map((ownerProfiles ?? []).map((p) => [p.id, p.nickname]));
@@ -68,6 +95,10 @@ export default async function DiscoverPage() {
     isMember: joinedSet.has(g.id),
     requestStatus: joinedSet.has(g.id) ? null : (requestStatusMap.get(g.id) ?? null),
     ownerNickname: ownerNicknames.get(g.owner_id) ?? null,
+    typeCounts:
+      typeCountsByGroup.get(g.id) ??
+      ({ movie: 0, tv_series: 0, book: 0, video_game: 0 } as Record<MediaType, number>),
+    covers: coversByGroup.get(g.id) ?? [],
   }));
 
   return <DiscoverList groups={enrichedGroups} isAuthenticated={!!user} />;

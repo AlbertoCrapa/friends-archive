@@ -323,7 +323,7 @@ export function GroupArchiveData({ group, userId }: Props) {
 
             <div className="space-y-5 overflow-y-auto max-h-[65vh] pr-1">
               <section className="space-y-2">
-                <h3 className="font-mono text-xs uppercase tracking-[0.2em] text-stone-500">Rules</h3>
+                <h3 className="font-mono text-xs text-stone-500">Rules</h3>
                 <ul className="space-y-2 text-sm text-stone-400 font-light leading-relaxed list-disc pl-5">
                   <li>
                     The file is a single JSON object with an <code className="text-stone-200">items</code> array.
@@ -357,7 +357,7 @@ export function GroupArchiveData({ group, userId }: Props) {
               </section>
 
               <section className="space-y-2">
-                <h3 className="font-mono text-xs uppercase tracking-[0.2em] text-stone-500">
+                <h3 className="font-mono text-xs text-stone-500">
                   Metadata keys per type
                 </h3>
                 <div className="border border-stone-800/50">
@@ -376,7 +376,7 @@ export function GroupArchiveData({ group, userId }: Props) {
               </section>
 
               <section className="space-y-2">
-                <h3 className="font-mono text-xs uppercase tracking-[0.2em] text-stone-500">How merging works</h3>
+                <h3 className="font-mono text-xs text-stone-500">How merging works</h3>
                 <p className="text-sm text-stone-400 font-light leading-relaxed">
                   An imported item with the same title (case-insensitive) and the same type as an existing one is never
                   duplicated. Instead, it fills in details the existing item is missing: an empty genre or absent
@@ -386,7 +386,7 @@ export function GroupArchiveData({ group, userId }: Props) {
               </section>
 
               <section className="space-y-2">
-                <h3 className="font-mono text-xs uppercase tracking-[0.2em] text-stone-500">Example</h3>
+                <h3 className="font-mono text-xs text-stone-500">Example</h3>
                 <pre className="border border-stone-800/50 bg-[var(--color-surface)] p-4 overflow-x-auto text-[11px] leading-relaxed font-mono text-stone-300">
                   {EXAMPLE_JSON}
                 </pre>

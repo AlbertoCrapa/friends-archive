@@ -17,7 +17,7 @@ export function RequestAccessPanel({ groupId, requestStatus }: Props) {
   if (requestStatus === 'pending') {
     return (
       <div className="flex items-center gap-3 flex-wrap">
-        <span className="inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-wider text-stone-500">
+        <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-stone-500">
           <Clock className="h-3 w-3" />
           Access requested — waiting for the owner
         </span>
@@ -31,7 +31,7 @@ export function RequestAccessPanel({ groupId, requestStatus }: Props) {
   if (requestStatus === 'declined') {
     return (
       <div className="flex items-center gap-3 flex-wrap">
-        <span className="font-mono text-[11px] uppercase tracking-wider" style={{ color: 'oklch(0.6 0.18 15)' }}>
+        <span className="font-mono text-[11px]" style={{ color: '#e5484d' }}>
           Your request was declined
         </span>
         <form action={requestGroupAccess.bind(null, groupId)}>

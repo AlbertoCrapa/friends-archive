@@ -1,46 +1,98 @@
 /* Google Fonts Import - must be first */
-@import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,200..800&display=swap");
 
 @import "tailwindcss";
 
-/* THE FRIEND ARCHIVE - Design System Tokens */
+/* ============================================================================
+   THE FRIEND ARCHIVE — Design System Tokens
+   ----------------------------------------------------------------------------
+   The whole app runs on the React Bits micro-interaction skin: near-black
+   ground, #27272a surfaces, #3f3f46 for anything raised or ruled, #f5f5f5 ink
+   stepped down with opacity rather than extra greys, gold #f5b400 wherever a
+   rating is involved, #22c55e for done and #e5484d for destructive. Radii are
+   6 / 10 / 16 and every easing is cubic-bezier(0.23, 1, 0.32, 1).
+
+   Tailwind's stone / amber / emerald scales are REMAPPED below onto that
+   system, so the hundreds of `bg-stone-800` and `text-amber-500` already in
+   the codebase render in the new skin without being rewritten one by one.
+   Reach for the semantic --color-* variables in new code.
+   ========================================================================= */
+
 @theme {
-  --font-serif: "Cormorant Garamond", Georgia, "Times New Roman", serif;
-  --font-mono:
-    "JetBrains Mono", ui-monospace, "Cascadia Code", "Source Code Pro", Menlo,
-    Consolas, monospace;
-  --font-sans: "JetBrains Mono", system-ui, sans-serif;
+  --font-sans: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+
+  /* Surfaces and ink: zinc, tuned to the component defaults. */
+  --color-stone-50: #fafafa;
+  --color-stone-100: #f5f5f5;
+  --color-stone-200: #e4e4e7;
+  --color-stone-300: #d4d4d8;
+  --color-stone-400: #a1a1aa;
+  --color-stone-500: #71717a;
+  --color-stone-600: #52525b;
+  --color-stone-700: #3f3f46;
+  --color-stone-800: #27272a;
+  --color-stone-900: #18181b;
+  --color-stone-950: #0b0b0f;
+
+  /* Ratings and anything that wants attention: gold. */
+  --color-amber-200: #ffe4a3;
+  --color-amber-300: #ffd166;
+  --color-amber-400: #f5a524;
+  --color-amber-500: #f5b400;
+  --color-amber-600: #d69b00;
+  --color-amber-700: #a87a00;
+  --color-amber-800: #7a5900;
+  --color-amber-900: #4a3600;
+  --color-amber-950: #241a00;
+
+  /* Done / finished. */
+  --color-emerald-100: #dcfce7;
+  --color-emerald-300: #86efac;
+  --color-emerald-400: #4ade80;
+  --color-emerald-500: #22c55e;
+  --color-emerald-600: #16a34a;
+  --color-emerald-700: #15803d;
+  --color-emerald-900: #14532d;
+  --color-emerald-950: #052e16;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
 }
 
 :root {
-  /* Color system */
-  --color-background: #0c0a09;
-  --color-surface: #11110f;
-  --color-surface-elevated: #1a1917;
-  --color-border: #2c2926;
-  --color-text-primary: #f2f0ec;
-  --color-text-secondary: #c5bfb4;
-  --color-text-muted: #8a837a;
-  --color-accent: #d97706;
-  --color-accent-hover: #f59e0b;
-  --color-destructive: #ef4444;
-  --color-success: #34d399;
-  --color-warning: #f59e0b;
+  /* Semantic colour system */
+  --color-background: #0b0b0f;
+  --color-surface: #18181b;
+  --color-surface-elevated: #27272a;
+  --color-raised: #3f3f46;
+  --color-border: #3f3f46;
+  --color-text-primary: #f5f5f5;
+  --color-text-secondary: #a1a1aa;
+  --color-text-muted: #71717a;
+  --color-accent: #f5b400;
+  --color-accent-hover: #ffc42a;
+  --color-on-accent: #18181b;
+  --color-destructive: #e5484d;
+  --color-success: #22c55e;
+  --color-warning: #f5a524;
 
   /* Type scale */
   --text-xs: 0.75rem;
   --text-sm: 0.875rem;
-  --text-base: 1rem;
-  --text-lg: 1.125rem;
+  --text-base: 0.9375rem;
+  --text-lg: 1.0625rem;
   --text-xl: 1.25rem;
   --text-2xl: 1.5rem;
   --text-3xl: 1.875rem;
   --text-4xl: 2.25rem;
   --text-5xl: 3rem;
 
-  --lh-tight: 1.25;
-  --lh-normal: 1.5;
-  --lh-relaxed: 1.65;
+  --lh-tight: 1.15;
+  --lh-normal: 1.45;
+  --lh-relaxed: 1.6;
 
   /* Spacing rhythm */
   --space-1: 0.25rem;
@@ -54,22 +106,45 @@
   --space-12: 3rem;
   --space-16: 4rem;
 
-  /* Radius */
-  --radius-sm: 0.375rem;
-  --radius-md: 0.625rem;
-  --radius-lg: 0.875rem;
+  /* Radius: control / card / row */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
 
   /* Elevation */
-  --shadow-1: 0 2px 8px rgba(0, 0, 0, 0.25);
-  --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.32);
-  --shadow-3: 0 14px 38px rgba(0, 0, 0, 0.42);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-2: 0 8px 24px -8px rgba(0, 0, 0, 0.45);
+  --shadow-3: 0 16px 40px -12px rgba(0, 0, 0, 0.7);
 
   /* Motion */
   --duration-fast: 140ms;
-  --duration-standard: 220ms;
+  --duration-standard: 200ms;
   --duration-slow: 320ms;
-  --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
-  --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-emphasized: cubic-bezier(0.23, 1, 0.32, 1);
+
+  /* Artwork under the pointer drifts, it does not zoom. A drift is a small
+     distance over a long time on a curve with no snap at either end, so it
+     reads as the picture breathing rather than as the card reacting. Anything
+     that moves a cover — a poster, a collage band — uses these two. */
+  --duration-drift: 620ms;
+  --ease-drift: cubic-bezier(0.33, 0, 0.2, 1);
+
+  /* Chart series — the one categorical dimension in this product is the kind
+     of thing an item is, so those four get fixed hues and keep them on every
+     surface. Chosen against the #18181b panel and checked with the CVD/contrast
+     validator: worst adjacent pair ΔE 11.3 (protan), tritan 8.7, all four
+     inside the dark lightness band and over 3:1 on the panel. Do not re-pick
+     one of these by eye — re-run the validator on the whole set. */
+  --chart-movie: #cb8313;
+  --chart-tv_series: #129483;
+  --chart-video_game: #2c99f8;
+  --chart-book: #d765b6;
+  /* Single-measure charts carry no identity in colour: length is the encoding.
+     Progress is green, volume is gold, and nothing else is coloured. */
+  --chart-progress: #22c55e;
+  --chart-volume: #f5b400;
+  --chart-grid: #27272a;
 
   /* Layering */
   --z-nav: 40;
@@ -77,7 +152,21 @@
   --z-dropdown: 70;
   --z-toast: 80;
 
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
+  /*
+   * Optical sizing, unpinned.
+   *
+   * Bricolage Grotesque carries an `opsz` axis from 12 to 96, and this line
+   * used to hold it at 14 for every element on every page — so a 96px headline
+   * was the TEXT drawing of the face enlarged, which is exactly the flat,
+   * anonymous look any grotesque has when it is merely scaled up. The axis
+   * exists so that does not have to happen: `auto` hands each element the cut
+   * that was drawn for the size it actually renders at, tightening the joins
+   * and closing the counters as the type grows. Pin it only where a particular
+   * cut is wanted at a size that would not otherwise ask for it.
+   */
+  font-optical-sizing: auto;
+  font-variant-numeric: tabular-nums;
   line-height: var(--lh-relaxed);
   font-weight: 400;
   color: var(--color-text-primary);
@@ -88,24 +177,61 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/*
+ * The gutter, reserved once and for all.
+ *
+ * `scrollbar-gutter` is INERT while a box's overflow is `visible`, which is the
+ * initial value on <html> — so the declaration on its own did nothing and every
+ * navigation between a page that scrolls and one that does not moved the whole
+ * layout sideways, header included. Setting overflow-y makes the property
+ * apply. Engines that predate it (Safari before 18.2) get a permanent
+ * scrollbar instead, which reserves the same space by other means.
+ */
 html {
+  overflow-y: auto;
   scrollbar-gutter: stable;
 }
 
+@supports not (scrollbar-gutter: stable) {
+  html {
+    overflow-y: scroll;
+  }
+}
+
 /*
- * Scroll-lock compensation, cancelled.
+ * Scroll-lock, moved off the body.
  *
- * Radix (via react-remove-scroll) locks the body whenever a dropdown, dialog or
- * popover opens, and compensates for the scrollbar it *assumes* disappears by
- * pushing `margin-right: <scrollbar>px !important` onto the body. Our gutter is
- * permanently reserved by `scrollbar-gutter: stable` above, so nothing ever
- * disappears — that margin is pure double-counting and shifts the whole page
- * sideways every time a select opens and back when it closes. Zero it out; the
- * lock itself (overflow: hidden) still works.
+ * Radix (via react-remove-scroll) locks scrolling by putting `overflow: hidden`
+ * on the BODY, which has a side effect nothing in that library can know about:
+ * it turns the body into a scroll container, and `position: sticky` sticks to
+ * its nearest scroll container. Every sticky bar in the app — the header, the
+ * archive toolbar — therefore stopped sticking to the viewport the instant any
+ * menu opened, dropped back to its static place in the document, and scrolled
+ * out of sight. Opening an overflow menu halfway down a list made the whole top
+ * of the page disappear.
+ *
+ * So the lock is moved up to the root element, which is the scrollport the
+ * sticky bars were already measured against: it clamps scrolling exactly the
+ * same way, keeps the current offset, and leaves every sticky bar exactly where
+ * it was.
+ *
+ * The margin/padding compensation is cancelled in the same breath: it exists to
+ * replace a scrollbar that is *about* to disappear, and ours never does —
+ * `scrollbar-gutter: stable` above reserves that strip permanently. Left in, it
+ * double-counts and shoves the page sideways on every open.
  */
-body[data-scroll-locked] {
+/* `html body[…]` rather than `body[…]`: react-remove-scroll injects a rule with
+   the very same selector and `overflow: hidden !important` into <head> at
+   runtime, so an equal-specificity rule loses on document order however
+   important it is. One extra element in the selector settles it. */
+html body[data-scroll-locked] {
+  overflow: visible !important;
   margin-right: 0 !important;
   padding-right: 0 !important;
+}
+
+html:has(body[data-scroll-locked]) {
+  overflow: hidden;
 }
 
 /*
@@ -127,32 +253,204 @@ body {
   background-color: var(--color-background);
 }
 
+/*
+ * One size for the top of every page.
+ *
+ * "My archives", "Discover" and a group's name are the same rank and should
+ * look it — three hand-tuned sizes made three different pages. Big enough that
+ * nothing below it competes, which is the whole job of the line.
+ */
+@layer components {
+  .page-title {
+    font-size: 2rem;
+    line-height: 1.06;
+    font-weight: 600;
+    letter-spacing: -0.035em;
+    font-variation-settings: "opsz" 64;
+    color: var(--color-text-primary);
+    text-wrap: balance;
+  }
+
+  @media (min-width: 640px) {
+    .page-title {
+      font-size: 2.5rem;
+    }
+  }
+
+  /* ==========================================================================
+     DISPLAY TYPOGRAPHY
+     --------------------------------------------------------------------------
+     One idea, applied in both directions: the larger type gets, the NARROWER
+     and TIGHTER it is set; the smaller it gets, the WIDER and more spaced. A
+     headline is read as a shape, a label is read letter by letter, and they
+     want opposite treatment. Bricolage gives us the axes to say so — `wdth`
+     75→100 and `opsz` 12→96 — instead of leaving everything at one width and
+     changing only the font-size.
+
+     The weights run HEAVIER than a light-on-dark page instinctively wants.
+     Pale type on a near-black ground blooms: strokes optically fatten and
+     then wash out, so a 300 that looks elegant on white looks washed out and
+     characterless here. Nothing on these surfaces sits below 400 at reading
+     size, and the hairline weights are reserved for sizes big enough to carry
+     them.
+     ========================================================================== */
+
+  /* The top of a page: as tight and as narrow as the face will go. */
+  .type-display {
+    font-variation-settings: "opsz" 96, "wdth" 86, "wght" 500;
+    letter-spacing: -0.045em;
+    line-height: 0.9;
+    text-wrap: balance;
+  }
+
+  /* Its counterweight, for the second half of a two-part line: same size, but
+     wide open and drawn with a hairline, so the contrast between the two is
+     structural rather than a change of colour. */
+  .type-display-open {
+    font-variation-settings: "opsz" 96, "wdth" 100, "wght" 250;
+    letter-spacing: -0.01em;
+  }
+
+  /* Section heads. */
+  .type-head {
+    font-variation-settings: "opsz" 72, "wdth" 92, "wght" 500;
+    letter-spacing: -0.035em;
+    line-height: 1;
+    text-wrap: balance;
+  }
+
+  .type-head-open {
+    font-variation-settings: "opsz" 72, "wdth" 100, "wght" 250;
+    letter-spacing: -0.005em;
+  }
+
+  /* The other end: small, wide, spaced, upright. */
+  .type-label {
+    font-variation-settings: "opsz" 12, "wdth" 100, "wght" 600;
+    font-size: 0.6875rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    line-height: 1;
+  }
+
+  /* ==========================================================================
+     THE WORDMARK
+     --------------------------------------------------------------------------
+     The logo is two rings that overlap with a diamond in the shared middle.
+     The name is set to say the same thing: FRIEND drawn narrow and heavy so
+     the letters crowd together, ARCHIVE drawn wide and light so they stand
+     apart, and the diamond sitting exactly on the join between them. Two
+     words, opposite settings, one shared point — which is both a lockup you
+     could not mistake for default type and, as it happens, the product.
+
+     Everything scales off `--wm`, so the same mark serves a 56px top bar and
+     a hero.
+     ========================================================================== */
+
+  .wordmark {
+    --wm: 1.0625rem;
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+    line-height: 1;
+  }
+
+  .wordmark-the {
+    font-size: calc(var(--wm) * 0.5);
+    font-variation-settings: "opsz" 12, "wdth" 100, "wght" 600;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    margin-right: calc(var(--wm) * 0.34);
+    transition: color var(--duration-standard) var(--ease-standard);
+  }
+
+  .wordmark-tight {
+    font-size: var(--wm);
+    font-variation-settings: "opsz" 96, "wdth" 82, "wght" 700;
+    letter-spacing: -0.025em;
+    text-transform: uppercase;
+    color: var(--color-text-primary);
+  }
+
+  .wordmark-open {
+    font-size: var(--wm);
+    font-variation-settings: "opsz" 96, "wdth" 100, "wght" 300;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+    transition: color var(--duration-standard) var(--ease-standard);
+  }
+
+  /* The shared middle. Rotated square rather than a glyph, so it lines up with
+     the cap height at every size instead of wherever a font puts its lozenge. */
+  .wordmark-pivot {
+    width: calc(var(--wm) * 0.26);
+    height: calc(var(--wm) * 0.26);
+    margin: 0 calc(var(--wm) * 0.3);
+    rotate: 45deg;
+    flex: none;
+    background: var(--color-accent);
+    transition: scale var(--duration-standard) var(--ease-standard);
+    scale: 1;
+  }
+
+  a:hover > .wordmark .wordmark-open,
+  a:hover > .wordmark .wordmark-the {
+    color: var(--color-text-primary);
+  }
+
+  a:hover > .wordmark .wordmark-pivot {
+    scale: 1.35;
+  }
+}
+
+@layer base {
+  /*
+   * Headings tighten up as a default — and do it from inside `base`, where a
+   * utility can still argue. Unlayered, this rule beat `tracking-tight` and
+   * every other spacing utility no matter what the markup asked for (an
+   * unlayered declaration wins over a layered one regardless of specificity),
+   * which is why headings all over the app looked untuned however they were
+   * marked up. The optical size is gone from here entirely: it now follows the
+   * rendered size on its own.
+   */
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.025em;
+    line-height: var(--lh-tight);
+  }
+}
+
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--color-surface);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #4e4a45;
-  border-radius: 0;
+  background: var(--color-raised);
+  border-radius: 999px;
+  border: 3px solid var(--color-background);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #635d56;
+  background: #52525b;
 }
 
 ::selection {
   background-color: var(--color-accent);
-  color: var(--color-background);
+  color: var(--color-on-accent);
 }
 
 :focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--color-accent) 85%, white 15%);
+  outline: 2px solid color-mix(in srgb, #fafafa 70%, transparent);
   outline-offset: 2px;
+  border-radius: var(--radius-sm);
 }
 
 @keyframes fadeIn {
@@ -251,31 +549,45 @@ body {
   animation-delay: 350ms;
 }
 
-tr {
-  transition: background-color var(--duration-fast) var(--ease-standard);
-}
+/*
+ * Element defaults belong in @layer base.
+ *
+ * An UNLAYERED rule beats every layered one no matter how specific the layered
+ * one is — so a bare `a { transition: color 140ms }` was quietly winning against
+ * `transition-transform duration-[450ms]` on every link in the app. The utility
+ * set the property, the base rule took it back, and every card hover that lifts
+ * or scales snapped instead of moving. In the base layer these are what they
+ * were always meant to be: defaults a utility can overrule.
+ */
+@layer base {
+  tr {
+    transition: background-color var(--duration-fast) var(--ease-standard);
+  }
 
-button:active:not(:disabled) {
-  transform: translateY(1px);
-}
+  /* Every press in the component set answers with a squeeze, not a nudge. */
+  button:active:not(:disabled) {
+    transform: scale(0.97);
+  }
 
-a {
-  color: var(--color-accent);
-  text-decoration: none;
-  transition: color var(--duration-fast) var(--ease-standard);
-}
+  a {
+    color: var(--color-text-primary);
+    text-decoration: none;
+    transition: color var(--duration-fast) var(--ease-standard);
+  }
 
-a:hover {
-  color: var(--color-accent-hover);
-}
+  a:hover {
+    color: var(--color-accent);
+  }
 
-input::placeholder {
-  color: var(--color-text-muted);
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-text-muted);
+  }
 }
 
 *:disabled {
   cursor: not-allowed;
-  opacity: 0.55;
+  opacity: 0.5;
 }
 
 .skeleton-shimmer {
@@ -290,9 +602,27 @@ input::placeholder {
 }
 
 .surface-card {
-  background-color: var(--color-surface);
-  border: 1px solid color-mix(in srgb, var(--color-border) 78%, transparent 22%);
+  background-color: var(--color-surface-elevated);
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-1);
+}
+
+/* Controls are 32-36px on a desk, where a cursor is exact. Under a finger the
+   library's own components grow to 44px, and so does anything wearing this. */
+@media (pointer: coarse) {
+  .ui-touch {
+    min-height: 44px;
+  }
+}
+
+/* A label in this system is small, plain and quiet. It is never tracked-out
+   capitals: the type does the work through size and weight instead. */
+.label-quiet {
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  color: var(--color-text-muted);
 }
 
 @media (prefers-reduced-motion: reduce) {
