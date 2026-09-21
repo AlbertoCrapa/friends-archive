@@ -13,10 +13,11 @@ import { FormBanner } from '@/components/ui/form-banner';
 import { useToast } from '@/components/ui/toast';
 import {
   Dialog,
-  DialogContent,
-  DialogHeader,
+  DialogSheetBody,
+  DialogSheetContent,
+  DialogSheetFooter,
+  DialogSheetHeader,
   DialogTitle,
-  DialogFooter,
   DialogTrigger,
 } from '@/components/ui/dialog';
 import {
@@ -385,264 +386,273 @@ export function AddMediaDialog({
           </Button>
         </DialogTrigger>
       )}
-      <DialogContent className="max-w-md sm:max-w-md w-full">
-        <DialogHeader>
+      {/* Shaped like the item sheet: on a phone it rises from the bottom edge
+          and the form scrolls inside it, so the fields a TV series or a linked
+          work adds can never push the submit button off the screen. */}
+      <DialogSheetContent open={open} onDismiss={() => setOpen(false)}>
+        <DialogSheetHeader>
           <DialogTitle>Add an item</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Always shown. Defaults to the filter tab you opened it from, but
-              remains changeable so any type can be added from any section. */}
-          <div className="space-y-2">
-            <Label htmlFor="type">Type</Label>
-            <Select
-              value={type}
-              onValueChange={(value) => {
-                setType(value as MediaType);
-                // Switching type starts fresh: clear the title and every
-                // type-specific field so nothing carries over from the old type.
-                setTitle('');
-                setDirector('');
-                setCreator('');
-                setAuthor('');
-                setDeveloper('');
-                setReleaseYear('');
-                setSeasons('');
-                setDurationMinutes('');
-                setPlatform('');
-                setTags([]);
-                resetExternalLink();
-              }}
-            >
-              <SelectTrigger id="type">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="movie">Movie</SelectItem>
-                <SelectItem value="tv_series">TV Series</SelectItem>
-                <SelectItem value="book">Book</SelectItem>
-                <SelectItem value="video_game">Game</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="title">Title</Label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-stone-500 pointer-events-none" />
-              <Input
-                id="title"
-                value={title}
-                onChange={(e) => handleTitleChange(e.target.value)}
-                placeholder="Search a title…"
-                className="pl-9 pr-9"
-                autoComplete="off"
-                required
-              />
-              {searching && (
-                <Spinner className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5" />
-              )}
-
-              {/* Suggestions dropdown */}
-              {showSuggestions && suggestions.length > 0 && (
-                <div className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto border border-stone-700 bg-stone-950 shadow-lg">
-                  {suggestions.map((work) => (
-                    <button
-                      key={work.external_id}
-                      type="button"
-                      onClick={() => selectWork(work)}
-                      className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-stone-900 transition-colors cursor-pointer border-b border-stone-800/60 last:border-b-0"
-                    >
-                      <MediaPoster
-                        src={work.thumb_url ?? work.image_url}
-                        type={work.type}
-                        size="xs"
-                      />
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm text-stone-100">{work.title}</span>
-                        {work.subtitle && (
-                          <span className="block truncate text-[11px] font-mono text-stone-500">
-                            {work.subtitle}
-                          </span>
-                        )}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Linked / manual / unavailable hint line */}
-            {externalId ? (
-              /* Linked: show what was actually captured — artwork included — so
-                 the poster is confirmed here rather than being a surprise in the
-                 list after saving. */
-              <div className="flex items-start gap-3 border border-stone-800/60 bg-stone-900/30 p-2">
-                <MediaPoster src={imageUrl} type={type} size="lg" />
-                <div className="min-w-0 flex-1 space-y-1 text-[11px] font-mono">
-                  <span className="flex items-center gap-1 text-amber-500/90">
-                    <Link2 className="h-3 w-3" />
-                    Linked to {externalSource}
-                  </span>
-                  {imageUrl ? (
-                    <>
-                      <p className="text-stone-500">Artwork from {externalSource}</p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDroppedImage(imageUrl);
-                          setImageUrl(null);
-                        }}
-                        className="text-stone-600 underline decoration-dotted underline-offset-2 hover:text-stone-300 cursor-pointer"
-                      >
-                        Remove artwork
-                      </button>
-                    </>
-                  ) : droppedImage ? (
-                    <>
-                      <p className="text-stone-600">Artwork removed</p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setImageUrl(droppedImage);
-                          setDroppedImage(null);
-                        }}
-                        className="text-stone-500 underline decoration-dotted underline-offset-2 hover:text-amber-500 cursor-pointer"
-                      >
-                        Restore artwork
-                      </button>
-                    </>
-                  ) : (
-                    <p className="text-stone-600">No artwork available</p>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={resetExternalLink}
-                  className="inline-flex items-center gap-1 text-[11px] font-mono text-stone-500 hover:text-stone-300 cursor-pointer"
-                >
-                  <X className="h-3 w-3" />
-                  Unlink
-                </button>
-              </div>
-            ) : limitReached ? (
-              <p className="text-[11px] font-mono text-amber-500/80">
-                Search limit reached for this item — please add it manually.
-              </p>
-            ) : searchFailed ? (
-              <p className="text-[11px] font-mono text-stone-500">
-                Search unavailable — you can still add this manually.
-              </p>
-            ) : searching ? (
-              <p className="text-[11px] font-mono text-stone-500">Searching…</p>
-            ) : (
-              title.trim().length >= 1 &&
-              suggestions.length === 0 && (
-                <p className="text-[11px] font-mono text-stone-500">
-                  No matches — fill the details below to add it manually.
-                </p>
-              )
-            )}
-            {/* Games (RAWG) are on the scarcest shared quota — show what's left. */}
-            {type === 'video_game' && !externalId && callsRemaining <= 5 && (
-              <p className="text-[10px] font-mono text-stone-600">
-                {callsRemaining} game searches left for this item
-              </p>
-            )}
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        </DialogSheetHeader>
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          <DialogSheetBody className="space-y-4">
+            {/* Always shown. Defaults to the filter tab you opened it from, but
+                remains changeable so any type can be added from any section. */}
             <div className="space-y-2">
-              <Label htmlFor="status">Status</Label>
-              <Select value={status} onValueChange={(v) => setStatus(v as ItemStatus)}>
-                <SelectTrigger id="status">
+              <Label htmlFor="type">Type</Label>
+              <Select
+                value={type}
+                onValueChange={(value) => {
+                  setType(value as MediaType);
+                  // Switching type starts fresh: clear the title and every
+                  // type-specific field so nothing carries over from the old type.
+                  setTitle('');
+                  setDirector('');
+                  setCreator('');
+                  setAuthor('');
+                  setDeveloper('');
+                  setReleaseYear('');
+                  setSeasons('');
+                  setDurationMinutes('');
+                  setPlatform('');
+                  setTags([]);
+                  resetExternalLink();
+                }}
+              >
+                <SelectTrigger id="type">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {statusOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                  ))}
+                  <SelectItem value="movie">Movie</SelectItem>
+                  <SelectItem value="tv_series">TV Series</SelectItem>
+                  <SelectItem value="book">Book</SelectItem>
+                  <SelectItem value="video_game">Game</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            {type === 'movie' && (
+
+            <div className="space-y-2">
+              <Label htmlFor="title">Title</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-stone-500 pointer-events-none" />
+                <Input
+                  id="title"
+                  value={title}
+                  onChange={(e) => handleTitleChange(e.target.value)}
+                  placeholder="Search a title…"
+                  className="pl-9 pr-9"
+                  autoComplete="off"
+                  required
+                />
+                {searching && (
+                  <Spinner className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5" />
+                )}
+
+                {/* Suggestions dropdown */}
+                {showSuggestions && suggestions.length > 0 && (
+                  <div className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto border border-stone-700 bg-stone-950 shadow-lg">
+                    {suggestions.map((work) => (
+                      <button
+                        key={work.external_id}
+                        type="button"
+                        onClick={() => selectWork(work)}
+                        className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-stone-900 transition-colors cursor-pointer border-b border-stone-800/60 last:border-b-0"
+                      >
+                        <MediaPoster
+                          src={work.thumb_url ?? work.image_url}
+                          type={work.type}
+                          size="xs"
+                        />
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm text-stone-100">{work.title}</span>
+                          {work.subtitle && (
+                            <span className="block truncate text-[11px] font-mono text-stone-500">
+                              {work.subtitle}
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Linked / manual / unavailable hint line */}
+              {externalId ? (
+                /* Linked: show what was actually captured — artwork included — so
+                   the poster is confirmed here rather than being a surprise in the
+                   list after saving. */
+                <div className="flex items-start gap-3 border border-stone-800/60 bg-stone-900/30 p-2">
+                  <MediaPoster src={imageUrl} type={type} size="lg" />
+                  <div className="min-w-0 flex-1 space-y-1 text-[11px] font-mono">
+                    <span className="flex items-center gap-1 text-amber-500/90">
+                      <Link2 className="h-3 w-3" />
+                      Linked to {externalSource}
+                    </span>
+                    {imageUrl ? (
+                      <>
+                        <p className="text-stone-500">Artwork from {externalSource}</p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDroppedImage(imageUrl);
+                            setImageUrl(null);
+                          }}
+                          className="text-stone-600 underline decoration-dotted underline-offset-2 hover:text-stone-300 cursor-pointer"
+                        >
+                          Remove artwork
+                        </button>
+                      </>
+                    ) : droppedImage ? (
+                      <>
+                        <p className="text-stone-600">Artwork removed</p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setImageUrl(droppedImage);
+                            setDroppedImage(null);
+                          }}
+                          className="text-stone-500 underline decoration-dotted underline-offset-2 hover:text-amber-500 cursor-pointer"
+                        >
+                          Restore artwork
+                        </button>
+                      </>
+                    ) : (
+                      <p className="text-stone-600">No artwork available</p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={resetExternalLink}
+                    className="inline-flex items-center gap-1 text-[11px] font-mono text-stone-500 hover:text-stone-300 cursor-pointer"
+                  >
+                    <X className="h-3 w-3" />
+                    Unlink
+                  </button>
+                </div>
+              ) : limitReached ? (
+                <p className="text-[11px] font-mono text-amber-500/80">
+                  Search limit reached for this item — please add it manually.
+                </p>
+              ) : searchFailed ? (
+                <p className="text-[11px] font-mono text-stone-500">
+                  Search unavailable — you can still add this manually.
+                </p>
+              ) : searching ? (
+                <p className="text-[11px] font-mono text-stone-500">Searching…</p>
+              ) : (
+                title.trim().length >= 1 &&
+                suggestions.length === 0 && (
+                  <p className="text-[11px] font-mono text-stone-500">
+                    No matches — fill the details below to add it manually.
+                  </p>
+                )
+              )}
+              {/* Games (RAWG) are on the scarcest shared quota — show what's left. */}
+              {type === 'video_game' && !externalId && callsRemaining <= 5 && (
+                <p className="text-[10px] font-mono text-stone-600">
+                  {callsRemaining} game searches left for this item
+                </p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label htmlFor="duration">Duration (min)</Label>
-                <Input id="duration" type="number" inputMode="numeric" value={durationMinutes} onChange={(e) => setDurationMinutes(e.target.value)} placeholder="optional" min="1" />
+                <Label htmlFor="status">Status</Label>
+                <Select value={status} onValueChange={(v) => setStatus(v as ItemStatus)}>
+                  <SelectTrigger id="status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {statusOptions.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {type === 'movie' && (
+                <div className="space-y-2">
+                  <Label htmlFor="duration">Duration (min)</Label>
+                  <Input id="duration" type="number" inputMode="numeric" value={durationMinutes} onChange={(e) => setDurationMinutes(e.target.value)} placeholder="optional" min="1" />
+                </div>
+              )}
+            </div>
+
+            {/* Type-specific metadata */}
+            {type === 'movie' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="director">Director(s)</Label>
+                  <Input id="director" value={director} onChange={(e) => setDirector(e.target.value)} placeholder="comma-separated" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="year">Year</Label>
+                  <Input id="year" type="number" inputMode="numeric" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} placeholder="2024" min="1888" max="2099" />
+                </div>
               </div>
             )}
-          </div>
 
-          {/* Type-specific metadata */}
-          {type === 'movie' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="director">Director(s)</Label>
-                <Input id="director" value={director} onChange={(e) => setDirector(e.target.value)} placeholder="comma-separated" />
+            {type === 'tv_series' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="creator">Creator(s)</Label>
+                  <Input id="creator" value={creator} onChange={(e) => setCreator(e.target.value)} placeholder="comma-separated" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="year">Year</Label>
+                  <Input id="year" type="number" inputMode="numeric" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} placeholder="2024" min="1900" max="2099" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="seasons">Seasons</Label>
+                  <Input id="seasons" type="number" inputMode="numeric" value={seasons} onChange={(e) => setSeasons(e.target.value)} placeholder="optional" min="1" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="platform">Platform</Label>
+                  <Input id="platform" value={platform} onChange={(e) => setPlatform(e.target.value)} placeholder="Netflix, HBO…" />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="year">Year</Label>
-                <Input id="year" type="number" inputMode="numeric" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} placeholder="2024" min="1888" max="2099" />
+            )}
+
+            {type === 'book' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="author">Author(s)</Label>
+                  <Input id="author" value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="comma-separated for several authors" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="year">Year</Label>
+                  <Input id="year" type="number" inputMode="numeric" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} placeholder="optional" min="1000" max="2099" />
+                </div>
               </div>
+            )}
+
+            {type === 'video_game' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="developer">Developer(s)</Label>
+                  <Input id="developer" value={developer} onChange={(e) => setDeveloper(e.target.value)} placeholder="comma-separated" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="year">Year</Label>
+                  <Input id="year" type="number" inputMode="numeric" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} placeholder="optional" min="1950" max="2099" />
+                </div>
+              </div>
+            )}
+
+            {/* Tags last: full-width so the chips have the whole dialog to grow into. */}
+            <div className="space-y-2">
+              <Label htmlFor="tags">Tags</Label>
+              <TagInput id="tags" value={tags} onChange={setTags} placeholder="anime, rpg, co-op…" />
             </div>
-          )}
 
-          {type === 'tv_series' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="creator">Creator(s)</Label>
-                <Input id="creator" value={creator} onChange={(e) => setCreator(e.target.value)} placeholder="comma-separated" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="year">Year</Label>
-                <Input id="year" type="number" inputMode="numeric" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} placeholder="2024" min="1900" max="2099" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="seasons">Seasons</Label>
-                <Input id="seasons" type="number" inputMode="numeric" value={seasons} onChange={(e) => setSeasons(e.target.value)} placeholder="optional" min="1" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="platform">Platform</Label>
-                <Input id="platform" value={platform} onChange={(e) => setPlatform(e.target.value)} placeholder="Netflix, HBO…" />
-              </div>
-            </div>
-          )}
+            {error && <FormBanner message={error} variant="error" />}
+          </DialogSheetBody>
 
-          {type === 'book' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="author">Author(s)</Label>
-                <Input id="author" value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="comma-separated for several authors" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="year">Year</Label>
-                <Input id="year" type="number" inputMode="numeric" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} placeholder="optional" min="1000" max="2099" />
-              </div>
-            </div>
-          )}
-
-          {type === 'video_game' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="developer">Developer(s)</Label>
-                <Input id="developer" value={developer} onChange={(e) => setDeveloper(e.target.value)} placeholder="comma-separated" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="year">Year</Label>
-                <Input id="year" type="number" inputMode="numeric" value={releaseYear} onChange={(e) => setReleaseYear(e.target.value)} placeholder="optional" min="1950" max="2099" />
-              </div>
-            </div>
-          )}
-
-          {/* Tags last: full-width so the chips have the whole dialog to grow into. */}
-          <div className="space-y-2">
-            <Label htmlFor="tags">Tags</Label>
-            <TagInput id="tags" value={tags} onChange={setTags} placeholder="anime, rpg, co-op…" />
-          </div>
-
-          {error && <FormBanner message={error} variant="error" />}
-
-          <DialogFooter>
-            <Button type="submit" disabled={loading || searching || enriching}>
+          <DialogSheetFooter>
+            <Button
+              type="submit"
+              className="w-full md:w-auto"
+              disabled={loading || searching || enriching}
+            >
               {loading ? (
                 <span className="inline-flex items-center gap-2">
                   <Spinner />
@@ -657,9 +667,9 @@ export function AddMediaDialog({
                 'Add item'
               )}
             </Button>
-          </DialogFooter>
+          </DialogSheetFooter>
         </form>
-      </DialogContent>
+      </DialogSheetContent>
     </Dialog>
   );
 }
