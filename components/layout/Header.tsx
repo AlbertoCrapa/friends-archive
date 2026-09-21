@@ -13,7 +13,8 @@ import { JoinRequestsBell } from '@/components/features/groups/JoinRequestsBell'
 import { PrimaryNavButton } from '@/components/layout/PrimaryNavButton';
 import { Wordmark } from '@/components/layout/Wordmark';
 import { SignOutMenuItem } from '@/components/layout/SignOutMenuItem';
-import { User } from 'lucide-react';
+import { requireAdmin } from '@/lib/admin';
+import { Gauge, User } from 'lucide-react';
 import type { PendingJoinRequest, AcceptedJoinRequest } from '@/types';
 
 // How long an "accepted" notification stays in the bell after the owner
@@ -35,6 +36,9 @@ export async function Header() {
   let nickname: string | null = null;
   let pendingRequests: PendingJoinRequest[] = [];
   let acceptedRequests: AcceptedJoinRequest[] = [];
+  // The only way into /admin from inside the app. Everyone else's menu has no
+  // idea the page exists, and the page itself 404s for them regardless.
+  const isAdmin = user ? (await requireAdmin()) !== null : false;
   if (user) {
     const { data: profile } = await supabase
       .from('profiles')
@@ -118,6 +122,14 @@ export async function Header() {
                     <Link href={`/profile/${nickname}`} className="flex items-center gap-2 cursor-pointer">
                       <User className="h-3 w-3" />
                       Profile
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                {isAdmin && (
+                  <DropdownMenuItem asChild>
+                    <Link href="/admin" className="flex items-center gap-2 cursor-pointer">
+                      <Gauge className="h-3 w-3" />
+                      API usage
                     </Link>
                   </DropdownMenuItem>
                 )}

@@ -2,7 +2,14 @@
 // Shared fetch helper for external provider adapters.
 // Enforces a short timeout and NEVER throws — a failed external call must
 // degrade to an empty result set, not break the request.
+//
+// It is also the app's ONLY door out to a metered provider, which is why the
+// usage meter is wired in here and nowhere else: every adapter that gets
+// written from now on is counted without its author having to remember.
 // ============================================
+
+import { providerForUrl, endpointLabel } from '@/lib/usage/providers';
+import { recordApiCall } from '@/lib/usage/record';
 
 const DEFAULT_TIMEOUT_MS = 3000;
 
@@ -25,6 +32,12 @@ export async function fetchJson<T>(
 ): Promise<T | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  // Metered providers only. Image CDNs and anything unrecognised return null
+  // here and skip the bookkeeping entirely.
+  const provider = providerForUrl(url);
+  const startedAt = Date.now();
+  let status: number | null = null;
+  let ok = false;
   try {
     const res = await fetch(url, {
       signal: controller.signal,
@@ -40,11 +53,28 @@ export async function fetchJson<T>(
       // different every time anyway.
       next: { revalidate: revalidateSeconds },
     });
+    status = res.status;
     if (!res.ok) return null;
-    return (await res.json()) as T;
+    const body = (await res.json()) as T;
+    ok = true;
+    return body;
   } catch {
     return null;
   } finally {
     clearTimeout(timer);
+    if (provider) {
+      // recordApiCall is synchronous and returns immediately: it hands the
+      // insert to Next's after() and nothing here is awaited. So this adds a
+      // few microseconds to the provider call, not a database round trip —
+      // and it swallows every error by design, so a broken meter can never
+      // turn a working search into a failed one.
+      recordApiCall({
+        provider,
+        endpoint: endpointLabel(url),
+        ok,
+        status,
+        durationMs: Date.now() - startedAt,
+      });
+    }
   }
 }
