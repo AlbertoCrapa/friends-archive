@@ -312,14 +312,23 @@ function GroupCard({ group }: { group: GroupRow }) {
   const total = TYPES.reduce((sum, type) => sum + (group.typeCounts[type] ?? 0), 0);
 
   return (
-    // The card does not move on hover. It used to lift a couple of pixels, and
-    // while it travelled the rounded overflow clip below had to be rebuilt
-    // every frame — Chrome skips antialiasing on that path, so the page behind
-    // showed through the card's own edge as a hairline. It was visible only
-    // mid-travel, never at either rest position. Nothing here moves now, so
-    // there is no frame in which the clip is wrong: the border warms, the
-    // collage leans in, the title takes the amber.
-    <Link href={`/groups/${group.id}`} className="group block h-full">
+    // The lift is stepped, not eased, and that is deliberate. Travelling 2px on
+    // a curve means passing through fractional pixel positions, and on a
+    // fractional position the card's top edge has to antialias: measured on a
+    // 2x screen, a crisp two-row border became a four-row smear running
+    // 44-82-127 between the near-black page and the bright band. That dark
+    // smear IS the gap, and it appears only while the card is in motion, which
+    // is why it was never there at either end of the hover.
+    //
+    // steps(2, end) puts the card at 0px, -1px, -2px and nowhere in between.
+    // Whole CSS pixels are whole device pixels at 1x and 2x alike, so every
+    // frame draws the same crisp edge as the resting states. Over 2px of
+    // travel there is no stepping to see — there was never enough distance for
+    // the easing to be legible in the first place.
+    <Link
+      href={`/groups/${group.id}`}
+      className="group block h-full translate-y-0 transform-gpu transition-[translate] duration-[var(--duration-standard)] ease-[steps(2,end)] hover:-translate-y-0.5"
+    >
       <article className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] bg-stone-900 border border-white/[0.07] transition-colors duration-[var(--duration-standard)] ease-[var(--ease-standard)] group-hover:border-white/25">
         {/* stone-900, matching the card, wherever there are covers: the strip
             scaling inside this clip can expose a sliver of the surface behind

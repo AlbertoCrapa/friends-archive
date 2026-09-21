@@ -30,6 +30,8 @@ export interface ItemStatusController {
   setStatus: (item: MediaItemWithDetails, next: ItemStatus) => Promise<void>;
   /** The same change across many items, as ONE write and one optimistic pass. */
   setStatusMany: (items: MediaItemWithDetails[], next: ItemStatus) => Promise<boolean>;
+  /** Take a status that was written elsewhere as read, without writing again. */
+  noteStatus: (itemId: string, status: ItemStatus) => void;
   savingId: string | null;
   /** True while a batch is in flight. */
   savingMany: boolean;
@@ -209,5 +211,35 @@ export function useItemStatus({
     return true;
   }
 
-  return { statusOf, isConsumed, setStatus, setStatusMany, savingId, savingMany, consumed };
+  /**
+   * A status this hook did not write, taken as read.
+   *
+   * The add dialog writes the creator's first status itself — it has to, there
+   * is no row to point at until the insert comes back. The result was a new
+   * item that knew it was 'completed' (the dot was green) and at the same time
+   * had nobody finished on its meter, because THIS set had never heard of it.
+   * Reloading fixed it, which is the signature of a client that is out of step
+   * with a server that was right all along.
+   *
+   * Writes nothing. It only stops the two from disagreeing.
+   */
+  function noteStatus(itemId: string, status: ItemStatus) {
+    setConsumed((prev) => {
+      const draft = new Set(prev);
+      if (status === 'completed') draft.add(itemId);
+      else draft.delete(itemId);
+      return draft;
+    });
+  }
+
+  return {
+    statusOf,
+    isConsumed,
+    setStatus,
+    setStatusMany,
+    noteStatus,
+    savingId,
+    savingMany,
+    consumed,
+  };
 }

@@ -170,8 +170,14 @@ export function ArchiveControls({
               variant={selecting ? 'secondary' : 'outline'}
               size="sm"
               aria-pressed={selecting}
+              aria-label={selecting ? 'Leave multi-select' : 'Multi-select'}
               onClick={() => onSelecting(!selecting)}
-              className="gap-1.5"
+              /* The size fix was the height, not the word: every Button grows
+                 to 44px under a finger, so this stood a head taller than the
+                 two chips beside it. Held to the chips' 32px it sits in the
+                 row, and the label stays where a label belongs — next to its
+                 glyph, on a phone as well as a desk. */
+              className="ui-dense h-8 gap-1.5 whitespace-nowrap px-2.5 sm:px-3"
             >
               <ListChecks className="h-3.5 w-3.5" />
               {selecting ? 'Done' : 'Multi-select'}

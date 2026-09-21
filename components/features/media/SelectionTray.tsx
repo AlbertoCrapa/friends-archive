@@ -133,15 +133,24 @@ export function SelectionTray({
                   <button
                     type="button"
                     onClick={onSelectAllShown}
-                    className="cursor-pointer underline decoration-stone-700 underline-offset-2 transition-colors hover:text-stone-200"
+                    className="cursor-pointer whitespace-nowrap underline decoration-stone-700 underline-offset-2 transition-colors hover:text-stone-200"
                   >
-                    Select all {shownCount} shown
+                    {/* "shown" is the honest word — it is every row the
+                        filters leave, not every row in the archive — but on a
+                        phone it was what tipped this onto a second line under
+                        the count. The number is doing the work either way. */}
+                    Select all {shownCount}
+                    <span className="hidden sm:inline"> shown</span>
                   </button>
                 ) : null}
+                {/* Not on a phone. Six controls already share that bar, and
+                    the X at the end drops the whole selection on its way out
+                    of the mode — a second way to empty your hands was worth
+                    less than the room it was taking. */}
                 <button
                   type="button"
                   onClick={onClear}
-                  className="cursor-pointer underline decoration-stone-700 underline-offset-2 transition-colors hover:text-stone-200"
+                  className="hidden cursor-pointer underline decoration-stone-700 underline-offset-2 transition-colors hover:text-stone-200 sm:inline"
                 >
                   Clear
                 </button>

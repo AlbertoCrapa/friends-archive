@@ -1,6 +1,16 @@
 import { createClient } from '@/lib/supabase/server';
+import { transferKey } from '@/lib/itemTransfer';
 import type { Group, GroupRole, ItemStatus, MediaType } from '@/types';
 import { DashboardContent } from '@/components/features/groups/DashboardContent';
+
+/** Covers the strip shows. */
+const RECENT_SHOWN = 6;
+/**
+ * How many rows we ask for to fill those six. The same film sitting in three
+ * of your groups is three rows here, and after folding them together six rows
+ * could leave two covers — so read a wider slice and trim after.
+ */
+const RECENT_POOL = RECENT_SHOWN * 5;
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -99,10 +109,10 @@ export default async function DashboardPage() {
       groupIds.length
         ? supabase
             .from('media_items')
-            .select('id, title, type, group_id, created_at, image_url')
+            .select('id, title, type, group_id, created_at, image_url, external_id')
             .in('group_id', groupIds)
             .order('created_at', { ascending: false })
-            .limit(6)
+            .limit(RECENT_POOL)
         : Promise.resolve({
             data: [] as Array<{
               id: string;
@@ -111,6 +121,7 @@ export default async function DashboardPage() {
               group_id: string;
               created_at: string;
               image_url: string | null;
+              external_id: string | null;
             }>,
           }),
     ]);
@@ -150,15 +161,31 @@ export default async function DashboardPage() {
   );
 
   const groupNames = new Map(groups.map((g) => [g.id, g.name]));
-  const recentItems = (recentRows ?? []).map((row) => ({
-    id: row.id,
-    title: row.title,
-    type: row.type as MediaType,
-    groupId: row.group_id,
-    groupName: groupNames.get(row.group_id) ?? 'Unknown group',
-    createdAt: row.created_at,
-    imageUrl: row.image_url,
-  }));
+  // One work, one cover. The same film in two groups is two rows in the table
+  // by design (an archive owns its copy), but here that reads as a stutter in
+  // a strip that is meant to say "this is what is new". The newest wins, since
+  // the rows arrive newest-first, and it carries the group it was just added
+  // to — the one the strip is actually reporting. Identity is the same rule a
+  // send uses (provider id, else title + type), so what counts as the same
+  // film does not change from one screen to the next.
+  const seenWorks = new Set<string>();
+  const recentItems = (recentRows ?? [])
+    .filter((row) => {
+      const key = transferKey({ title: row.title, type: row.type as MediaType, external_id: row.external_id });
+      if (seenWorks.has(key)) return false;
+      seenWorks.add(key);
+      return true;
+    })
+    .slice(0, RECENT_SHOWN)
+    .map((row) => ({
+      id: row.id,
+      title: row.title,
+      type: row.type as MediaType,
+      groupId: row.group_id,
+      groupName: groupNames.get(row.group_id) ?? 'Unknown group',
+      createdAt: row.created_at,
+      imageUrl: row.image_url,
+    }));
 
   return (
     <DashboardContent

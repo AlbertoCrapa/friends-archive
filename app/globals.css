@@ -786,6 +786,18 @@ body::before {
   }
 }
 
+/* ...except inside a dense list on a phone. An archive row carries three icon
+   controls; at 44px each they set the height of the whole row, and the row was
+   twice as tall as the thing it is describing. Here the ROW itself is the
+   target — the controls are the exceptions you aim at — so they are allowed
+   back down to the 32px they are on a desk. Opt-in, and phone-only: on a
+   tablet the floor still holds. */
+@media (pointer: coarse) and (max-width: 639px) {
+  .ui-dense.ui-touch {
+    min-height: 0;
+  }
+}
+
 /* A label in this system is small, plain and quiet. It is never tracked-out
    capitals: the type does the work through size and weight instead. */
 .label-quiet {

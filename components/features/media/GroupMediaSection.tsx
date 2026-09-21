@@ -92,6 +92,15 @@ export function GroupMediaSection({
    */
   const [openId, setOpenId] = useState<string | null>(null);
   /**
+   * True while the entry the browser is standing on is the one THIS component
+   * pushed for an open sheet. It is what lets the back button mean "close the
+   * sheet" without ever meaning "leave the archive" by mistake — see
+   * `openItem` and the popstate listener below.
+   */
+  const sheetEntry = useRef(false);
+  /** The deep link is read once, on the first mount, and never again. */
+  const deepLinked = useRef(false);
+  /**
    * Gathering titles to send somewhere else.
    *
    * The selection lives HERE, above the filter pipeline, and holds ids rather
@@ -178,11 +187,57 @@ export function GroupMediaSection({
     [items, activeType],
   );
 
-  /** Open or close a sheet, and leave the address bar saying which. */
+  /**
+   * Open or close a sheet, and leave the address bar saying which.
+   *
+   * Opening PUSHES a history entry rather than rewriting the current one. On a
+   * phone the sheet is a full screen with a back gesture pointed straight at
+   * it, and a sheet that is not in the history answers that gesture by leaving
+   * the archive altogether — you lose the page, the filters and your place in
+   * the list to close one card. With the entry pushed, back means what it
+   * looks like it means, and closing the sheet by hand steps off the same
+   * entry so the two ways out leave the history identical.
+   */
   function openItem(nextId: string | null) {
-    setOpenId(nextId);
-    syncUrl(activeType, currentPage, view, nextId);
+    if (nextId) {
+      // Already standing on a sheet entry (one sheet opening another) —
+      // rewrite it rather than stack a second one, so one back is always
+      // "out of the sheet", never "back to the previous sheet".
+      syncUrl(activeType, currentPage, view, nextId, sheetEntry.current ? 'replace' : 'push');
+      sheetEntry.current = true;
+      setOpenId(nextId);
+      return;
+    }
+
+    setOpenId(null);
+    if (sheetEntry.current) {
+      // Stepping off our own entry restores the URL the archive had before the
+      // sheet opened, and popstate below keeps the state in step.
+      sheetEntry.current = false;
+      window.history.back();
+    } else {
+      syncUrl(activeType, currentPage, view, null);
+    }
   }
+
+  /**
+   * The back button, and the forward button with it.
+   *
+   * The URL is the truth here, not a flag: going back off a sheet entry lands
+   * on an address with no `item`, going forward puts it back, and both read
+   * the same way. Nothing else in this component navigates, so a popstate that
+   * is not ours is one that is leaving the page entirely — by then this is
+   * unmounting and the listener is gone.
+   */
+  useEffect(() => {
+    const onPop = () => {
+      const id = new URLSearchParams(window.location.search).get('item');
+      sheetEntry.current = !!id;
+      setOpenId(id);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
 
   /**
    * A link straight to one title.
@@ -195,8 +250,14 @@ export function GroupMediaSection({
    * follows the sheet rather than the other way round.
    */
   useEffect(() => {
+    // Strict mode mounts this twice in development, and the second run would
+    // push a SECOND sheet entry onto the history — two backs to close one
+    // sheet, in dev only, which is exactly the sort of thing that gets
+    // "fixed" in the wrong place later.
+    if (deepLinked.current) return;
     const requested = new URLSearchParams(window.location.search).get('item');
     if (!requested) return;
+    deepLinked.current = true;
     const index = items.findIndex((item) => item.id === requested);
     if (index === -1) {
       // The link points at something this archive no longer has (deleted, or
@@ -213,7 +274,12 @@ export function GroupMediaSection({
     const nextPage = Math.floor(index / PAGE_SIZE) + 1;
     setPage(nextPage);
     setOpenId(requested);
-    syncUrl('all', nextPage, nextView, requested);
+    // A link opened cold arrives as ONE entry with the sheet already on it, so
+    // back would leave the site. Split it in two: the archive as it will look
+    // once the sheet is gone, then the sheet pushed on top of it.
+    syncUrl('all', nextPage, nextView, null);
+    syncUrl('all', nextPage, nextView, requested, 'push');
+    sheetEntry.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -259,6 +325,11 @@ export function GroupMediaSection({
       added_by_profile: currentUserNickname ? { nickname: currentUserNickname } : undefined,
       consumption_records: [],
     } satisfies MediaItemWithDetails);
+
+    // The dialog already wrote this status — it had to, the row did not exist
+    // until its insert came back. Without this the archive would show the new
+    // item's dot as finished and its meter as nobody-finished at the same time.
+    statusController.noteStatus(item.id, item.status);
   }
 
   /**
@@ -381,6 +452,7 @@ export function GroupMediaSection({
     nextPage: number,
     nextView: ArchiveView = view,
     nextItem: string | null = openId,
+    mode: 'replace' | 'push' = 'replace',
   ) {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
@@ -393,7 +465,12 @@ export function GroupMediaSection({
     if (nextItem) params.set('item', nextItem);
     else params.delete('item');
     const query = params.toString();
-    window.history.replaceState({}, '', query ? `${window.location.pathname}?${query}` : window.location.pathname);
+    const url = query ? `${window.location.pathname}?${query}` : window.location.pathname;
+    // The existing state is carried across rather than replaced with a bare
+    // object: the App Router keeps its own routing data in there, and a
+    // filter change has no business throwing it away.
+    if (mode === 'push') window.history.pushState(window.history.state, '', url);
+    else window.history.replaceState(window.history.state, '', url);
   }
 
   const hasActiveFilter = Boolean(

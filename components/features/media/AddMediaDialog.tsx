@@ -457,37 +457,57 @@ export function AddMediaDialog({
 
     // Status is per-member (item_statuses), never on the shared item. A missing
     // row already means 'plan_to_consume', so only write when it differs.
+    //
+    // BOTH RESULTS ARE READ. These used to be fired and forgotten, so a status
+    // that the database refused was still reported as saved and still drawn on
+    // the new row — right until the next reload put it back to Planned. An add
+    // is not failed by a status that would not stick, but it is not allowed to
+    // lie about it either: the archive is told the status that actually landed,
+    // and so is the member.
+    let statusSaved = true;
+
     if (insertedItem && status !== 'plan_to_consume') {
-      await supabase
+      const { error: statusError } = await supabase
         .from('item_statuses')
         .upsert(
           { media_item_id: insertedItem.id, user_id: userId, status },
           { onConflict: 'media_item_id,user_id' }
         );
+      if (statusError) statusSaved = false;
     }
 
-    if (insertedItem && status === 'completed') {
-      await supabase
+    // 'Completed' is the one status the rest of the group can see, and it is
+    // read off consumption_records — so it needs the bare row there too, or the
+    // item would say finished to its owner and unfinished to everyone else.
+    if (insertedItem && statusSaved && status === 'completed') {
+      const { error: recordError } = await supabase
         .from('consumption_records')
         .upsert(
           { user_id: userId, media_item_id: insertedItem.id },
           { onConflict: 'media_item_id,user_id' }
         );
+      if (recordError) statusSaved = false;
     }
+
+    const savedStatus: ItemStatus = statusSaved ? status : 'plan_to_consume';
 
     resetForm();
     setOpen(false);
 
     if (insertedItem) {
-      onAdded?.({ ...(insertedItem as MediaItem), status });
+      onAdded?.({ ...(insertedItem as MediaItem), status: savedStatus });
     }
 
     // The dialog closes on success, so the confirmation has to live outside it.
     toast({
-      tone: 'success',
-      message: (
+      tone: statusSaved ? 'success' : 'neutral',
+      message: statusSaved ? (
         <>
           Added <b>{addedTitle}</b> to the archive
+        </>
+      ) : (
+        <>
+          Added <b>{addedTitle}</b>, but your status did not save — set it on the row.
         </>
       ),
     });

@@ -417,7 +417,7 @@ function ArchiveRow({
             // below the poster instead, which left a band of dead space under
             // every short row and made no two rows the same height.
             // From sm up the same three pieces lay out in three columns.
-            'group relative isolate grid cursor-pointer grid-cols-[48px_minmax(0,1fr)] items-start gap-x-3 gap-y-2 rounded-[12px] border p-2.5 transition-colors sm:grid-cols-[48px_minmax(0,1fr)_auto]',
+            'group relative isolate grid cursor-pointer grid-cols-[48px_minmax(0,1fr)] items-start gap-x-3 gap-y-1.5 rounded-[12px] border p-2 transition-colors sm:grid-cols-[48px_minmax(0,1fr)_auto] sm:gap-y-2 sm:p-2.5',
             everyone ? 'border-emerald-500/40' : 'border-white/[0.07]',
             'hover:border-white/20',
             // A picked row is lit from its own edge, so a screenful of them
@@ -453,7 +453,7 @@ function ArchiveRow({
             ) : null}
           </div>
 
-          <div className="min-w-0 space-y-1 py-0.5">
+          <div className="min-w-0 space-y-0.5 py-0 sm:space-y-1 sm:py-0.5">
             <div className="flex min-w-0 items-center gap-1.5">
               {/* The pointer can click anywhere on the row; a keyboard needs
                   one real control, and the title is the one that says what it
@@ -512,7 +512,7 @@ function ArchiveRow({
                     aria-pressed={activeTagSet.has(tag)}
                     disabled={!onToggleTag}
                     className={cn(
-                      'h-[20px] rounded-[var(--radius-sm)] px-1.5 text-[11px] font-medium transition-colors',
+                      'h-[18px] rounded-[var(--radius-sm)] px-1.5 text-[11px] font-medium transition-colors sm:h-[20px]',
                       onToggleTag && 'cursor-pointer',
                       // Past the second one, the chips are a desktop luxury.
                       i >= TAG_LIMIT_NARROW && 'hidden sm:inline-flex',
@@ -544,7 +544,14 @@ function ArchiveRow({
             onClick={(event) => {
               if (!selecting) event.stopPropagation();
             }}
-            className="flex items-center gap-2 sm:col-start-3 sm:row-start-1 sm:self-center sm:justify-end"
+            // A BAND, not a huddle. Gathering takes the status control, the
+            // comments and the menu off every row at once, and a cluster that
+            // only holds what is left of itself would both shrink the row and
+            // slide the meter across it — the list would redraw itself the
+            // moment you went to pick something out of it. A minimum height
+            // and a minimum width keep the band the same band either way: the
+            // meter pinned to its left edge, everything else to the right.
+            className="flex min-h-8 items-center gap-1.5 sm:col-start-3 sm:row-start-1 sm:min-w-[260px] sm:gap-2 sm:self-center sm:justify-end"
           >
             <FinishedMeter
               roster={roster}
@@ -552,6 +559,7 @@ function ArchiveRow({
               opted={opted}
               viewerId={userId}
               everyone={everyone}
+              className="mr-auto"
             />
 
             {selecting ? null : isMember ? (
@@ -580,7 +588,7 @@ function ArchiveRow({
                 currentUserNickname={currentUserNickname}
                 isMember={isMember}
                 isOwner={isOwner}
-                triggerClassName="h-8 w-8"
+                triggerClassName="ui-dense h-8 w-8"
               />
             )}
 
@@ -590,7 +598,7 @@ function ArchiveRow({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8"
+                    className="ui-dense h-8 w-8"
                     aria-label={`More actions for ${item.title}`}
                     // Radix opens this on POINTERDOWN, which on a swipeable row
                     // means the menu is already up by the time you have moved a
@@ -665,12 +673,14 @@ function FinishedMeter({
   opted,
   viewerId,
   everyone,
+  className,
 }: {
   roster: RosterMember[];
   finished: Set<string>;
   opted: Set<string>;
   viewerId: string;
   everyone: boolean;
+  className?: string;
 }) {
   if (roster.length === 0) return null;
 
@@ -690,7 +700,10 @@ function FinishedMeter({
 
   return (
     <WarmTooltip content={lines.join(' · ')}>
-      <div className="flex shrink-0 cursor-default items-center gap-1.5" aria-label={lines.join('. ')}>
+      <div
+        className={cn('flex shrink-0 cursor-default items-center gap-1.5', className)}
+        aria-label={lines.join('. ')}
+      >
         {roster.length <= 10 ? (
           <span aria-hidden className="flex items-end gap-[3px]">
             {roster.map((member) => {
