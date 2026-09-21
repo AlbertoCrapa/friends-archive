@@ -39,6 +39,11 @@ export function formatRelativeDate(dateString: string): string {
 /**
  * Truncate a string to a maximum length, appending an ellipsis if truncated.
  */
+/** "3 items" / "1 item" — the phrase every bulk label is built from. */
+export function countLabel(count: number): string {
+  return `${count} ${count === 1 ? 'item' : 'items'}`;
+}
+
 export function truncate(str: string, maxLength: number): string {
   if (str.length <= maxLength) return str;
   return str.slice(0, maxLength - 3) + '…';

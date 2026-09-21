@@ -15,14 +15,23 @@ const ArchiveStats = dynamic(() => import('./ArchiveStats').then((m) => m.Archiv
 });
 import { MediaGrid } from './MediaGrid';
 import { MediaTable } from './MediaTable';
+import { ConfirmDeleteItemsDialog } from './ConfirmDeleteItemsDialog';
+import { SelectionTray } from './SelectionTray';
+import { TransferItemsDialog } from './TransferItemsDialog';
 import { Button } from '@/components/ui/button';
-import { getSearchTags } from '@/lib/utils';
-import type { MediaItemWithDetails, MediaType } from '@/types';
+import { useToast } from '@/components/ui/toast';
+import { useItemsDelete } from '@/hooks/useItemDelete';
+import { useItemStatus } from '@/hooks/useItemStatus';
+import { countLabel, getSearchTags } from '@/lib/utils';
+import { getStatusLabel } from '@/types';
+import type { ItemStatus, MediaItemWithDetails, MediaType } from '@/types';
 
 const PAGE_SIZE = 20;
 
 interface Props {
   groupId: string;
+  /** Named, not just identified: the send dialog talks about it by name. */
+  groupName: string;
   userId: string;
   currentUserNickname: string | null;
   isMember: boolean;
@@ -54,6 +63,7 @@ function finishedCount(item: MediaItemWithDetails): number {
 
 export function GroupMediaSection({
   groupId,
+  groupName,
   userId,
   currentUserNickname,
   isMember,
@@ -81,6 +91,44 @@ export function GroupMediaSection({
    * archive, which is the thing a group actually wants to send each other.
    */
   const [openId, setOpenId] = useState<string | null>(null);
+  /**
+   * Gathering titles to send somewhere else.
+   *
+   * The selection lives HERE, above the filter pipeline, and holds ids rather
+   * than rows — which is the whole trick. Searching, paging and switching kind
+   * all re-decide which rows exist below this line, and none of them may
+   * disturb what you are holding: you find one film under a search, one three
+   * pages later, one behind the Books tab, and the tray keeps counting.
+   */
+  const [selecting, setSelecting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  /** What the send dialog is about — a whole selection, or one row's menu. */
+  const [sending, setSending] = useState<MediaItemWithDetails[] | null>(null);
+  /** The bulk delete has been asked for, and is waiting to be confirmed. */
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  const { toast } = useToast();
+
+  /**
+   * The viewer's own statuses, owned HERE rather than inside each list.
+   *
+   * Both views used to keep their own copy, initialised from the server's
+   * answer at page load — so marking three films finished in the list and then
+   * switching to covers showed them unfinished again, and a status set from the
+   * tray could not have reached either. One owner, one truth, and the tray can
+   * write to the same place the rows do.
+   */
+  const statusController = useItemStatus({
+    userId,
+    consumedSet: initialConsumedSet,
+    onUpdated: handleUpdatedItem,
+    onUpdatedMany: handleUpdatedItems,
+  });
+
+  const deleteItems = useItemsDelete({
+    onDeleted: handleDeletedItem,
+    onRestored: handleRestoredItems,
+  });
 
   // Filter pipeline: type → status → tags → search → order
   const filteredItems = useMemo(() => {
@@ -179,6 +227,16 @@ export function GroupMediaSection({
   const pageStart = (currentPage - 1) * PAGE_SIZE;
   const pageItems = filteredItems.slice(pageStart, pageStart + PAGE_SIZE);
 
+  // Read off the FULL archive, not the page: what you are holding survives
+  // every filter, and an item that is deleted while held simply stops being
+  // held, with no stale row left in the tray.
+  const selectedItems = useMemo(
+    () => items.filter((item) => selectedIds.has(item.id)),
+    [items, selectedIds],
+  );
+  const allShownSelected =
+    filteredItems.length > 0 && filteredItems.every((item) => selectedIds.has(item.id));
+
   function switchType(nextType: TypeFilter) {
     setActiveType(nextType);
     setPage(1);
@@ -235,6 +293,75 @@ export function GroupMediaSection({
     setItems((prev) => prev.map((current) => (current.id === item.id ? item : current)));
   }
 
+  /** Sixty changed rows in one pass, rather than sixty passes over the list. */
+  function handleUpdatedItems(updated: MediaItemWithDetails[]) {
+    const byId = new Map(updated.map((item) => [item.id, item]));
+    setItems((prev) => prev.map((current) => byId.get(current.id) ?? current));
+  }
+
+  /**
+   * A move is a delete with a destination, so it borrows the delete's machinery
+   * wholesale: the rows go now, the write is deferred behind the toast, and an
+   * undo puts every one of them back in its own place rather than at the top.
+   * Order matters — the indices were recorded as the rows left, so they are put
+   * back in the same order they were taken.
+   */
+  function handleMovedItems(itemIds: string[]) {
+    itemIds.forEach(handleDeletedItem);
+  }
+
+  function handleRestoredItems(moved: MediaItemWithDetails[]) {
+    moved.forEach(handleRestoredItem);
+  }
+
+  function toggleSelected(itemId: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  }
+
+  /** Everything the current filters leave — not just the page on screen. */
+  function selectAllShown() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const item of filteredItems) next.add(item.id);
+      return next;
+    });
+  }
+
+  function exitSelecting() {
+    setSelecting(false);
+    setSelectedIds(new Set());
+  }
+
+  /**
+   * One status across the whole selection.
+   *
+   * The selection is deliberately KEPT afterwards: marking six films watched
+   * and then sending the same six to another archive is one errand, not two,
+   * and having to gather them twice would be the tray's whole point thrown
+   * away. A delete clears it, because there is nothing left to hold.
+   */
+  async function setStatusForSelected(next: ItemStatus) {
+    const target = selectedItems;
+    if (target.length === 0) return;
+
+    const ok = await statusController.setStatusMany(target, next);
+    toast({
+      tone: ok ? 'success' : 'neutral',
+      message: ok ? (
+        <>
+          Marked <b>{countLabel(target.length)}</b> as {getStatusLabel(next).toLowerCase()}
+        </>
+      ) : (
+        <>Could not mark those {countLabel(target.length)} — nothing changed.</>
+      ),
+    });
+  }
+
   function goToPage(nextPage: number) {
     const bounded = Math.min(totalPages, Math.max(1, nextPage));
     setPage(bounded);
@@ -242,6 +369,9 @@ export function GroupMediaSection({
   }
 
   function switchView(next: ArchiveView) {
+    // Stats has no rows, so a selection made over it could never be seen, let
+    // alone corrected. Leaving the mode is the honest thing to do.
+    if (next === 'stats') exitSelecting();
     setView(next);
     syncUrl(activeType, currentPage, next);
   }
@@ -282,8 +412,10 @@ export function GroupMediaSection({
   return (
     // Room at the foot for the floating add button, which only floats on a phone.
     <div className="pb-24 md:pb-10">
-      {/* Touch: the same action as a disc in the thumb corner. */}
-      {isMember ? (
+      {/* Touch: the same action as a disc in the thumb corner. It steps aside
+          while the tray is up — one floating control per corner, and the tray
+          is the one that matters while you are gathering. */}
+      {isMember && !selecting ? (
         <AddMediaDialog
           variant="fab"
           groupId={groupId}
@@ -319,6 +451,15 @@ export function GroupMediaSection({
         onToggleTag={toggleTag}
         hasActiveFilter={hasActiveFilter}
         onClear={clearFilters}
+        selecting={selecting}
+        onSelecting={
+          isMember
+            ? (next) => {
+                if (next) setSelecting(true);
+                else exitSelecting();
+              }
+            : undefined
+        }
         action={
           isMember ? (
             <AddMediaDialog
@@ -339,7 +480,7 @@ export function GroupMediaSection({
             memberIds={memberIds}
             notInterestedByItem={notInterestedByItem}
             userId={userId}
-            consumedSet={initialConsumedSet}
+            consumedSet={statusController.consumed}
           />
         ) : filteredItems.length === 0 ? (
           <div className="rounded-[var(--radius-lg)] bg-stone-900 p-10 text-center border border-white/[0.07]">
@@ -373,6 +514,11 @@ export function GroupMediaSection({
             openId={openId}
             onOpenId={openItem}
             onUpdated={handleUpdatedItem}
+            selecting={selecting}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelected}
+            onTransfer={isMember ? (item) => setSending([item]) : undefined}
+            statusController={statusController}
           />
         ) : (
           <MediaTable
@@ -393,6 +539,11 @@ export function GroupMediaSection({
             openId={openId}
             onOpenId={openItem}
             onUpdated={handleUpdatedItem}
+            selecting={selecting}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelected}
+            onTransfer={isMember ? (item) => setSending([item]) : undefined}
+            statusController={statusController}
           />
         )}
       </div>
@@ -420,6 +571,57 @@ export function GroupMediaSection({
           </div>
         </div>
       )}
+
+      {/* What you are holding, and the one thing to do with it. */}
+      {selecting ? (
+        <SelectionTray
+          items={selectedItems}
+          shownCount={filteredItems.length}
+          allShownSelected={allShownSelected}
+          onSelectAllShown={selectAllShown}
+          onClear={() => setSelectedIds(new Set())}
+          onExit={exitSelecting}
+          onSend={() => setSending(selectedItems)}
+          onSetStatus={setStatusForSelected}
+          onDelete={() => setConfirmingDelete(true)}
+          busy={statusController.savingMany}
+        />
+      ) : null}
+
+      {/* Asked BEFORE anything leaves the screen. The undo window still
+          follows it — this is the first of two chances, not a replacement. */}
+      {confirmingDelete && selectedItems.length > 0 ? (
+        <ConfirmDeleteItemsDialog
+          open
+          onOpenChange={setConfirmingDelete}
+          items={selectedItems}
+          groupName={groupName}
+          otherMemberCount={Math.max(0, memberIds.length - 1)}
+          onConfirm={() => {
+            deleteItems(selectedItems);
+            exitSelecting();
+          }}
+        />
+      ) : null}
+
+      {/* One dialog for both ways in: a whole selection, or a single row's
+          menu. It is mounted only while it has something to send, so it starts
+          every send with no memory of the last one. */}
+      {sending && sending.length > 0 ? (
+        <TransferItemsDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setSending(null);
+          }}
+          items={sending}
+          groupId={groupId}
+          groupName={groupName}
+          userId={userId}
+          onMoved={handleMovedItems}
+          onRestored={handleRestoredItems}
+          onDone={exitSelecting}
+        />
+      ) : null}
     </div>
   );
 }

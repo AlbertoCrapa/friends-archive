@@ -725,6 +725,25 @@
   color: color-mix(in srgb, var(--gs-text) 45%, transparent);
 }
 
+/* Said once, above the rows, when the menu acts on more than the thing it
+   hangs off. Quiet: it is context, not a choice. */
+.mi-select-heading {
+  padding: 5px 8px 6px;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1;
+  color: color-mix(in srgb, var(--gs-text) 45%, transparent);
+}
+
+/* A chip standing in a row of Buttons: under a finger those grow to 44px
+   (.ui-touch), so the chip has to grow with them or it sits short of the row.
+   Opt-in, because a chip among inputs rather than buttons should not. */
+@media (pointer: coarse) {
+  .mi-select-touch {
+    --gs-chip: 44px;
+  }
+}
+
 /* ── SwipeRow ────────────────────────────────────────────────────────────
    A 16px-radius row on a zinc drawer. Pull to open, keep pulling and the
    action colour takes the whole row. */

@@ -11,7 +11,7 @@
 //     server and is SHARED BETWEEN USERS: the first friend to open a title that
 //     day pays the provider call, the rest are served from here.
 //  2. The browser: this response is privately cacheable for a day, and the
-//     client keeps its own copy in memory and localStorage for a month
+//     client keeps its own copy in memory and localStorage for a week
 //     (hooks/useItemStory.ts).
 //  3. The rate guard below, which exists only so one authenticated client
 //     cannot loop this endpoint and spend a provider quota on everybody's

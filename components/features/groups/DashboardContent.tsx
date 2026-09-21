@@ -312,9 +312,25 @@ function GroupCard({ group }: { group: GroupRow }) {
   const total = TYPES.reduce((sum, type) => sum + (group.typeCounts[type] ?? 0), 0);
 
   return (
+    // The card does not move on hover. It used to lift a couple of pixels, and
+    // while it travelled the rounded overflow clip below had to be rebuilt
+    // every frame — Chrome skips antialiasing on that path, so the page behind
+    // showed through the card's own edge as a hairline. It was visible only
+    // mid-travel, never at either rest position. Nothing here moves now, so
+    // there is no frame in which the clip is wrong: the border warms, the
+    // collage leans in, the title takes the amber.
     <Link href={`/groups/${group.id}`} className="group block h-full">
-      <article className="flex h-full translate-y-0 flex-col overflow-hidden rounded-[var(--radius-lg)] bg-stone-900 border border-white/[0.07] transition-[border-color,translate] duration-[var(--duration-standard)] ease-[var(--ease-standard)] hover:-translate-y-0.5 hover:border-white/25">
-        <div className="relative h-[78px] overflow-hidden bg-stone-800">
+      <article className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] bg-stone-900 border border-white/[0.07] transition-colors duration-[var(--duration-standard)] ease-[var(--ease-standard)] group-hover:border-white/25">
+        {/* stone-900, matching the card, wherever there are covers: the strip
+            scaling inside this clip can expose a sliver of the surface behind
+            it mid-transition, and a sliver the same colour as the card is not
+            a sliver. The lighter stone-800 is only wanted as the empty state. */}
+        <div
+          className={cn(
+            'relative h-[78px] overflow-hidden',
+            covers.length > 0 ? 'bg-stone-900' : 'bg-stone-800',
+          )}
+        >
           {covers.length > 0 ? (
             // The band is a collage, not five pictures: the transform lives on
             // the strip so the whole thing pushes in together. Scaling each
@@ -328,10 +344,10 @@ function GroupCard({ group }: { group: GroupRow }) {
             // It also rests ABOVE 1. A strip scaled to exactly fill its band
             // lands its bottom edge on a fractional pixel while it animates,
             // and the surface behind shows through as a hairline along the
-            // bottom. Resting at 1.03 keeps the collage permanently larger
+            // bottom. Resting at 1.04 keeps the collage permanently larger
             // than the window it is seen through, so there is no edge to
             // catch.
-            <div className="flex h-full scale-[1.03] opacity-80 transition-[opacity,scale] duration-[var(--duration-drift)] ease-[var(--ease-drift)] group-hover:scale-[1.06] group-hover:opacity-100">
+            <div className="flex h-full scale-[1.04] transform-gpu opacity-80 transition-[opacity,scale] duration-[var(--duration-drift)] ease-[var(--ease-drift)] group-hover:scale-[1.06] group-hover:opacity-100">
               {covers.map((src, i) => (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -347,7 +363,10 @@ function GroupCard({ group }: { group: GroupRow }) {
               ))}
             </div>
           ) : null}
-          <span className="pointer-events-none absolute inset-0 bg-gradient-to-t from-stone-900 via-stone-900/45 to-stone-900/10" />
+          {/* -inset-px, not inset-0: the overlay is clipped by the band anyway,
+              so letting it hang a pixel past every edge means there is no seam
+              of its own to land on a fractional pixel while the card moves. */}
+          <span className="pointer-events-none absolute -inset-px bg-gradient-to-t from-stone-900 via-stone-900/45 to-stone-900/10" />
           <span className="absolute right-2 top-2">
             {group.visibility === 'public' ? (
               <span className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] bg-stone-950/75 px-1.5 py-0.5 text-[11px] font-medium text-stone-300">

@@ -169,6 +169,7 @@ export default async function GroupDetailPage({ params, searchParams }: Props) {
       <Suspense fallback={<MediaSectionLoader />}>
         <GroupMediaLoader
           groupId={groupId}
+          groupName={group.name}
           userId={user.id}
           isMember={isMember}
           isOwner={isOwner}

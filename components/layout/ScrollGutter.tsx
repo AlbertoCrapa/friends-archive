@@ -38,26 +38,34 @@ export function ScrollGutter() {
     const isLocked = () => document.body.hasAttribute('data-scroll-locked');
 
     const sync = () => {
-      const width = usableWidth();
-
       if (!isLocked()) {
-        // Unlocked is the truth: whatever the page is this wide now, that is
-        // what every locked state has to match.
-        baseline = width;
+        // Unlocked is the truth. Take the compensation off FIRST, then read —
+        // whatever the page is this wide with nothing added, that is the width
+        // every locked state has to match.
         if (applied !== 0) {
           applied = 0;
           root.style.removeProperty('padding-right');
         }
+        baseline = root.clientWidth;
         return;
       }
 
-      // Locked. If the lock handed the gutter back, the element got wider —
-      // give that exact amount back as padding. If it did not, this is 0.
-      const delta = Math.max(0, Math.round(width - baseline));
-      if (delta === applied) return;
-      applied = delta;
-      if (delta === 0) root.style.removeProperty('padding-right');
-      else root.style.setProperty('padding-right', `${delta}px`);
+      // Locked. `clientWidth` is the padding box, so it ALREADY contains the
+      // padding we put there — which is why this correction is cumulative
+      // rather than recomputed from nothing. Read plainly, a correctly
+      // compensated page measures exactly the baseline and looks to a fresh
+      // calculation like a page that needs no compensation at all, so every
+      // sync after the first would hand the gutter straight back. (Radix fires
+      // at least one more: it sets `pointer-events` on the body an instant
+      // after the lock lands, and that is a style mutation like any other.)
+      // Keeping what is applied and adding only the remaining drift is stable
+      // under any number of repeats.
+      const drift = usableWidth() - baseline;
+      const next = Math.max(0, applied + drift);
+      if (next === applied) return;
+      applied = next;
+      if (next === 0) root.style.removeProperty('padding-right');
+      else root.style.setProperty('padding-right', `${next}px`);
     };
 
     // The lock announces itself on the body (react-remove-scroll, under every

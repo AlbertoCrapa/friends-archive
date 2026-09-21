@@ -7,9 +7,11 @@ import type { ExternalWork, ItemStory, MovieMetadata, TvSeriesMetadata } from '@
 import { ITEM_STORY_VERSION } from '@/types';
 import { peopleMetadata } from '@/lib/utils';
 import { fetchJson } from './http';
+import { serviceSearchUrl } from './watchLinks';
 import type { ExternalDetails } from './types';
 import { genreFromNames } from './types';
 import {
+  AVAILABILITY_COUNTRY,
   STORY_REVALIDATE_SECONDS,
   billedNames,
   factList,
@@ -17,6 +19,7 @@ import {
   longDate,
   plainText,
   trimSynopsis,
+  whereList,
 } from './story';
 
 // TMDB serves every poster at a set of fixed widths, chosen in the path. We keep
@@ -25,6 +28,9 @@ import {
 // the width swapped in the stored URL (w185 -> w500), no re-fetch.
 const THUMB_BASE = 'https://image.tmdb.org/t/p/w92';
 const POSTER_BASE = 'https://image.tmdb.org/t/p/w185';
+
+// Provider logos (Netflix, Prime, Now…) at chip size. Same CDN, same trick.
+const PROVIDER_LOGO_BASE = 'https://image.tmdb.org/t/p/w45';
 
 interface TmdbMovieResult {
   id: number;
@@ -202,6 +208,83 @@ export async function getTmdbDetails(
   };
 }
 
+// ── Where to watch (TMDB's JustWatch feed) ──────────────────────────────────
+
+interface TmdbProvider {
+  provider_name?: string;
+  logo_path?: string | null;
+  display_priority?: number;
+}
+
+interface TmdbCountryProviders {
+  /** The JustWatch page for this title in this country. */
+  link?: string;
+  /** Included in a subscription. */
+  flatrate?: TmdbProvider[];
+  /** Free, and ad-supported — both are "you can just watch it". */
+  free?: TmdbProvider[];
+  ads?: TmdbProvider[];
+  rent?: TmdbProvider[];
+  buy?: TmdbProvider[];
+}
+
+interface TmdbWatchProviders {
+  results?: Record<string, TmdbCountryProviders | undefined>;
+}
+
+/**
+ * Turn TMDB's per-country provider bag into our flat list.
+ *
+ * WHERE EACH CHIP GOES. TMDB hands out no deep links into Netflix or Prime —
+ * nobody gives those away free — so a chip goes to the service's own SEARCH
+ * with the title already typed (`serviceSearchUrl`), which is the nearest
+ * honest thing: you land inside the app you were going to open, one keypress
+ * from the film. For the services whose search URL could not be verified, the
+ * chip falls back to the JustWatch page TMDB gives us, which always works.
+ * `via` records which of the two happened, so the sheet can say so.
+ *
+ * `free`/`ads` are folded into `stream`: from the sofa, "included in the
+ * subscription you already pay for" and "free with adverts" are the same
+ * answer — you press play.
+ */
+function watchProviders(
+  payload: TmdbWatchProviders | undefined,
+  country: string,
+  title: string | undefined
+): Pick<ItemStory, 'where' | 'where_country' | 'where_source'> {
+  const region = payload?.results?.[country];
+  const link = region?.link;
+  if (!region || !link) return {};
+
+  const pick = (list: TmdbProvider[] | undefined, kind: 'stream' | 'rent' | 'buy') =>
+    [...(list ?? [])]
+      .sort((a, b) => (a.display_priority ?? 99) - (b.display_priority ?? 99))
+      .map((provider) => {
+        const search = title && provider.provider_name
+          ? serviceSearchUrl(provider.provider_name, title)
+          : undefined;
+        return {
+          name: provider.provider_name,
+          kind,
+          url: search ?? link,
+          via: (search ? 'service' : 'justwatch') as 'service' | 'justwatch',
+          logo_url: provider.logo_path
+            ? `${PROVIDER_LOGO_BASE}${provider.logo_path}`
+            : undefined,
+        };
+      });
+
+  const where = whereList([
+    ...pick(region.flatrate, 'stream'),
+    ...pick(region.free, 'stream'),
+    ...pick(region.ads, 'stream'),
+    ...pick(region.rent, 'rent'),
+    ...pick(region.buy, 'buy'),
+  ]);
+  if (!where) return {};
+  return { where, where_country: country, where_source: 'JustWatch' };
+}
+
 // ── Story (the on-demand read behind the item sheet) ─────────────────────────
 
 interface TmdbCredits {
@@ -209,6 +292,8 @@ interface TmdbCredits {
 }
 
 interface TmdbMovieStory {
+  /** Needed to type the title into a service's search box. */
+  title?: string;
   overview?: string;
   tagline?: string;
   runtime?: number | null;
@@ -219,9 +304,13 @@ interface TmdbMovieStory {
   revenue?: number;
   production_companies?: Array<{ name?: string }>;
   credits?: TmdbCredits;
+  /** The appended availability feed. The key really is spelled "watch/providers". */
+  'watch/providers'?: TmdbWatchProviders;
 }
 
 interface TmdbTvStory {
+  /** Needed to type the title into a service's search box. */
+  name?: string;
   overview?: string;
   tagline?: string;
   number_of_seasons?: number;
@@ -239,6 +328,7 @@ interface TmdbTvStory {
   last_episode_to_air?: { runtime?: number | null } | null;
   /** The appended first season. The key really is spelled "season/1". */
   'season/1'?: { episodes?: Array<{ runtime?: number | null }> };
+  'watch/providers'?: TmdbWatchProviders;
 }
 
 /**
@@ -298,7 +388,12 @@ export async function getTmdbStory(
   const fetchedAt = new Date().toISOString();
 
   if (kind === 'movie') {
-    const { url, headers } = buildTmdbUrl(`movie/${id}?append_to_response=credits`);
+    // One request, three payloads: the film, its cast, and who is carrying it.
+    // `watch/providers` rides along on append_to_response, so knowing where to
+    // watch something costs NOTHING on top of the story we already fetch.
+    const { url, headers } = buildTmdbUrl(
+      `movie/${id}?append_to_response=credits,watch/providers`
+    );
     const d = await fetchJson<TmdbMovieStory>(url, headers, undefined, STORY_REVALIDATE_SECONDS);
     if (!d) return null;
     const runtime = typeof d.runtime === 'number' && d.runtime > 0 ? d.runtime : undefined;
@@ -313,6 +408,7 @@ export async function getTmdbStory(
         ? { score: { value: d.vote_average, count: d.vote_count, label: 'TMDB members' } }
         : {}),
       people: billedNames(topBilled(d.credits)),
+      ...watchProviders(d['watch/providers'], AVAILABILITY_COUNTRY, d.title),
       facts: factList([
         { label: 'Released', value: longDate(d.release_date) },
         { label: 'Language', value: languageName(d.original_language) },
@@ -322,7 +418,9 @@ export async function getTmdbStory(
     };
   }
 
-  const { url, headers } = buildTmdbUrl(`tv/${id}?append_to_response=credits,season/1`);
+  const { url, headers } = buildTmdbUrl(
+    `tv/${id}?append_to_response=credits,season/1,watch/providers`
+  );
   const d = await fetchJson<TmdbTvStory>(url, headers, undefined, STORY_REVALIDATE_SECONDS);
   if (!d) return null;
 
@@ -343,6 +441,7 @@ export async function getTmdbStory(
       ? { score: { value: d.vote_average, count: d.vote_count, label: 'TMDB members' } }
       : {}),
     people: billedNames(topBilled(d.credits)),
+    ...watchProviders(d['watch/providers'], AVAILABILITY_COUNTRY, d.name),
     facts: factList([
       { label: 'Status', value: d.status },
       { label: 'First aired', value: longDate(d.first_air_date) },

@@ -9,7 +9,7 @@ import { ItemSheet } from './ItemSheet';
 import { MediaPoster } from './MediaPoster';
 import { StatusDot, statusOptions } from './StatusDot';
 import { useItemDelete } from '@/hooks/useItemDelete';
-import { useItemStatus } from '@/hooks/useItemStatus';
+import { useItemStatus, type ItemStatusController } from '@/hooks/useItemStatus';
 import { cn, getPeople, isFinishedByEveryone } from '@/lib/utils';
 import { getStatusLabel, getStatusOptions } from '@/types';
 import type { ItemStatus, MediaItemWithDetails, MediaType } from '@/types';
@@ -42,6 +42,19 @@ interface Props {
   openId?: string | null;
   onOpenId?: (itemId: string | null) => void;
   onUpdated?: (item: MediaItemWithDetails) => void;
+  /** Selection mode: a cover gathers instead of opening. Owned by the archive. */
+  selecting?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (itemId: string) => void;
+  /** Sends ONE item elsewhere, from its sheet. */
+  onTransfer?: (item: MediaItemWithDetails) => void;
+  /**
+   * The status machinery, when it is OWNED ABOVE this list. The archive lifts
+   * it so the list view, the covers view and the selection tray all read and
+   * write one set of facts — without it, switching view resets what the viewer
+   * has marked finished back to whatever the server said on page load.
+   */
+  statusController?: ItemStatusController;
 }
 
 /**
@@ -74,12 +87,16 @@ export function MediaGrid({
   openId,
   onOpenId,
   onUpdated,
+  selecting = false,
+  selectedIds,
+  onToggleSelect,
+  onTransfer,
+  statusController,
 }: Props) {
-  const { statusOf, isConsumed, setStatus, savingId } = useItemStatus({
-    userId,
-    consumedSet,
-    onUpdated,
-  });
+  // Hooks cannot be conditional, so the local one is always made and simply
+  // goes unused when the archive hands its own down.
+  const localStatus = useItemStatus({ userId, consumedSet, onUpdated });
+  const { statusOf, isConsumed, setStatus, savingId } = statusController ?? localStatus;
   // Tracked by id, so the open sheet follows the item through edits and status
   // changes rather than showing a copy taken when it opened. The archive owns
   // the id when it can, because it is in the URL and therefore linkable.
@@ -121,10 +138,12 @@ export function MediaGrid({
             viewerConsumed: isConsumed(item.id),
           });
 
+          const selected = !!selectedIds?.has(item.id);
+
           return (
             <li key={item.id}>
               <article
-                onClick={() => setOpenId(item.id)}
+                onClick={() => (selecting ? onToggleSelect?.(item.id) : setOpenId(item.id))}
                 className={cn(
                   'cursor-pointer',
                   // `translate-y-0` for the same reason the posters carry
@@ -136,7 +155,10 @@ export function MediaGrid({
                   'group relative translate-y-0 overflow-hidden rounded-[var(--radius-md)] border transition-[border-color,translate] duration-[var(--duration-standard)] ease-[var(--ease-standard)]',
                   everyone ? 'border-emerald-500/40' : 'border-white/10',
                   'hover:-translate-y-0.5 hover:border-white/30',
-                  status === 'not_interested' && 'opacity-55',
+                  // A picked cover is ringed rather than dimmed: the artwork is
+                  // the only way you recognise what you are holding.
+                  selected && 'border-amber-400 ring-2 ring-amber-400/70 hover:border-amber-400',
+                  status === 'not_interested' && !selected && 'opacity-55',
                 )}
               >
                 <MediaPoster
@@ -150,6 +172,7 @@ export function MediaGrid({
                 {/* Controls live in the corners, where the artwork has least to
                     say, and stay put: a card that only shows its controls on
                     hover is a card a phone can never fully use. */}
+                {selecting ? null : (
                 <div className="absolute left-1.5 top-1.5" onClick={(event) => event.stopPropagation()}>
                   {isMember ? (
                     <span className={savingId === item.id ? 'pointer-events-none opacity-60' : undefined}>
@@ -172,8 +195,24 @@ export function MediaGrid({
                     </span>
                   )}
                 </div>
+                )}
 
-                {everyone ? (
+                {/* Top right is one slot with two tenants, and gathering wins
+                    it: while you are picking, "is this one picked" is the only
+                    question the corner has to answer. */}
+                {selecting ? (
+                  <span
+                    aria-hidden
+                    className={cn(
+                      'absolute right-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full border shadow-[var(--shadow-2)] transition-colors',
+                      selected
+                        ? 'border-amber-400 bg-amber-400 text-stone-950'
+                        : 'border-white/50 bg-stone-950/70 text-transparent',
+                    )}
+                  >
+                    <Check className="h-3.5 w-3.5" strokeWidth={3.5} />
+                  </span>
+                ) : everyone ? (
                   <WarmTooltip content="Everyone in the group finished this">
                     <span className="absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-emerald-500 text-stone-950 shadow-[var(--shadow-2)]">
                       <Check className="h-3 w-3" strokeWidth={3.5} />
@@ -196,10 +235,12 @@ export function MediaGrid({
                     >
                       <button
                         type="button"
-                        aria-haspopup="dialog"
+                        aria-haspopup={selecting ? undefined : 'dialog'}
+                        aria-pressed={selecting ? selected : undefined}
                         onClick={(event) => {
                           event.stopPropagation();
-                          setOpenId(item.id);
+                          if (selecting) onToggleSelect?.(item.id);
+                          else setOpenId(item.id);
                         }}
                         className="max-w-full cursor-pointer truncate text-left align-bottom transition-colors hover:text-amber-300"
                       >
@@ -210,6 +251,7 @@ export function MediaGrid({
                       {[year, credit].filter(Boolean).join(' \u00b7 ') || getStatusLabel(status)}
                     </p>
                   </div>
+                  {selecting ? null : (
                   <span onClick={(event) => event.stopPropagation()} className="shrink-0">
                   <CommentsDialog
                     itemId={item.id}
@@ -221,6 +263,7 @@ export function MediaGrid({
                     triggerClassName="-mb-0.5 h-7 w-7 shrink-0 text-stone-400 hover:text-stone-100"
                   />
                   </span>
+                  )}
                 </div>
               </article>
             </li>
@@ -253,6 +296,14 @@ export function MediaGrid({
             ? () => {
                 deleteItem(openItem);
                 setOpenId(null);
+              }
+            : undefined
+        }
+        onTransfer={
+          isMember && openItem && onTransfer
+            ? () => {
+                setOpenId(null);
+                onTransfer(openItem);
               }
             : undefined
         }

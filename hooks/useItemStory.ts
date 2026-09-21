@@ -10,7 +10,7 @@
 // Four layers stand in front of the provider, cheapest first:
 //
 //   1. this module's Map          — the rest of the session, free
-//   2. localStorage, 30 days      — reloads and later visits, free
+//   2. localStorage, 7 days       — reloads and later visits, free
 //   3. Next's fetch cache, 1 day  — SHARED BETWEEN USERS, on the server
 //   4. the provider               — reached only when all three miss
 //
@@ -25,8 +25,17 @@ import { useEffect, useState } from 'react';
 import type { ItemStory } from '@/types';
 import { ITEM_STORY_VERSION } from '@/types';
 
-/** How long a cached story stays good in the browser. */
-const TTL_MS = 30 * 24 * 60 * 60 * 1000;
+/**
+ * How long a cached story stays good in the browser.
+ *
+ * A week, not the month this used to be, and the reason is the `where` block:
+ * a synopsis is true forever, but a film leaves Netflix on a Tuesday and a
+ * stale "watch it on Prime" chip sends a friend to a page that no longer has
+ * it. A week is the longest a wrong answer there is still a small
+ * embarrassment rather than a broken promise — and it costs nothing, because
+ * the server's day-long cache is shared between everybody in the group.
+ */
+const TTL_MS = 7 * 24 * 60 * 60 * 1000;
 /** Cache keys carry the schema version, so an older shape is simply ignored. */
 const KEY_PREFIX = `tfa.story.v${ITEM_STORY_VERSION}.`;
 /** Keeps the localStorage footprint bounded on a heavily browsed archive. */

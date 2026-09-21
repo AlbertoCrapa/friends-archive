@@ -386,6 +386,7 @@ export default async function UIStressPage({ searchParams }: Props) {
             <SectionHeading>Group archive — list, covers and stats views, with real artwork</SectionHeading>
             <GroupMediaSection
               groupId="stress-group"
+              groupName="Stress Archive"
               userId={ARCHIVE_MEMBERS[0].id}
               currentUserNickname={ARCHIVE_MEMBERS[0].nickname}
               isMember

@@ -35,6 +35,7 @@ import { AnimatePresence, motion, useDragControls, useReducedMotion } from 'fram
 import {
   ArrowUpRight,
   Check,
+  FolderInput,
   Link2,
   MessageSquare,
   Pencil,
@@ -61,11 +62,12 @@ import {
 } from '@/lib/utils';
 import type { PersonKey } from '@/lib/utils';
 import { getStatusLabel, getStatusOptions, getTypeLabel } from '@/types';
-import type { ItemStatus, MediaItemWithDetails, MediaType } from '@/types';
+import type { ItemStatus, MediaItemWithDetails, MediaType, WhereEntry } from '@/types';
 import { CommentThread } from './CommentThread';
 import { EditMediaItemDialog } from './EditMediaItemDialog';
 import { MediaPoster, PosterGlow, TYPE_ICONS } from './MediaPoster';
 import { StatusDot, statusOptions } from './StatusDot';
+import { StoreMark, hasStoreMark } from './StoreMark';
 
 const STATUS_OPTIONS = statusOptions(getStatusOptions());
 
@@ -117,6 +119,8 @@ export interface ItemSheetProps {
   onUpdated?: (item: MediaItemWithDetails) => void;
   /** Provided where deleting is offered; the caller owns the undo. */
   onDelete?: () => void;
+  /** Opens the send dialog for this one title. Members only. */
+  onTransfer?: () => void;
   onToggleTag?: (tag: string) => void;
   activeTags?: string[];
 }
@@ -219,6 +223,7 @@ function SheetBody({
   onStatus,
   onUpdated,
   onDelete,
+  onTransfer,
   onToggleTag,
   activeTags = [],
   dragControls,
@@ -393,6 +398,17 @@ function SheetBody({
               </Button>
             </a>
           ) : null}
+          {isMember && onTransfer ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 text-stone-400 hover:text-stone-100"
+              title="Send to another archive"
+              onClick={onTransfer}
+            >
+              <FolderInput className="h-3.5 w-3.5" />
+            </Button>
+          ) : null}
           {isMember ? (
             <Button
               variant="ghost"
@@ -433,7 +449,7 @@ function SheetBody({
         <div className="relative md:h-full md:overflow-y-auto md:overscroll-contain">
           {/* The film tints its own sheet: a blurred copy of the poster we
               already have in cache, never a second image off the network. */}
-          <PosterGlow src={item.image_url} shape="card" className="h-72 opacity-80" />
+          <PosterGlow src={item.image_url} shape="card" className="h-64 opacity-70" />
 
           <div className="relative px-4 pb-6 pt-4 md:px-6">
             <div className="flex gap-4">
@@ -520,6 +536,13 @@ function SheetBody({
                 </p>
               </section>
             ) : null}
+
+            <WhereToGet
+              where={story?.where}
+              country={story?.where_country}
+              source={story?.where_source}
+              type={item.type}
+            />
 
             {tags.length > 0 ? (
               <section className="mt-5">
@@ -848,6 +871,101 @@ function ScoreRing({ score }: { score: { value: number; count?: number; label: s
         <span className="max-w-[7rem] text-[11px] leading-tight text-stone-500">{score.label}</span>
       </div>
     </WarmTooltip>
+  );
+}
+
+/** What the heading calls the row, per medium. */
+const WHERE_TITLE: Record<MediaType, string> = {
+  movie: 'Where to watch',
+  tv_series: 'Where to watch',
+  book: 'Where to read',
+  video_game: 'Where to play',
+};
+
+/** The suffix on a chip. Streaming says nothing — it is the default reading. */
+const WHERE_KIND_LABEL: Record<WhereEntry['kind'], string | null> = {
+  stream: null,
+  rent: 'rent',
+  buy: 'buy',
+};
+
+/**
+ * WHERE YOU CAN ACTUALLY GET IT — the one part of the sheet that answers
+ * "fine, but can we watch it tonight".
+ *
+ * Absent means nobody told us, and the row simply is not there: an empty
+ * "Where to watch" heading would read as "nowhere", which is a much stronger
+ * claim than we are entitled to make. Every chip is a link out, so this is
+ * the only place on the sheet that can end the evening's argument.
+ */
+function WhereToGet({
+  where,
+  country,
+  source,
+  type,
+}: {
+  where?: WhereEntry[];
+  country?: string;
+  source?: string;
+  type: MediaType;
+}) {
+  if (!where || where.length === 0) return null;
+
+  return (
+    <section className="mt-5">
+      <h3 className="label-quiet">
+        {WHERE_TITLE[type]}
+        {country ? <span className="ml-1.5 text-stone-600">in {country}</span> : null}
+      </h3>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {where.map((place) => {
+          const kind = WHERE_KIND_LABEL[place.kind];
+          return (
+            <a
+              key={`${place.kind}:${place.name}`}
+              href={place.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={
+                place.via === 'justwatch'
+                  ? `${place.name} has it — opens the JustWatch page, which knows the way in`
+                  : `Opens ${place.name}`
+              }
+              className={cn(
+                'group flex items-center gap-1.5 rounded-full border border-white/[0.09] bg-white/[0.03] py-1 pr-2.5 text-[11.5px] text-stone-300 transition-colors hover:border-amber-500/40 hover:bg-amber-500/10 hover:text-amber-200',
+                // A mark sits in the chip's own inset. Films get a logo from
+                // the provider's CDN, game stores get an inlined brand glyph,
+                // and anything we cannot draw honestly gives the space back to
+                // the name rather than showing an empty square.
+                place.logo_url || hasStoreMark(place.name) ? 'pl-1' : 'pl-2.5',
+              )}
+            >
+              {place.logo_url ? (
+                <img
+                  src={place.logo_url}
+                  alt=""
+                  width={18}
+                  height={18}
+                  loading="lazy"
+                  className="h-[18px] w-[18px] rounded-[5px] object-cover"
+                />
+              ) : (
+                <StoreMark
+                  name={place.name}
+                  className="h-[18px] w-[18px] p-[2px] text-stone-400 transition-colors group-hover:text-amber-300"
+                />
+              )}
+              <span>{place.name}</span>
+              {kind ? <span className="text-stone-500 group-hover:text-amber-500/70">{kind}</span> : null}
+              <ArrowUpRight className="h-3 w-3 text-stone-600 group-hover:text-amber-400" />
+            </a>
+          );
+        })}
+      </div>
+      {source ? (
+        <p className="mt-1.5 text-[11px] text-stone-600">Availability from {source}</p>
+      ) : null}
+    </section>
   );
 }
 

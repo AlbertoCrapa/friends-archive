@@ -1,6 +1,7 @@
 'use client';
 
-import { BarChart3, LayoutGrid, Rows3, Search, X } from 'lucide-react';
+import { BarChart3, LayoutGrid, ListChecks, Rows3, Search, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { GlideSelect } from '@/components/micro/GlideSelect';
 import { RubberSegment } from '@/components/micro/RubberSegment';
@@ -50,6 +51,13 @@ interface Props {
   onClear: () => void;
   /** Sits at the end of the first row. The archive's one primary action. */
   action?: React.ReactNode;
+  /**
+   * Selection mode. Present only where the viewer can act on items — a
+   * read-only visitor has nothing to do with a handful of rows, so they are
+   * never offered the means to gather them.
+   */
+  selecting?: boolean;
+  onSelecting?: (next: boolean) => void;
 }
 
 /**
@@ -80,6 +88,8 @@ export function ArchiveControls({
   hasActiveFilter,
   onClear,
   action,
+  selecting,
+  onSelecting,
 }: Props) {
   return (
     // No backdrop blur. At 96% opacity it bought nothing visible, and a
@@ -152,6 +162,21 @@ export function ArchiveControls({
             onChange={(next) => onSort(next as SortKey)}
             options={SORT_OPTIONS}
           />
+
+          {onSelecting ? (
+            /* Next to the filters rather than next to Add, because gathering
+               is a reading job: you turn it on, then keep filtering. */
+            <Button
+              variant={selecting ? 'secondary' : 'outline'}
+              size="sm"
+              aria-pressed={selecting}
+              onClick={() => onSelecting(!selecting)}
+              className="gap-1.5"
+            >
+              <ListChecks className="h-3.5 w-3.5" />
+              {selecting ? 'Done' : 'Multi-select'}
+            </Button>
+          ) : null}
 
           <span className="ml-auto shrink-0 text-[12.5px] text-stone-500">
             {shown} {shown === 1 ? 'item' : 'items'}

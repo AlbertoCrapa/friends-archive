@@ -180,20 +180,18 @@ export function PosterGlow({
 }) {
   const url = safeImageUrl(src);
   if (!url) return null;
+  // A single fade, anchored to the edge the artwork sits against: full strength
+  // where the poster is, gone by the time the text starts. Fading in *and* out
+  // pinched the colour into a band across the middle instead.
+  const mask =
+    shape === 'row'
+      ? 'linear-gradient(to right, black, transparent 44%)'
+      : 'linear-gradient(to bottom, black, black 24%, transparent 84%)';
   return (
     <span
       aria-hidden="true"
       className={cn('pointer-events-none absolute inset-0 overflow-hidden', className)}
-      style={{
-        maskImage:
-          shape === 'row'
-            ? 'linear-gradient(to right, black, transparent 44%)'
-            : 'linear-gradient(to bottom, transparent 40%, black 56%, transparent 94%)',
-        WebkitMaskImage:
-          shape === 'row'
-            ? 'linear-gradient(to right, black, transparent 44%)'
-            : 'linear-gradient(to bottom, transparent 40%, black 56%, transparent 94%)',
-      }}
+      style={{ maskImage: mask, WebkitMaskImage: mask }}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
@@ -206,7 +204,10 @@ export function PosterGlow({
         draggable={false}
         className={cn(
           'h-full w-full object-cover saturate-150',
-          shape === 'row' ? 'scale-[1.6] opacity-[0.13] blur-2xl' : 'scale-[1.35] opacity-[0.45] blur-2xl'
+          // Scaled well past the frame so the blur's own soft edge stays
+          // outside it — at 1.35 the fringe fell inside and the colour read as
+          // a puddle floating in the middle of the sheet.
+          shape === 'row' ? 'scale-[1.6] opacity-[0.13] blur-2xl' : 'scale-[1.9] opacity-[0.3] blur-3xl'
         )}
       />
     </span>

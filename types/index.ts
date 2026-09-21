@@ -131,7 +131,31 @@ export interface ExternalWork {
  * wrong. The number is part of every cache key, so old entries are ignored
  * rather than migrated.
  */
-export const ITEM_STORY_VERSION = 1;
+export const ITEM_STORY_VERSION = 2;
+
+/**
+ * ONE PLACE you can actually get the thing, right now, in one country.
+ *
+ * This is the only part of a story that goes stale on its own: a synopsis is
+ * written once, but a film leaves Netflix on a Tuesday. Everything that reads
+ * it — the caches in front of it especially — has to treat it as perishable.
+ */
+export interface WhereEntry {
+  /** The name people know it by: "Netflix", "Steam", "PlayStation Store". */
+  name: string;
+  /** How you get it there: included in a subscription, rented, or bought. */
+  kind: 'stream' | 'rent' | 'buy';
+  /** Where the link takes you. */
+  url: string;
+  /** Square-ish provider logo at chip size, on the provider's own CDN. */
+  logo_url?: string;
+  /**
+   * Where the link actually lands: inside the service itself, or on the
+   * JustWatch page that lists everyone. The sheet says which, because the two
+   * are a different click and pretending otherwise wastes a tap.
+   */
+  via?: 'service' | 'justwatch';
+}
 
 /** One labelled line in the facts table of the item sheet. */
 export interface StoryFact {
@@ -184,6 +208,16 @@ export interface ItemStory {
   people?: string[];
   /** Provider-specific facts, already formatted for display. */
   facts?: StoryFact[];
+  /**
+   * WHERE YOU CAN ACTUALLY GET IT: the streaming services, rentals and stores
+   * that carry it, in ONE country (`where_country`). Empty or absent means
+   * "nobody told us", never "not available anywhere".
+   */
+  where?: WhereEntry[];
+  /** The country `where` was looked up for, ISO 3166-1 alpha-2. */
+  where_country?: string;
+  /** Who says so — printed as attribution, which JustWatch's terms require. */
+  where_source?: string;
 }
 
 // ── Users / Auth ────────────────────────────────────────────────────────────

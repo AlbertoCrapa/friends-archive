@@ -27,6 +27,14 @@ interface Props {
   /** Needed when there is no visible label. */
   ariaLabel?: string;
   /**
+   * A line above the rows, for a menu that acts on something the trigger
+   * cannot name — "Mark all 6 titles as" reads differently from the same
+   * four rows on a single row's menu.
+   */
+  heading?: ReactNode;
+  /** Passed to the root, for callers that need to retune the chip. */
+  className?: string;
+  /**
    * Drop the value's word from the trigger and keep only the label node and
    * the caret. For grids dense enough that a word would not fit.
    */
@@ -56,7 +64,9 @@ export function GlideSelect({
   onChange,
   label,
   ariaLabel,
+  heading,
   compact,
+  className,
   align = 'left',
 }: Props) {
   const [open, setOpen] = useState(false);
@@ -78,7 +88,11 @@ export function GlideSelect({
   const menuRef = useRef<HTMLDivElement>(null);
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
-  const selected = options.find((o) => o.value === value) ?? options[0];
+  // No fallback to the first option: a value that matches nothing means the
+  // control has no current value to show — a menu that only SETS, like the
+  // selection tray's — and it should read as its label alone, not as whatever
+  // happens to sit at the top of the list.
+  const selected = options.find((o) => o.value === value);
 
   useEffect(() => setMounted(true), []);
 
@@ -187,6 +201,7 @@ export function GlideSelect({
           }
         }}
       >
+        {heading ? <p className="mi-select-heading">{heading}</p> : null}
         <span
           className="mi-select-highlight"
           aria-hidden="true"
@@ -224,7 +239,7 @@ export function GlideSelect({
   ) : null;
 
   return (
-    <div className="mi mi-select" ref={rootRef}>
+    <div className={`mi mi-select${className ? ` ${className}` : ''}`} ref={rootRef}>
       <button
         ref={triggerRef}
         type="button"

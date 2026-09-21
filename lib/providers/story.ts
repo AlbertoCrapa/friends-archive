@@ -8,11 +8,15 @@
 // shape, cleaned to the same standard.
 // ============================================================================
 
+import type { WhereEntry } from '@/types';
+
 /**
  * How long Next may serve a story from its own server-side cache.
  *
- * A day. Nothing in a story changes faster than that — a synopsis is written
- * once and a vote average moves in the third decimal — and because that cache
+ * A day. Nothing in a story moves faster than that — a synopsis is written
+ * once, a vote average moves in the third decimal, and a catalogue change
+ * (a film leaving Netflix) is a thing that happens on a date, not an hour —
+ * and because that cache
  * is shared between users, one day means AT MOST one upstream call per title
  * per day no matter how many friends open it. With every provider's free tier
  * measured in tens of thousands of calls a month, an archive would have to hold
@@ -20,6 +24,58 @@
  * thought.
  */
 export const STORY_REVALIDATE_SECONDS = 86_400;
+
+/**
+ * The country availability is looked up for.
+ *
+ * ONE country, not the viewer's: an archive is a group's, and a group watches
+ * together. Making this per-user would fragment every cache layer below by
+ * locale for a group whose members share a sofa.
+ */
+export const AVAILABILITY_COUNTRY = 'IT';
+
+/** How many places we list before the row stops being scannable. */
+const WHERE_MAX = 8;
+
+/** Streaming first: it is the only one of the three that costs nothing extra. */
+const KIND_RANK: Record<WhereEntry['kind'], number> = { stream: 0, rent: 1, buy: 2 };
+
+/**
+ * Clean a provider's availability list: drop anything without a name or a link,
+ * keep the CHEAPEST way to get each service (a title on Netflix's subscription
+ * and also rentable there is one chip, the subscription one), order streaming
+ * before rent before buy, and cap the row.
+ */
+export function whereList(
+  entries: Array<{
+    name?: string | null;
+    kind: WhereEntry['kind'];
+    url?: string | null;
+    logo_url?: string;
+    via?: WhereEntry['via'];
+  }>
+): WhereEntry[] | undefined {
+  const best = new Map<string, WhereEntry>();
+  for (const entry of entries) {
+    const name = entry.name?.trim();
+    const url = entry.url?.trim();
+    if (!name || !url) continue;
+    const key = name.toLowerCase();
+    const existing = best.get(key);
+    if (existing && KIND_RANK[existing.kind] <= KIND_RANK[entry.kind]) continue;
+    best.set(key, {
+      name,
+      kind: entry.kind,
+      url,
+      ...(entry.logo_url ? { logo_url: entry.logo_url } : {}),
+      ...(entry.via ? { via: entry.via } : {}),
+    });
+  }
+  const out = [...best.values()]
+    .sort((a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind])
+    .slice(0, WHERE_MAX);
+  return out.length > 0 ? out : undefined;
+}
 
 /** Synopses are trimmed to this. Longer than a paragraph nobody reads it. */
 const SYNOPSIS_MAX = 900;

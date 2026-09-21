@@ -21,6 +21,7 @@ import {
   Check,
   ExternalLink,
   EyeOff,
+  FolderInput,
   MoreHorizontal,
   Pencil,
   RotateCcw,
@@ -38,7 +39,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useItemDelete } from '@/hooks/useItemDelete';
-import { useItemStatus } from '@/hooks/useItemStatus';
+import { useItemStatus, type ItemStatusController } from '@/hooks/useItemStatus';
 import { getPeople, getVisibleTags, cn } from '@/lib/utils';
 import type { PersonKey } from '@/lib/utils';
 import { getStatusLabel, getStatusOptions, getTypeLabel } from '@/types';
@@ -91,6 +92,23 @@ interface Props {
   openId?: string | null;
   onOpenId?: (itemId: string | null) => void;
   onUpdated?: (item: MediaItemWithDetails) => void;
+  /**
+   * Selection mode: a row gathers instead of opening. The set lives above this
+   * list — it has to survive the filters and the pagination that decide which
+   * rows are even rendered here.
+   */
+  selecting?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (itemId: string) => void;
+  /** Sends ONE item elsewhere, from its own menu. */
+  onTransfer?: (item: MediaItemWithDetails) => void;
+  /**
+   * The status machinery, when it is OWNED ABOVE this list. The archive lifts
+   * it so the list view, the covers view and the selection tray all read and
+   * write one set of facts — without it, switching view resets what the viewer
+   * has marked finished back to whatever the server said on page load.
+   */
+  statusController?: ItemStatusController;
 }
 
 export function MediaTable({
@@ -111,12 +129,16 @@ export function MediaTable({
   openId,
   onOpenId,
   onUpdated,
+  selecting = false,
+  selectedIds,
+  onToggleSelect,
+  onTransfer,
+  statusController,
 }: Props) {
-  const { statusOf, isConsumed, setStatus, savingId } = useItemStatus({
-    userId,
-    consumedSet,
-    onUpdated,
-  });
+  // Hooks cannot be conditional, so the local one is always made and simply
+  // goes unused when the archive hands its own down.
+  const localStatus = useItemStatus({ userId, consumedSet, onUpdated });
+  const { statusOf, isConsumed, setStatus, savingId } = statusController ?? localStatus;
   const [editing, setEditing] = useState<MediaItemWithDetails | null>(null);
   // The open sheet is tracked by ID, not by object: the item it shows is
   // re-read from `items` on every render, so a status change, an edit or a new
@@ -185,6 +207,10 @@ export function MediaTable({
             onEdit={() => setEditing(item)}
             onDelete={() => deleteItem(item)}
             onOpen={() => setOpenId(item.id)}
+            selecting={selecting}
+            selected={!!selectedIds?.has(item.id)}
+            onToggleSelect={onToggleSelect ? () => onToggleSelect(item.id) : undefined}
+            onTransfer={onTransfer ? () => onTransfer(item) : undefined}
           />
         ))}
       </ul>
@@ -216,6 +242,16 @@ export function MediaTable({
             ? () => {
                 deleteItem(openItem);
                 setOpenId(null);
+              }
+            : undefined
+        }
+        onTransfer={
+          isMember && openItem && onTransfer
+            ? () => {
+                // Two stacked dialogs would fight over the focus trap, and the
+                // send dialog already says which title it is holding.
+                setOpenId(null);
+                onTransfer(openItem);
               }
             : undefined
         }
@@ -259,6 +295,10 @@ interface RowProps {
   onEdit: () => void;
   onDelete: () => void;
   onOpen: () => void;
+  selecting: boolean;
+  selected: boolean;
+  onToggleSelect?: () => void;
+  onTransfer?: () => void;
 }
 
 function ArchiveRow({
@@ -279,6 +319,10 @@ function ArchiveRow({
   onEdit,
   onDelete,
   onOpen,
+  selecting,
+  selected,
+  onToggleSelect,
+  onTransfer,
 }: RowProps) {
   const TypeGlyph = TYPE_ICONS[item.type];
   const tags = getVisibleTags(item);
@@ -316,7 +360,11 @@ function ArchiveRow({
   //
   // `commit: false` takes away the full-swipe shortcut: this destroys something
   // for the whole group, so it costs a pull AND a tap, never a flick.
-  const actions = isMember
+  //
+  // While gathering, the row has ONE job. The pull, the status control and the
+  // menu all come off, because every one of them is a tap that would land on a
+  // row you were only trying to pick up.
+  const actions = isMember && !selecting
     ? [
         {
           id: 'delete',
@@ -334,7 +382,7 @@ function ArchiveRow({
       <SwipeRow
         label={`Actions for ${item.title}`}
         actions={actions}
-        disabled={!isMember}
+        disabled={!isMember || selecting}
         handle={false}
         // The two ways of acting on a row must not be usable at the same time:
         // while the menu is open the row is pinned, and while the row is being
@@ -357,7 +405,8 @@ function ArchiveRow({
             // only the row's own surface opens the sheet.
             if (event.defaultPrevented) return;
             if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 8) return;
-            onOpen();
+            if (selecting) onToggleSelect?.();
+            else onOpen();
           }}
           className={cn(
             // A grid, not a wrapping flex row.
@@ -371,6 +420,9 @@ function ArchiveRow({
             'group relative isolate grid cursor-pointer grid-cols-[48px_minmax(0,1fr)] items-start gap-x-3 gap-y-2 rounded-[12px] border p-2.5 transition-colors sm:grid-cols-[48px_minmax(0,1fr)_auto]',
             everyone ? 'border-emerald-500/40' : 'border-white/[0.07]',
             'hover:border-white/20',
+            // A picked row is lit from its own edge, so a screenful of them
+            // reads as a handful without anything moving.
+            selected && 'border-amber-500/70 bg-amber-500/[0.07] hover:border-amber-500/70',
             skipped && 'opacity-55',
           )}
         >
@@ -378,14 +430,28 @@ function ArchiveRow({
               poster, faded out well before it reaches any text. */}
           <PosterGlow src={item.image_url} shape="row" className="-z-10" />
 
-          <MediaPoster
-            src={item.image_url}
-            type={item.type}
-            size="md"
-            zoomOnHover
-            priority={index < PRIORITY_ROWS}
-            className="row-span-2 sm:row-span-1"
-          />
+          <div className="relative row-span-2 self-start sm:row-span-1">
+            <MediaPoster
+              src={item.image_url}
+              type={item.type}
+              size="md"
+              zoomOnHover
+              priority={index < PRIORITY_ROWS}
+            />
+            {selecting ? (
+              <span
+                aria-hidden
+                className={cn(
+                  'absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full border shadow-[var(--shadow-2)] transition-colors',
+                  selected
+                    ? 'border-amber-400 bg-amber-400 text-stone-950'
+                    : 'border-stone-600 bg-stone-950/85 text-transparent',
+                )}
+              >
+                <Check className="h-3 w-3" strokeWidth={3.5} />
+              </span>
+            ) : null}
+          </div>
 
           <div className="min-w-0 space-y-1 py-0.5">
             <div className="flex min-w-0 items-center gap-1.5">
@@ -397,9 +463,11 @@ function ArchiveRow({
                   type="button"
                   onClick={(event) => {
                     event.stopPropagation();
-                    onOpen();
+                    if (selecting) onToggleSelect?.();
+                    else onOpen();
                   }}
-                  aria-haspopup="dialog"
+                  aria-haspopup={selecting ? undefined : 'dialog'}
+                  aria-pressed={selecting ? selected : undefined}
                   className="max-w-full cursor-pointer truncate text-left align-bottom transition-colors hover:text-amber-300"
                 >
                   {item.title}
@@ -435,7 +503,11 @@ function ArchiveRow({
                     type="button"
                     onClick={(event) => {
                       event.stopPropagation();
-                      onToggleTag?.(tag);
+                      // While gathering, every surface on the row means the
+                      // same thing — a tag that filtered instead would throw
+                      // away the screen you were picking from.
+                      if (selecting) onToggleSelect?.();
+                      else onToggleTag?.(tag);
                     }}
                     aria-pressed={activeTagSet.has(tag)}
                     disabled={!onToggleTag}
@@ -469,7 +541,9 @@ function ArchiveRow({
           {/* Column 2 row 2 on a phone, column 3 on a desk. Every control in
               here does its own thing and stops the row's click. */}
           <div
-            onClick={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              if (!selecting) event.stopPropagation();
+            }}
             className="flex items-center gap-2 sm:col-start-3 sm:row-start-1 sm:self-center sm:justify-end"
           >
             <FinishedMeter
@@ -480,7 +554,7 @@ function ArchiveRow({
               everyone={everyone}
             />
 
-            {isMember ? (
+            {selecting ? null : isMember ? (
               <span className={saving ? 'pointer-events-none opacity-60' : undefined}>
                 <GlideSelect
                   ariaLabel={`Your status for ${item.title}`}
@@ -498,17 +572,19 @@ function ArchiveRow({
               </span>
             )}
 
-            <CommentsDialog
-              itemId={item.id}
-              itemTitle={item.title}
-              userId={userId}
-              currentUserNickname={currentUserNickname}
-              isMember={isMember}
-              isOwner={isOwner}
-              triggerClassName="h-8 w-8"
-            />
+            {selecting ? null : (
+              <CommentsDialog
+                itemId={item.id}
+                itemTitle={item.title}
+                userId={userId}
+                currentUserNickname={currentUserNickname}
+                isMember={isMember}
+                isOwner={isOwner}
+                triggerClassName="h-8 w-8"
+              />
+            )}
 
-            {isMember ? (
+            {isMember && !selecting ? (
               <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -544,6 +620,12 @@ function ArchiveRow({
                     {skipped ? 'Put it back' : 'Not interested'}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
+                  {onTransfer ? (
+                    <DropdownMenuItem onSelect={onTransfer}>
+                      <FolderInput className="mr-2 h-3.5 w-3.5" />
+                      Send to another archive
+                    </DropdownMenuItem>
+                  ) : null}
                   <DropdownMenuItem onSelect={onEdit}>
                     <Pencil className="mr-2 h-3.5 w-3.5" />
                     Edit

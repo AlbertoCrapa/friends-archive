@@ -30,6 +30,7 @@ This document is the authoritative reference for the database schema of The Frie
    - [Why comments are a separate table](#68-why-comments-are-a-separate-table)
    - [Why status is per-member](#69-why-status-is-per-member)
    - [Why artwork is linked, not stored](#610-why-artwork-is-linked-not-stored)
+   - [Why a move is an insert-and-delete, not an UPDATE](#613-why-a-move-is-an-insert-and-delete-not-an-update)
 7. [Row Level Security Matrix](#7-row-level-security-matrix)
 8. [Metadata Field Reference](#8-metadata-field-reference)
 
@@ -836,7 +837,7 @@ provider abstraction and the search/autocomplete flow live in `lib/providers/` a
 **The three layers, cheapest first** (`hooks/useItemStory.ts`, `lib/providers/story.ts`, `app/api/item-story/route.ts`):
 
 1. **The tab's memory** — a module-level `Map`. Re-opening the same item in the same session is free, and two components asking at the same moment share one request.
-2. **`localStorage`, 30 days** — survives reloads and later visits, capped at 120 entries and pruned oldest-first, with every read and write wrapped so a browser that refuses storage simply falls back to layer 1.
+2. **`localStorage`, 7 days** — survives reloads and later visits, capped at 120 entries and pruned oldest-first, with every read and write wrapped so a browser that refuses storage simply falls back to layer 1. It was a month until availability (§ 6.11.1) joined the story; a stale synopsis is harmless, a stale "it's on Netflix" is not.
 3. **Next's fetch cache, 24 hours** — on the server, and therefore **shared between users**: the first friend to open a title that day pays the provider call and the rest of the group is served from it. This is the layer that makes the feature safe on a free tier.
 
 **The free tiers this has to live inside:**
@@ -844,7 +845,7 @@ provider abstraction and the search/autocomplete flow live in `lib/providers/` a
 | Provider | Free allowance | What we spend |
 | --- | --- | --- |
 | TMDB | No daily cap; rate-limited per second. Attribution required | 1 call per movie/series per day, worldwide |
-| RAWG | **20,000 requests per month** — the binding constraint | 1 call per game per day |
+| RAWG | **20,000 requests per month** — the binding constraint | 2 calls per game per day (game + stores) |
 | Open Library | No key, no published cap; asks for a descriptive User-Agent | 2 calls per book per day (work + editions) |
 
 A 200-title archive opened daily by six friends costs at most ~200 upstream calls a month, because the day cache collapses the six into one. The API route additionally refuses more than 40 story reads a minute from one account, so a loop cannot spend the quota on everyone's behalf.
@@ -852,6 +853,26 @@ A 200-title archive opened daily by six friends costs at most ~200 upstream call
 **Artwork is never re-fetched.** The poster is the link the item already carries (§ 6.10), and the sheet asks the CDN for a *larger size of the same file* by rewriting the size segment (`w185` → `w500`, `-M` → `-L`, `resize/420` → `resize/640`) — one image, once, then the browser's own year-long cache. The blurred wash behind the sheet is the **same URL the row was already showing**, so it costs nothing at all.
 
 **What it costs us:** an item whose provider is unreachable shows no synopsis. That is why everything above the fold — the title, the credits, the tags, who has finished it, what they said — comes from our own row and is on screen before the network is touched at all.
+
+#### 6.11.1 Where you can actually get it
+
+**The decision:** the story carries a `where` list — the services, rentals and stores that have the title — alongside `where_country` and `where_source`. Like the rest of the story it is **read on demand and never stored**, and for a stronger reason than the synopsis: a catalogue is the one fact about a title that changes without the title changing. A `where` written into `metadata` in March is a lie in June, and a confident one.
+
+**Where it comes from, per medium:**
+
+| Medium | Source | Cost | Link goes to |
+| --- | --- | --- | --- |
+| Film / series | TMDB's `watch/providers` (JustWatch data), country `IT` | **Zero extra calls** — it rides along on the `append_to_response` the story already sends | The service's **own search**, title pre-typed (`lib/providers/watchLinks.ts`), or the JustWatch page when that service's search URL is not one we could verify |
+| Game | RAWG's `/games/{id}/stores` | One extra call, issued in parallel with the game read so it adds no latency | The **actual store product page** — Steam, PlayStation Store, Xbox, GOG, Epic |
+| Book | — | — | Open Library exposes only Internet Archive lending; not wired up |
+
+**Why a search link and not the film's page.** Nobody gives away per-service deep links: TMDB publishes none, and the APIs that do (Watchmode, Streaming Availability) are separate keys with their own quotas. The nearest honest thing is the service's own search with the title already in it — you land inside the app you were going to open anyway, one keypress from the film. `watchLinks.ts` holds those URL templates, **each one checked by hand against the live site**; a service whose search URL could not be verified (Disney+, NOW, Sky Go, Timvision, Mediaset Infinity, HBO Max — all of them 404 an unauthenticated search or drop the query on the way to their homepage) is deliberately absent from the map and falls back to the JustWatch page. `WhereEntry.via` records which of the two a chip got, and the sheet says so on hover. **A wrong link is worse than no link, because it looks like it worked.**
+
+**The title we search for is the original one** (TMDB's `title`/`name`), not the Italian release title. TMDB can hand us both for free on the same request, but local titles carry subtitles no catalogue indexes — *Breaking Bad - Reazioni collaterali* finds nothing where *Breaking Bad* finds the show — while streaming search boxes match original titles routinely. If testing shows otherwise, `append_to_response=alternative_titles` is one word away.
+
+**One country, not the viewer's.** `AVAILABILITY_COUNTRY` in `lib/providers/story.ts` is a constant (`IT`). An archive belongs to a group, and a group watches together; making availability per-user would fragment every cache layer by locale for people who share a sofa. Game store pages are worldwide, so the game path sets no `where_country` rather than claiming one it did not filter by.
+
+**Absent ≠ nowhere.** When a provider says nothing the row is not rendered at all. An empty "Where to watch" heading reads as *nowhere*, which is a far stronger claim than "we were not told".
 
 ### 6.12 Where a verdict lives
 
@@ -862,6 +883,37 @@ A 200-title archive opened daily by six friends costs at most ~200 upstream call
 **The consequence to know about:** un-marking something as finished deletes that row, and takes the note and the rating with it. The sheet says so before you do it.
 
 **Ratings degrade, they do not break.** The client asks for `rating`, and if the column is not there yet it remembers that for the session and re-reads without it; the sheet then shows notes alone. Running the migration turns the stars on with no deploy.
+
+---
+
+### 6.13 Why a move is an insert-and-delete, not an UPDATE
+
+**The decision:** an item can be sent from one archive to another in two ways, and both land the destination the same way — as a **new** `media_items` row, `added_by` = the sender, carrying nothing but that sender's own progress.
+
+| Verb | Writes | Origin row | Item `id` | `added_by` |
+| ---- | ------ | ---------- | --------- | ---------- |
+| **Copy** | `INSERT` into the destination | untouched | new | the sender |
+| **Move** | `INSERT` into the destination, **then** `DELETE` the origin row | gone | new | the sender |
+
+**Why the obvious implementation is wrong.** A move looks like one write — `UPDATE media_items SET group_id = <destination>` — and that write is even permitted: the UPDATE policy checks `is_group_member(group_id, auth.uid())` in `USING` against the old row and in `WITH CHECK` against the new one, so it succeeds exactly for someone who belongs to both archives. It is still the wrong write, for two reasons:
+
+1. **`added_by` must become the sender.** The person who first added the title may not be a member of the destination at all; their nickname on that row would be a name nobody there can place, and the archive would be crediting an item to someone who never put it in front of that group. RLS pins `added_by` on UPDATE by design (§ 6.5), so an UPDATE-based move *cannot* reassign it — the constraint is doing its job, and it rules the approach out rather than merely inconveniencing it.
+2. **The conversation would come along.** Comments, `consumption_records` notes and ratings, and every member's `item_statuses` row all hang off the item's `id`. Keeping the id means keeping all of it, so a note written by someone who is only in the *origin* group would become readable by the *destination* group and stop being readable by its own author. A comment is speech addressed to the room it was said in.
+
+Deleting the origin row solves the second point for free: the cascade takes the old comments, notes, ratings and statuses with it.
+
+**What the sender's own progress means.** `item_statuses` carries the personal one, and `completed` additionally needs a bare `consumption_records` row — that is what the rest of the group reads as "they finished this" (see `hooks/useItemStatus`). Both are written for the sender on arrival when they had got somewhere with it; `note` and `rating` on that row are left NULL, because those are speech and speech does not travel.
+
+**Order is the safety.** The insert lands before the original is touched. A failed arrival therefore destroys nothing — everything is still exactly where it was. The reverse order would mean a failed arrival had already deleted the only surviving copy along with its whole history. If the *delete* fails the items exist in both archives, which the UI reports in words rather than hiding, because it is a state one press can fix.
+
+**Undo costs nothing.** Both writes are deferred behind the toast's undo window (§ the same bargain as a delete, `hooks/useItemDelete`). Press Undo and neither write ever ran.
+
+**Two consequences to know about:**
+
+- **Deep links to a moved item break.** `?item=<id>` names a row that no longer exists; the archive drops the parameter rather than leaving a dead one (see `GroupMediaSection`). Copies and moves both produce a new id, so a link sent before the move points at the old entry, not the new one.
+- **The origin group is told it was deleted.** The `BEFORE DELETE` trigger `notify_item_deleted()` fires on the move's second write, so the other members get an `item_deleted` notification rather than an "it moved" one. That is truthful about the effect on *their* archive but not about the cause. Distinguishing the two would need a new `notifications.type` value (`item_moved`) past the `notification_type_valid` CHECK and a flag the trigger can read — a migration, not a frontend change. No UI reads the `notifications` table yet, so nothing currently shows either.
+
+**Duplicates never travel.** Before anything is written, the destination is read and matched against the selection on `external_id` when there is one (identical across groups for the same work — § 3.5) and on the import rule (`title` + `type`, see `lib/groupArchive.ts`) when there is not. A match stays where it is under *both* verbs: copying it would put the same work twice in the destination, and moving it would do that *and* empty the origin.
 
 ---
 

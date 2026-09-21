@@ -9,7 +9,13 @@ import { peopleMetadata } from '@/lib/utils';
 import { fetchJson } from './http';
 import type { ExternalDetails } from './types';
 import { genreFromNames } from './types';
-import { STORY_REVALIDATE_SECONDS, factList, longDate, trimSynopsis } from './story';
+import {
+  STORY_REVALIDATE_SECONDS,
+  factList,
+  longDate,
+  trimSynopsis,
+  whereList,
+} from './story';
 
 interface RawgResult {
   id: number;
@@ -161,6 +167,69 @@ export async function getRawgDetails(id: string): Promise<ExternalDetails | null
   };
 }
 
+// ── Where to play (RAWG's store links) ──────────────────────────────────────
+
+/**
+ * RAWG's store ids, which it never repeats in the per-game endpoint below —
+ * that one returns only `store_id` and the link. Ids are stable; anything not
+ * on this list is skipped rather than shown as a number.
+ */
+const RAWG_STORE_NAMES: Record<number, string> = {
+  1: 'Steam',
+  2: 'Xbox Store',
+  3: 'PlayStation Store',
+  4: 'App Store',
+  5: 'GOG',
+  6: 'Nintendo eShop',
+  7: 'Xbox 360 Store',
+  8: 'Google Play',
+  9: 'itch.io',
+  11: 'Epic Games',
+};
+
+interface RawgStoreLink {
+  store_id?: number;
+  url?: string;
+}
+
+interface RawgStoresResponse {
+  results?: RawgStoreLink[];
+}
+
+/**
+ * The storefronts that carry one game, with links that go STRAIGHT to the
+ * product page — RAWG gives real deep links here, unlike the film side.
+ *
+ * This is the one extra request the game story makes (films get theirs for
+ * free on append_to_response). It is worth a call against RAWG's 20k/month:
+ * it shares the day-long cache with everything else on the sheet, so a title
+ * costs at most two RAWG calls a day no matter how many friends open it.
+ *
+ * Every store is `buy` — a game is a purchase, and RAWG has no notion of a
+ * subscription catalogue (Game Pass, PS Plus), so we never claim one.
+ */
+async function rawgStores(id: string, apiKey: string) {
+  const data = await fetchJson<RawgStoresResponse>(
+    `https://api.rawg.io/api/games/${id}/stores?key=${apiKey}`,
+    undefined,
+    undefined,
+    STORY_REVALIDATE_SECONDS
+  );
+  const where = whereList(
+    (data?.results ?? []).map((link) => ({
+      name: link.store_id ? RAWG_STORE_NAMES[link.store_id] : undefined,
+      kind: 'buy' as const,
+      url: link.url,
+      // RAWG is the generous one: these are the product pages themselves.
+      via: 'service' as const,
+    }))
+  );
+  // No `where_country`: a store product page is the same page everywhere, and
+  // claiming a country we did not filter by would be a lie on the sheet.
+  if (!where) return {};
+  return { where, where_source: 'RAWG' };
+}
+
 // ── Story (the on-demand read behind the item sheet) ─────────────────────────
 
 interface RawgGameStory {
@@ -193,12 +262,16 @@ export async function getRawgStory(id: string): Promise<ItemStory | null> {
   const apiKey = process.env.RAWG_API_KEY;
   if (!apiKey) return null;
 
-  const d = await fetchJson<RawgGameStory>(
-    `https://api.rawg.io/api/games/${id}?key=${apiKey}`,
-    undefined,
-    undefined,
-    STORY_REVALIDATE_SECONDS
-  );
+  // Both reads at once — the stores call must not add its latency to the game's.
+  const [d, stores] = await Promise.all([
+    fetchJson<RawgGameStory>(
+      `https://api.rawg.io/api/games/${id}?key=${apiKey}`,
+      undefined,
+      undefined,
+      STORY_REVALIDATE_SECONDS
+    ),
+    rawgStores(id, apiKey),
+  ]);
   if (!d) return null;
 
   const hours = typeof d.playtime === 'number' && d.playtime > 0 ? d.playtime : undefined;
@@ -220,6 +293,7 @@ export async function getRawgStory(id: string): Promise<ItemStory | null> {
     synopsis: trimSynopsis(d.description_raw ?? d.description),
     ...(hours ? { minutes: hours * 60, minutes_basis: 'Average playthrough' } : {}),
     ...(score ? { score } : {}),
+    ...stores,
     facts: factList([
       { label: 'Released', value: longDate(d.released) },
       { label: 'Publisher', value: d.publishers?.[0]?.name },

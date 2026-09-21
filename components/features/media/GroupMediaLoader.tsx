@@ -4,6 +4,8 @@ import type { ConsumptionRecord, ItemStatus, MediaItemWithDetails, MediaType } f
 
 interface Props {
   groupId: string;
+  /** Passed down so the send dialog can name the archive titles are leaving. */
+  groupName: string;
   userId: string;
   isMember: boolean;
   isOwner: boolean;
@@ -14,6 +16,7 @@ interface Props {
 
 export async function GroupMediaLoader({
   groupId,
+  groupName,
   userId,
   isMember,
   isOwner,
@@ -142,6 +145,7 @@ export async function GroupMediaLoader({
   return (
     <GroupMediaSection
       groupId={groupId}
+      groupName={groupName}
       userId={userId}
       currentUserNickname={currentProfile?.nickname ?? null}
       isMember={isMember}
