@@ -101,7 +101,13 @@ export default async function DashboardPage() {
   }
 
   // Fetch the user's subscription plan + personal stats + recent additions (parallel)
-  const [{ data: subscription }, { count: consumedCount }, { count: addedCount }, { data: recentRows }] =
+  const [
+    { data: subscription },
+    { count: consumedCount },
+    { count: addedCount },
+    { data: recentRows },
+    { data: pendingRows },
+  ] =
     await Promise.all([
       supabase.from('subscriptions').select('plan, status').eq('user_id', user!.id).single(),
       supabase.from('consumption_records').select('id', { count: 'exact', head: true }).eq('user_id', user!.id),
@@ -124,6 +130,18 @@ export default async function DashboardPage() {
               external_id: string | null;
             }>,
           }),
+      // Groups you have asked to join and are still waiting on. Group METADATA
+      // is readable by any signed-in user — that is what makes a private link
+      // resolve to a page with a name and a request button — so this join
+      // reaches the name and visibility of a group you are not in yet. Its
+      // CONTENTS stay shut, which is why these rows carry no counts and no
+      // covers: there is nothing honest to put there until you are let in.
+      supabase
+        .from('group_join_requests')
+        .select('id, created_at, groups ( id, name, description, visibility )')
+        .eq('user_id', user!.id)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false }),
     ]);
 
   type GroupRow = Group & {
@@ -187,9 +205,25 @@ export default async function DashboardPage() {
       imageUrl: row.image_url,
     }));
 
+  const pendingGroups = (pendingRows ?? [])
+    .map((row) => {
+      const g = row.groups as unknown as Group | null;
+      return g
+        ? {
+            id: g.id,
+            name: g.name,
+            description: g.description,
+            visibility: g.visibility,
+            requestedAt: row.created_at,
+          }
+        : null;
+    })
+    .filter((row): row is NonNullable<typeof row> => row !== null);
+
   return (
     <DashboardContent
       groups={groups}
+      pendingGroups={pendingGroups}
       ownedCount={ownedCount}
       atLimit={atLimit}
       plan={plan}

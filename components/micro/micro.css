@@ -2,8 +2,8 @@
    Micro-interaction primitives — React Bits default skin.
    ----------------------------------------------------------------------------
    Values here are the library's own defaults, not a reinterpretation of them:
-   zinc surfaces (#27272a) on near-black, drawers at #3f3f46, gold #f5b400 for
-   a rating, #e5484d for a destructive commit, #22c55e for done. Radii run
+   zinc surfaces (#27272a) on near-black, drawers at #3f3f46, accent blue
+   #2c99f8 for a rating, #e5484d for a destructive commit, #22c55e for done. Radii run
    6 / 7 / 8 / 9 / 10 / 12 / 16 / 999 depending on the control, every easing is
    cubic-bezier(0.23, 1, 0.32, 1), and every press answers with a scale of
    0.96–0.97. Anything the page needs to resize, it resizes through the
@@ -18,8 +18,8 @@
   --mi-raised: #3f3f46;
   --mi-idle: #52525b;
   --mi-bg: #0b0b0f;
-  --mi-gold: #f5b400;
-  --mi-amber: #f5a524;
+  --mi-accent: #2c99f8;
+  --mi-accent-soft: #5cb0fb;
   --mi-green: #22c55e;
   --mi-red: #e5484d;
   --mi-ease: cubic-bezier(0.23, 1, 0.32, 1);
@@ -130,7 +130,7 @@
    pill hops along with the word. Nothing is recorded until you let go. */
 
 .mi-rating {
-  --pr-active: #f5b400;
+  --pr-active: #2c99f8;
   --pr-idle: #52525b;
   --pr-tip: #27272a;
   --pr-tip-text: #f5f5f5;
@@ -894,7 +894,8 @@
 }
 
 /* ── SwipeToast ──────────────────────────────────────────────────────────
-   Bottom right, 356px, an amber fuse burning exactly the time it has left.
+   Bottom right, 356px, a fuse in the accent burning exactly the time it has
+   left.
    Hovering pauses the fuse, which pauses the dismissal with it. */
 
 .mi-toast-dock {
@@ -918,7 +919,7 @@
 .mi-toast {
   --st-bg: #27272a;
   --st-ink: #f5f5f5;
-  --st-fuse: #f5a524;
+  --st-fuse: #2c99f8;
   --st-tone: #a1a1aa;
 
   pointer-events: auto;

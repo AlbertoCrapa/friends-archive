@@ -18,6 +18,12 @@ export interface ExternalDetails {
    * artwork for an item linked before we started keeping it.
    */
   image_url?: string;
+  /**
+   * Canonical id / page URL, only where the provider can't rebuild one from
+   * the other (RAWG: numeric id vs slug URL). Used by the archive import.
+   */
+  external_id?: string;
+  external_url?: string;
 }
 
 /**

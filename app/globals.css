@@ -8,14 +8,28 @@
    ----------------------------------------------------------------------------
    The whole app runs on the React Bits micro-interaction skin: near-black
    ground, #27272a surfaces, #3f3f46 for anything raised or ruled, #f5f5f5 ink
-   stepped down with opacity rather than extra greys, gold #f5b400 wherever a
-   rating is involved, #22c55e for done and #e5484d for destructive. Radii are
-   6 / 10 / 16 and every easing is cubic-bezier(0.23, 1, 0.32, 1).
+   stepped down with opacity rather than extra greys, accent blue #2c99f8
+   wherever something is rated, chosen or live, #22c55e for done and #e5484d
+   for destructive. Radii are 6 / 10 / 16 and every easing is
+   cubic-bezier(0.23, 1, 0.32, 1).
+
+   THE ACCENT IS BLUE, and it is not a new colour: #2c99f8 is the blue this
+   product already owned — the chart hue for games and the top-right wash on
+   the ground — promoted to the one colour the interface points with. It sits
+   where gold used to, so the neutrals did not have to move: on #27272a it
+   holds 4.96:1, on the near-black ground 6.5:1, and #18181b ink on top of it
+   reads at 6.2:1, which is what lets it carry a filled button.
+
+   CAUTION KEPT ITS OWN COLOUR. Blue cannot warn — it is now the colour of
+   every ordinary chosen thing — so amber survives as a separate, narrow
+   `warn` scale below and is used ONLY where the interface is cautioning
+   (quota nearly spent, possible duplicate). Never reach for it as decoration.
 
    Tailwind's stone / amber / emerald scales are REMAPPED below onto that
    system, so the hundreds of `bg-stone-800` and `text-amber-500` already in
-   the codebase render in the new skin without being rewritten one by one.
-   Reach for the semantic --color-* variables in new code.
+   the codebase render in the new skin without being rewritten one by one —
+   `amber-*` is now the accent BLUE ramp, which is why caution has to ask for
+   `warn-*` by name. Reach for the semantic --color-* variables in new code.
    ========================================================================= */
 
 @theme {
@@ -36,16 +50,36 @@
   --color-stone-900: #18181b;
   --color-stone-950: #0b0b0f;
 
-  /* Ratings and anything that wants attention: gold. */
-  --color-amber-200: #ffe4a3;
-  --color-amber-300: #ffd166;
-  --color-amber-400: #f5a524;
-  --color-amber-500: #f5b400;
-  --color-amber-600: #d69b00;
-  --color-amber-700: #a87a00;
-  --color-amber-800: #7a5900;
-  --color-amber-900: #4a3600;
-  --color-amber-950: #241a00;
+  /* Ratings, selection, and anything that wants attention: accent blue.
+     The scale still answers to `amber-*` because that is what the markup
+     says in several hundred places; the colour it hands back is the blue
+     ramp. Hue is held at ~210 across the whole ramp so a tint, a chip and a
+     filled control are visibly the same colour at different strengths. */
+  --color-amber-100: #e5f1ff;
+  --color-amber-200: #c4e1ff;
+  --color-amber-300: #93c9fe;
+  --color-amber-400: #5cb0fb;
+  --color-amber-500: #2c99f8;
+  --color-amber-600: #1f86ec;
+  --color-amber-700: #1668bd;
+  --color-amber-800: #114a86;
+  --color-amber-900: #0c2f54;
+  --color-amber-950: #07192e;
+
+  /* Caution, and nothing else. This is the gold the accent used to be, kept
+     back for the two or three places that genuinely warn — `text-warn-300`,
+     `border-warn-500/25`. If you are reaching for it to make something look
+     important, reach for the accent instead. */
+  --color-warn-100: #fff0cc;
+  --color-warn-200: #ffe4a3;
+  --color-warn-300: #ffd166;
+  --color-warn-400: #f5a524;
+  --color-warn-500: #f5b400;
+  --color-warn-600: #d69b00;
+  --color-warn-700: #a87a00;
+  --color-warn-800: #7a5900;
+  --color-warn-900: #4a3600;
+  --color-warn-950: #241a00;
 
   /* Done / finished. */
   --color-emerald-100: #dcfce7;
@@ -72,9 +106,9 @@
   --color-text-primary: #f5f5f5;
   --color-text-secondary: #a1a1aa;
   --color-text-muted: #71717a;
-  --color-accent: #f5b400;
-  --color-accent-hover: #ffc42a;
-  --color-on-accent: #18181b;
+  --color-accent: #2c99f8;
+  --color-accent-hover: #5cb0fb;
+  --color-on-accent: #0a1420;
   --color-destructive: #e5484d;
   --color-success: #22c55e;
   --color-warning: #f5a524;
@@ -136,14 +170,17 @@
      validator: worst adjacent pair ΔE 11.3 (protan), tritan 8.7, all four
      inside the dark lightness band and over 3:1 on the panel. Do not re-pick
      one of these by eye — re-run the validator on the whole set. */
-  --chart-movie: #cb8313;
+  --chart-movie: #e9c543;
   --chart-tv_series: #129483;
   --chart-video_game: #2c99f8;
   --chart-book: #d765b6;
   /* Single-measure charts carry no identity in colour: length is the encoding.
-     Progress is green, volume is gold, and nothing else is coloured. */
+     Progress is green, volume is the accent, and nothing else is coloured.
+     Volume and --chart-video_game are deliberately the same blue: they never
+     share a legend (one is a count over time, the other a slice of a type
+     breakdown), and a single-measure bar carries no identity in its hue. */
   --chart-progress: #22c55e;
-  --chart-volume: #f5b400;
+  --chart-volume: #2c99f8;
   --chart-grid: #27272a;
 
   /* Layering */
@@ -207,8 +244,8 @@
  * app does) turns them back into classic, space-taking scrollbars. So a Mac
  * needs exactly the same treatment as Windows here, and gets it.
  *
- * Anything these two miss at runtime is caught and measured by
- * components/layout/ScrollGutter.tsx.
+ * The scroll lock never changes this element's overflow (see below), so the
+ * scrollbar is never removed and the width never moves.
  */
 html {
   overflow-y: scroll;
@@ -216,44 +253,27 @@ html {
 }
 
 /*
- * Scroll-lock, moved off the body.
+ * Scroll-lock, without touching the scrollbar.
  *
- * Radix (via react-remove-scroll) locks scrolling by putting `overflow: hidden`
- * on the BODY, which has a side effect nothing in that library can know about:
- * it turns the body into a scroll container, and `position: sticky` sticks to
- * its nearest scroll container. Every sticky bar in the app — the header, the
- * archive toolbar — therefore stopped sticking to the viewport the instant any
- * menu opened, dropped back to its static place in the document, and scrolled
- * out of sight. Opening an overflow menu halfway down a list made the whole top
- * of the page disappear.
+ * Radix (via react-remove-scroll) locks scrolling two ways: it blocks wheel and
+ * touch events outside the open layer, AND it puts `overflow: hidden` on the
+ * body. The second is the one that hurts: any `overflow: hidden` on the
+ * scrollport removes the scrollbar, the viewport widens by its width, and every
+ * fixed thing (the ground in body::before, the overlay) slides sideways on open
+ * and back on close — on Windows always, on a Mac because the styled
+ * ::-webkit-scrollbar below is a classic, space-taking one.
  *
- * So the lock is moved up to the root element, which is the scrollport the
- * sticky bars were already measured against: it clamps scrolling exactly the
- * same way, keeps the current offset, and leaves every sticky bar exactly where
- * it was.
- *
- * The margin/padding compensation is cancelled in the same breath: it exists to
- * replace a scrollbar that is *about* to disappear, and ours never does —
- * `scrollbar-gutter: stable` above reserves that strip permanently. Left in, it
- * double-counts and shoves the page sideways on every open.
+ * So the CSS half is cancelled outright: the page keeps its scrollbar, the
+ * width never changes, and the event blocking alone keeps the page still. It
+ * also keeps `position: sticky` working, which an overflow on the body breaks.
+ * `html body[…]` beats the library's own runtime rule (same selector,
+ * `!important`, later in <head>) by one element of specificity.
  */
-/* `html body[…]` rather than `body[…]`: react-remove-scroll injects a rule with
-   the very same selector and `overflow: hidden !important` into <head> at
-   runtime, so an equal-specificity rule loses on document order however
-   important it is. One extra element in the selector settles it. */
+/* ponytail: dragging the page's scrollbar thumb still scrolls behind a modal; fine. */
 html body[data-scroll-locked] {
   overflow: visible !important;
   margin-right: 0 !important;
   padding-right: 0 !important;
-}
-
-html:has(body[data-scroll-locked]) {
-  overflow: hidden;
-  /* Restated rather than inherited: this is the one moment the element stops
-     being a scrolling box, and the gutter it was reserving must not leave with
-     the scrollbar — or the whole page widens by 10px the instant any menu
-     opens, and narrows again when it closes. */
-  scrollbar-gutter: stable;
 }
 
 /*
@@ -280,8 +300,9 @@ body {
    ----------------------------------------------------------------------------
    One background for the whole product, painted once on the body and never
    again: three very wide, very low-opacity washes over the near-black, in the
-   three hues the app already owns — gold at the top left where the eye starts,
-   the chart blue at the top right, the chart magenta lifting the bottom edge.
+   three hues the app already owns — the accent blue at the top left where the
+   eye starts, the chart magenta at the top right, the chart teal lifting the
+   bottom edge.
    Nowhere does a stop get near enough to full strength to read as a colour;
    what it reads as is depth, which is the only thing a ground is allowed to do
    behind type this fine.
@@ -305,13 +326,13 @@ body::before {
      build emits a NON-color-mix fallback for any declaration that uses it, and
      the fallback it emits drops the percentage — which would paint these three
      washes at full strength on any engine without color-mix support. These are
-     --color-accent, --chart-video_game and --chart-book at 5–7%; change them
+     --color-accent, --chart-book and --chart-tv_series at 4–8%; change them
      here if those ever change. */
   background:
-    radial-gradient(118% 86% at 6% -12%, rgba(245, 180, 0, 0.07) 0%, transparent 58%),
-    radial-gradient(96% 74% at 104% -4%, rgba(44, 153, 248, 0.07) 0%, transparent 60%),
-    radial-gradient(108% 70% at 52% 116%, rgba(215, 101, 182, 0.05) 0%, transparent 62%),
-    linear-gradient(180deg, #101016 0%, #0b0b0f 62%);
+    radial-gradient(118% 86% at 6% -12%, rgba(44, 153, 248, 0.08) 0%, transparent 58%),
+    radial-gradient(96% 74% at 104% -4%, rgba(215, 101, 182, 0.05) 0%, transparent 60%),
+    radial-gradient(108% 70% at 52% 116%, rgba(18, 148, 131, 0.045) 0%, transparent 62%),
+    linear-gradient(180deg, #0f1118 0%, #0b0b0f 62%);
 }
 
 /*
@@ -416,7 +437,7 @@ body::before {
      One mark, at every width, and one idea inside it.
      
      The symbol is two friends as two rings that interlock — one drawn in the
-     ink of the page, one in gold, woven so neither is simply on top of the
+     ink of the page, one in the accent, woven so neither is simply on top of the
      other. No tile, no border, nothing behind it: a plate with a dark fill and
      its own outline, sitting on a bar that is already dark, only ever reads as
      a box inside a box.
@@ -442,7 +463,7 @@ body::before {
   }
 
   /* The rings. Height follows the type, so the lockup keeps its proportions at
-     any size, and the gold comes from the palette every other accent uses. */
+     any size, and the blue comes from the palette every other accent uses. */
   .wordmark-mark {
     height: calc(var(--wm) * 1.16);
     width: auto;
@@ -451,7 +472,7 @@ body::before {
     color: var(--color-text-primary);
   }
 
-  .wordmark-ring-gold {
+  .wordmark-ring-accent {
     stroke: var(--color-accent);
   }
 
@@ -486,7 +507,7 @@ body::before {
   }
 
   /* Hovering the brand brings both halves up to full strength: the quiet word
-     catches up with the loud one, and the ink ring warms toward the gold one.
+     catches up with the loud one, and the ink ring shifts toward the blue one.
      Nothing moves — a logo that jumps under the pointer is a logo you notice
      for the wrong reason. */
   a:hover > .wordmark .wordmark-name-soft {

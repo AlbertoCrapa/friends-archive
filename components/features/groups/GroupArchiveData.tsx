@@ -1,7 +1,6 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
@@ -18,12 +17,12 @@ import { Download, Upload, BookMarked } from 'lucide-react';
 import {
   buildArchive,
   parseArchive,
-  mergeNewInfo,
-  itemKey,
+  MAX_IMPORT_BYTES,
+  MAX_IMPORT_ITEMS,
   ARCHIVE_FORMAT,
   ARCHIVE_VERSION,
-  type MergePatch,
 } from '@/lib/groupArchive';
+import { useArchiveImport } from '@/components/features/groups/ArchiveImport';
 import type { MediaType, ItemStatus } from '@/types';
 
 interface Props {
@@ -59,17 +58,30 @@ const EXAMPLE_JSON = `{
         "director": "Denis Villeneuve",
         "release_year": 2024,
         "duration_minutes": 166
-      }
+      },
+      "external_id": "tmdb:movie:693134"
     },
     {
       "title": "Project Hail Mary",
       "type": "book",
-      "status": "consuming",
-      "genre": null,
-      "metadata": { "author": "Andy Weir", "publication_year": 2021 }
+      "status": "In progress",
+      "external_url": "https://openlibrary.org/works/OL21745884W"
+    },
+    {
+      "title": "Hades",
+      "type": "video_game",
+      "metadata": { "developer": "Supergiant Games", "release_year": 2020 }
     }
   ]
 }`;
+
+// How each source's link is written. Either column alone is enough on import.
+const LINK_RULES: Array<{ type: string; id: string; url: string }> = [
+  { type: 'movie', id: 'tmdb:movie:693134', url: 'https://www.themoviedb.org/movie/693134' },
+  { type: 'tv_series', id: 'tmdb:tv:1399', url: 'https://www.themoviedb.org/tv/1399' },
+  { type: 'book', id: 'openlibrary:book:OL21745884W', url: 'https://openlibrary.org/works/OL21745884W' },
+  { type: 'video_game', id: 'rawg:game:3498', url: 'https://rawg.io/games/grand-theft-auto-v' },
+];
 
 // People fields take several names in one comma-separated string.
 const METADATA_RULES: Array<{ type: string; keys: string }> = [
@@ -80,10 +92,13 @@ const METADATA_RULES: Array<{ type: string; keys: string }> = [
 ];
 
 export function GroupArchiveData({ group, userId }: Props) {
-  const router = useRouter();
+  const archiveImport = useArchiveImport();
+  // `reading` covers the moment between picking the file and the import
+  // starting, so a second click can't slip in while the file is parsed.
+  const [reading, setReading] = useState(false);
+  const importing = archiveImport.running || reading;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [exporting, setExporting] = useState(false);
-  const [importing, setImporting] = useState(false);
   const [banner, setBanner] = useState<Banner | null>(null);
 
   async function handleExport() {
@@ -96,7 +111,7 @@ export function GroupArchiveData({ group, userId }: Props) {
     const [{ data: items, error }, { data: statusRows, error: statusError }] = await Promise.all([
       supabase
         .from('media_items')
-        .select('id, title, type, genre, metadata')
+        .select('id, title, type, genre, metadata, external_id')
         .eq('group_id', group.id)
         .order('created_at', { ascending: true }),
       supabase
@@ -124,6 +139,7 @@ export function GroupArchiveData({ group, userId }: Props) {
         status: statusByItemId.get(item.id) ?? 'plan_to_consume',
         genre: item.genre,
         metadata: item.metadata,
+        external_id: item.external_id,
       }))
     );
     const blob = new Blob([JSON.stringify(archive, null, 2)], { type: 'application/json' });
@@ -143,135 +159,54 @@ export function GroupArchiveData({ group, userId }: Props) {
   }
 
   async function handleImportFile(file: File) {
+    if (importing) return;
     setBanner(null);
-    setImporting(true);
-
+    if (file.size > MAX_IMPORT_BYTES) {
+      setBanner({ variant: 'error', message: 'This file is too large to be an archive (max 2 MB).' });
+      return;
+    }
+    setReading(true);
     try {
-      const { items, invalid } = parseArchive(await file.text());
+      const { items, rejected } = parseArchive(await file.text());
+      // Every rejected item is named, so a broken file can be fixed rather than guessed at.
+      const skipped =
+        rejected.length > 0
+          ? ` Skipped ${rejected.length} invalid item${rejected.length === 1 ? '' : 's'}: ` +
+            rejected
+              .slice(0, 5)
+              .map((r) => `#${r.position}${r.title ? ` "${r.title}"` : ''} (${r.reason})`)
+              .join('; ') +
+            (rejected.length > 5 ? `; and ${rejected.length - 5} more.` : '.')
+          : '';
       if (items.length === 0) {
         setBanner({
           variant: 'error',
-          message:
-            invalid > 0
-              ? 'No valid items found in this file. Check the rulebook for the structure.'
-              : 'This file contains no items.',
+          message: rejected.length > 0 ? `No valid items found in this file.${skipped}` : 'This file contains no items.',
         });
         return;
       }
-
-      const supabase = createClient();
-      const { data: existing, error: fetchError } = await supabase
-        .from('media_items')
-        .select('id, title, type, genre, metadata')
-        .eq('group_id', group.id);
-
-      if (fetchError) {
-        setBanner({ variant: 'error', message: 'Could not load the current catalogue. Please try again.' });
-        return;
-      }
-
-      const existingByKey = new Map(
-        (existing ?? []).map((item) => [itemKey(item.title, item.type as MediaType), item])
-      );
-
-      const toInsert: Array<{
-        group_id: string;
-        added_by: string;
-        title: string;
-        type: MediaType;
-        genre: string | null;
-        metadata: Record<string, unknown>;
-      }> = [];
-      // The archive's status becomes the IMPORTER'S personal status for each
-      // newly created item (per-member model). Aligned by index with toInsert.
-      const insertStatuses: ItemStatus[] = [];
-      const toUpdate: Array<{ id: string; patch: MergePatch }> = [];
-      let unchanged = 0;
-
-      for (const item of items) {
-        const match = existingByKey.get(itemKey(item.title, item.type));
-        if (!match) {
-          toInsert.push({
-            group_id: group.id,
-            added_by: userId,
-            title: item.title,
-            type: item.type,
-            genre: item.genre,
-            metadata: item.metadata,
-          });
-          insertStatuses.push(item.status);
-          continue;
-        }
-        const patch = mergeNewInfo(match, item);
-        if (patch) {
-          toUpdate.push({ id: match.id, patch });
-        } else {
-          unchanged += 1;
-        }
-      }
-
-      if (toInsert.length > 0) {
-        const { data: insertedRows, error: insertError } = await supabase
-          .from('media_items')
-          .insert(toInsert)
-          .select('id');
-        if (insertError) {
-          setBanner({ variant: 'error', message: 'Could not add the new items. Please try again.' });
-          return;
-        }
-
-        // Personal statuses for the new items (rows come back in insert order).
-        // No row needed for 'plan_to_consume' — that's the default meaning.
-        const statusUpserts = (insertedRows ?? []).flatMap((row, i) =>
-          insertStatuses[i] && insertStatuses[i] !== 'plan_to_consume'
-            ? [{ media_item_id: row.id, user_id: userId, status: insertStatuses[i] }]
-            : []
-        );
-        if (statusUpserts.length > 0) {
-          await supabase
-            .from('item_statuses')
-            .upsert(statusUpserts, { onConflict: 'media_item_id,user_id' });
-          // Keep the completed ⇄ consumed invariant for the importer.
-          const consumedUpserts = statusUpserts
-            .filter((row) => row.status === 'completed')
-            .map((row) => ({ media_item_id: row.media_item_id, user_id: userId }));
-          if (consumedUpserts.length > 0) {
-            await supabase
-              .from('consumption_records')
-              .upsert(consumedUpserts, { onConflict: 'media_item_id,user_id' });
-          }
-        }
-      }
-
-      let updateFailures = 0;
-      for (const { id, patch } of toUpdate) {
-        const { error: updateError } = await supabase
-          .from('media_items')
-          .update(patch)
-          .eq('id', id);
-        if (updateError) updateFailures += 1;
-      }
-
-      const parts = [
-        `${toInsert.length} added`,
-        `${toUpdate.length - updateFailures} updated`,
-        `${unchanged} already up to date`,
-      ];
-      if (invalid > 0) parts.push(`${invalid} invalid skipped`);
-      if (updateFailures > 0) parts.push(`${updateFailures} failed`);
-
-      setBanner({
-        variant: updateFailures > 0 ? 'error' : 'success',
-        message: `Import complete: ${parts.join(', ')}.`,
+      const started = archiveImport.start({
+        groupId: group.id,
+        groupName: group.name,
+        userId,
+        items,
+        invalid: rejected.length,
       });
-      router.refresh();
+      setBanner(
+        started
+          ? {
+              variant: rejected.length > 0 ? 'error' : 'info',
+              message: `Importing ${items.length} item${items.length === 1 ? '' : 's'} in the background. You can keep browsing — you'll be notified when it's done.${skipped}`,
+            }
+          : { variant: 'error', message: 'Another import is still running. Wait for it to finish.' }
+      );
     } catch (err) {
       setBanner({
         variant: 'error',
         message: err instanceof Error ? err.message : 'Could not read this file.',
       });
     } finally {
-      setImporting(false);
+      setReading(false);
     }
   }
 
@@ -279,8 +214,8 @@ export function GroupArchiveData({ group, userId }: Props) {
     <div className="space-y-4">
       <p className="text-stone-500 text-sm font-light leading-relaxed">
         Download the full catalogue of this group as a JSON file, or import one.
-        Imported items matching an existing title and type are not duplicated:
-        they only fill in missing details.
+        Imported items are looked up online and filled in like a manual add;
+        items already in the group are not duplicated, they only fill in missing details.
       </p>
 
       <div className="flex items-center gap-3 flex-wrap">
@@ -318,6 +253,7 @@ export function GroupArchiveData({ group, userId }: Props) {
               <DialogTitle>Archive file rulebook</DialogTitle>
               <DialogDescription>
                 The structure every import file must follow. Exports already comply.
+                Only <code>title</code> and <code>type</code> are required.
               </DialogDescription>
             </DialogHeader>
 
@@ -332,6 +268,10 @@ export function GroupArchiveData({ group, userId }: Props) {
                     optional on import.
                   </li>
                   <li>
+                    One import takes at most {MAX_IMPORT_ITEMS} items (and a file of at most 2 MB). Split bigger
+                    archives into several files. Only one import runs at a time.
+                  </li>
+                  <li>
                     Each item needs a non-empty <code className="text-stone-200">title</code> and a{' '}
                     <code className="text-stone-200">type</code>: one of{' '}
                     <code className="text-stone-200">movie</code>, <code className="text-stone-200">tv_series</code>,{' '}
@@ -344,15 +284,30 @@ export function GroupArchiveData({ group, userId }: Props) {
                     <code className="text-stone-200">completed</code> (Completed) or{' '}
                     <code className="text-stone-200">not_interested</code> (Not interested). It sets{' '}
                     <em className="not-italic text-stone-200">your own</em> status for the imported
-                    item — never other members&apos;. Missing or invalid values fall back to{' '}
-                    <code className="text-stone-200">plan_to_consume</code>.
+                    item — never other members&apos; — and only on items the import creates. The labels work too (<code className="text-stone-200">&quot;Planned&quot;</code>,{' '}
+                    <code className="text-stone-200">&quot;In progress&quot;</code>, <code className="text-stone-200">&quot;Completed&quot;</code>,{' '}
+                    <code className="text-stone-200">&quot;Not interested&quot;</code>), in any case. A missing status means{' '}
+                    <code className="text-stone-200">plan_to_consume</code> (Planned); any other value rejects the item.
                   </li>
                   <li>
                     <code className="text-stone-200">genre</code> is optional text,{' '}
                     <code className="text-stone-200">metadata</code> is an optional object. Unknown metadata keys are
                     ignored.
                   </li>
-                  <li>Items that break these rules are skipped; the rest of the file still imports.</li>
+                  <li>
+                    <code className="text-stone-200">external_id</code> or{' '}
+                    <code className="text-stone-200">external_url</code> are optional and link the item to its
+                    online source — see <em className="not-italic text-stone-200">Online links</em> below.
+                  </li>
+                  <li>
+                    Titles are at most 300 characters, genres at most 255, and neither may contain control
+                    characters.
+                  </li>
+                  <li>
+                    Items that break any of these rules — an unknown status, a malformed id or link, a suspicious
+                    title — are rejected whole and never imported. The rest of the file still imports, and every
+                    rejected item is listed with its position and the reason.
+                  </li>
                 </ul>
               </section>
 
@@ -376,12 +331,62 @@ export function GroupArchiveData({ group, userId }: Props) {
               </section>
 
               <section className="space-y-2">
+                <h3 className="font-mono text-xs text-stone-500">Online links</h3>
+                <p className="text-sm text-stone-400 font-light leading-relaxed">
+                  Give either the <code className="text-stone-200">external_id</code> or the page{' '}
+                  <code className="text-stone-200">external_url</code> — one is enough, the other is recovered.
+                  Exports write the id only. Each must match its type exactly as below — a link of the wrong type
+                  (a TV page on a movie), another site, extra query parameters, or an id and link pointing to
+                  different works reject the item. Movie and TV pages may keep their title suffix
+                  (<code className="text-stone-200">/movie/693134-dune-part-two</code>).
+                </p>
+                <div className="border border-stone-800/50">
+                  {LINK_RULES.map((rule) => (
+                    <div
+                      key={rule.type}
+                      className="px-4 py-2.5 border-b border-stone-800/30 last:border-b-0 flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-4"
+                    >
+                      <code className="font-mono text-xs shrink-0 sm:w-28" style={{ color: 'var(--color-accent)' }}>
+                        {rule.type}
+                      </code>
+                      <span className="text-xs text-stone-400 font-light break-all">
+                        {rule.id} <span className="text-stone-600">or</span> {rule.url}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="space-y-2">
+                <h3 className="font-mono text-xs text-stone-500">How items are filled in</h3>
+                <ul className="space-y-2 text-sm text-stone-400 font-light leading-relaxed list-disc pl-5">
+                  <li>
+                    <span className="text-stone-200">With a link:</span> details, tags and artwork are fetched from
+                    the source, exactly like adding the item by hand.
+                  </li>
+                  <li>
+                    <span className="text-stone-200">Title only:</span> the title is searched online. The year and
+                    the director / author / developer in <code className="text-stone-200">metadata</code> help pick
+                    the right result. With no convincing match, the item is imported as written, without a link.
+                  </li>
+                  <li>
+                    Online data wins over the file&apos;s; the file only fills what the source doesn&apos;t know.
+                  </li>
+                  <li>
+                    The import runs in the background, one online request at a time, so it can take a while on big
+                    files. You can keep browsing; a notice shows the progress and a message tells you when it&apos;s
+                    done. Closing the tab stops it — items already imported stay.
+                  </li>
+                </ul>
+              </section>
+
+              <section className="space-y-2">
                 <h3 className="font-mono text-xs text-stone-500">How merging works</h3>
                 <p className="text-sm text-stone-400 font-light leading-relaxed">
-                  An imported item with the same title (case-insensitive) and the same type as an existing one is never
-                  duplicated. Instead, it fills in details the existing item is missing: an empty genre or absent
-                  metadata keys. Values already present, everyone&apos;s statuses, and the title itself are never
-                  overwritten.
+                  An imported item that is already in the group — same online link, or same title (case-insensitive)
+                  and type — is never duplicated. Instead, it fills in what the existing item is missing: an empty
+                  genre, absent metadata keys, artwork, or its online link. Values already present, everyone&apos;s
+                  statuses, and the title itself are never overwritten.
                 </p>
               </section>
 

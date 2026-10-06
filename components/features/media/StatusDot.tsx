@@ -8,7 +8,7 @@ import type { ItemStatus } from '@/types';
  * What each state looks like, defined once.
  *
  * Planned is neutral because it is the default and carries no news. In progress
- * is the accent, because it is the only state that is going anywhere. Finished
+ * is the old yellow (warn-*), because it is the only state that is going anywhere. Finished
  * is the one positive in the palette. Opted out is the quietest thing on the
  * page, one step above the surface, because it is a row you have asked to stop
  * thinking about.
@@ -18,7 +18,7 @@ import type { ItemStatus } from '@/types';
  */
 export const STATUS_DOT: Record<ItemStatus, string> = {
   plan_to_consume: 'bg-stone-400',
-  consuming: 'bg-amber-400',
+  consuming: 'bg-warn-400',
   completed: 'bg-emerald-500',
   not_interested: 'bg-stone-600',
 };

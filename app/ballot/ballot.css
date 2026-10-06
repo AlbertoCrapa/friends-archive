@@ -4,7 +4,7 @@
    The page takes its whole vocabulary from the React Bits micro defaults it is
    built out of: near-black ground, #27272a surfaces at a 16px radius, #3f3f46
    for anything raised or ruled, #f5f5f5 ink stepped down with color-mix
-   instead of extra greys, gold #f5b400 where a rating is involved, #e5484d for
+   instead of extra greys, accent blue #2c99f8 where a rating is involved, #e5484d for
    opting out and #22c55e for done. Nothing here invents a token the components
    did not already have.
    ========================================================================= */
@@ -20,7 +20,7 @@
   --hair: color-mix(in srgb, #f5f5f5 9%, transparent);
   --white: #fafafa;
   --ink-inv: #18181b;
-  --gold: #f5b400;
+  --accent: #2c99f8;
   --green: #22c55e;
   --red: #e5484d;
 
@@ -43,7 +43,7 @@
 }
 
 .bl ::selection {
-  background: var(--gold);
+  background: var(--accent);
   color: var(--ink-inv);
 }
 
@@ -283,7 +283,7 @@
 }
 
 /* ── Tally ───────────────────────────────────────────────────────────────
-   Every rating on record is one translucent block of gold. Marks overlap, so
+   Every rating on record is one translucent block of the accent. Marks overlap, so
    two on the same star compound into a brighter band: agreement is the part
    that glows. */
 
@@ -310,15 +310,15 @@
   bottom: calc(var(--i, 0) * 7px);
   height: 15px;
   border-radius: 4px;
-  background: color-mix(in srgb, var(--gold) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
   transition: bottom 220ms var(--ease);
 }
 .bl-tally-mark[data-ink='you'] {
-  background: var(--gold);
+  background: var(--accent);
 }
 .bl-tally-mark[data-ghost='true'] {
   background: none;
-  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--gold) 70%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
 .bl-tally-axis {
@@ -462,11 +462,11 @@
   transition: color 140ms var(--ease);
 }
 .bl-row-title:hover {
-  color: var(--gold);
+  color: var(--accent);
 }
 
 .bl-row[data-selected='true'] .bl-row-title {
-  color: var(--gold);
+  color: var(--accent);
 }
 .bl-row[data-out='true'] .bl-row-title {
   color: var(--ink-3);
@@ -502,7 +502,7 @@
   font-weight: 650;
   font-size: 17px;
   letter-spacing: -0.02em;
-  color: var(--gold);
+  color: var(--accent);
 }
 .bl-score-of {
   font-size: 11px;
@@ -633,7 +633,7 @@
   color: var(--ink-4);
 }
 .bl-index li[data-kept='true'] .bl-index-verdict {
-  color: var(--gold);
+  color: var(--accent);
 }
 .bl-index-name {
   font-weight: 600;

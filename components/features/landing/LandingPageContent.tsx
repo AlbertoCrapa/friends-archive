@@ -102,8 +102,8 @@ function LandingNav({ isSignedIn, nickname }: Props) {
 
 const HERO_LEDGER = [
   { n: '001', title: 'Dune: Part Two', type: 'Movie', status: 'Watched', statusColor: '#4ade80' },
-  { n: '002', title: 'The Bear', type: 'TV', status: 'Watching', statusColor: '#f5b400' },
-  { n: '003', title: 'Project Hail Mary', type: 'Book', status: 'Reading', statusColor: '#f5b400' },
+  { n: '002', title: 'The Bear', type: 'TV', status: 'Watching', statusColor: '#f5a524' },
+  { n: '003', title: 'Project Hail Mary', type: 'Book', status: 'Reading', statusColor: '#2c99f8' },
   { n: '004', title: 'Elden Ring', type: 'Game', status: 'Planned', statusColor: '#52525b' },
   { n: '005', title: 'Past Lives', type: 'Movie', status: 'Planned', statusColor: '#52525b' },
 ] as const;
@@ -119,7 +119,7 @@ function HeroSection({ isSignedIn }: { isSignedIn: boolean }) {
             width: 'min(760px, 110vw)',
             height: 'min(420px, 60vh)',
             background:
-              'radial-gradient(ellipse at center, #a87a000e 0%, transparent 70%)',
+              'radial-gradient(ellipse at center, #1668bd0e 0%, transparent 70%)',
           }}
         />
       </div>
@@ -281,7 +281,7 @@ function HeroSection({ isSignedIn }: { isSignedIn: boolean }) {
           <motion.div
             className="absolute -top-3 -right-2 sm:-right-4 rotate-6 border-2 px-3 py-1 select-none"
             style={{
-              borderColor: '#7a59008c',
+              borderColor: '#114a868c',
               backgroundColor: 'var(--color-background)',
             }}
             initial={{ opacity: 0, scale: 1.4, rotate: 6 }}
@@ -291,7 +291,7 @@ function HeroSection({ isSignedIn }: { isSignedIn: boolean }) {
           >
             <span
               className="font-mono text-[10px] "
-              style={{ color: '#a87a00cc' }}
+              style={{ color: '#1668bdcc' }}
             >
               Archived
             </span>
@@ -326,7 +326,7 @@ function MediaTypesStrip() {
             {i > 0 && (
               <span
                 className="w-1 h-1 rotate-45 shrink-0"
-                style={{ backgroundColor: '#7a590080' }}
+                style={{ backgroundColor: '#114a8680' }}
                 aria-hidden
               />
             )}
@@ -509,7 +509,7 @@ function SharedCatalogueSection() {
           </div>
           {[
             { title: 'Dune: Part Two', type: 'Movie', status: 'Watched', statusColor: '#4ade80' },
-            { title: 'The Bear', type: 'TV', status: 'Watching', statusColor: '#f5b400' },
+            { title: 'The Bear', type: 'TV', status: 'Watching', statusColor: '#f5a524' },
             { title: 'Interstellar', type: 'Movie', status: 'Plan to Watch', statusColor: '#52525b' },
             { title: 'Poor Things', type: 'Movie', status: 'Plan to Watch', statusColor: '#52525b' },
             { title: 'Station Eleven', type: 'TV', status: 'Watched', statusColor: '#4ade80' },
@@ -592,7 +592,7 @@ function PersonalTrackingSection() {
                   <span
                     className="w-6 h-6 flex items-center justify-center border font-mono text-[10px] shrink-0 select-none"
                     style={{
-                      borderColor: user.isYou ? '#4a360099' : 'var(--color-border)',
+                      borderColor: user.isYou ? '#0c2f5499' : 'var(--color-border)',
                       backgroundColor: 'var(--color-surface-elevated)',
                       color: user.isYou ? 'var(--color-accent)' : 'var(--color-text-muted)',
                     }}
@@ -615,8 +615,8 @@ function PersonalTrackingSection() {
                     <span
                       className="font-mono text-[9px] px-1.5 py-0.5 border"
                       style={{
-                        borderColor: '#4a3600',
-                        color: '#a87a00',
+                        borderColor: '#0c2f54',
+                        color: '#1668bd',
                       }}
                     >
                       you
@@ -766,7 +766,7 @@ function MediaCategoriesSection() {
                     className="w-11 h-11 flex items-center justify-center border shrink-0 transition-colors duration-300"
                     style={{
                       backgroundColor: 'var(--color-surface-elevated)',
-                      borderColor: '#4a360059',
+                      borderColor: '#0c2f5459',
                     }}
                   >
                     <Icon className="h-[18px] w-[18px]" style={{ color: 'var(--color-accent)' }} />
@@ -851,7 +851,7 @@ function FinalCtaSection({ isSignedIn }: { isSignedIn: boolean }) {
             width: 'min(680px, 100%)',
             height: 'min(380px, 80%)',
             background:
-              'radial-gradient(ellipse at center, #a87a000d 0%, transparent 70%)',
+              'radial-gradient(ellipse at center, #1668bd0d 0%, transparent 70%)',
           }}
         />
       </div>

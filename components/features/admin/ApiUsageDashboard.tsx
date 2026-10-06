@@ -297,7 +297,7 @@ function ProviderCard({ provider }: { provider: ProviderUsage }) {
         <span
           className={cn(
             'text-[30px] font-semibold leading-none tracking-[-0.03em]',
-            tone === 'danger' ? 'text-red-300' : tone === 'warn' ? 'text-amber-300' : 'text-stone-50',
+            tone === 'danger' ? 'text-red-300' : tone === 'warn' ? 'text-warn-300' : 'text-stone-50',
           )}
           style={{ fontVariationSettings: '"opsz" 64' }}
         >
@@ -437,7 +437,7 @@ function Notice({
         'flex items-start gap-2 rounded-[var(--radius-lg)] border px-4 py-3 text-[13px] leading-snug',
         tone === 'danger'
           ? 'border-red-500/25 bg-red-500/10 text-red-200'
-          : 'border-amber-500/25 bg-amber-500/10 text-amber-200',
+          : 'border-warn-500/25 bg-warn-500/10 text-warn-200',
       )}
     >
       <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />

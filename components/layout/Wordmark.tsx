@@ -2,8 +2,8 @@
 // Wordmark — the mark and the name, as one lockup.
 //
 // THE MARK. Two friends as two interlocking rings: one in the page's ink, one
-// in gold, woven so that neither is simply printed over the other — the ink
-// ring crosses in front at the bottom, the gold in front at the top. It is
+// in the accent blue, woven so that neither is simply printed over the other —
+// the ink ring crosses in front at the bottom, the blue in front at the top. It is
 // drawn flat, with no plate behind it: the old mark carried its own dark tile
 // and a 1px outline, which on a dark bar is a box inside a box, and it shrank
 // two rings, a weave and a diamond into 24 pixels where they turned to mush.
@@ -12,7 +12,7 @@
 // THE NAME. One size, one width, one weight — the two words are separated by
 // ink alone, which is the same idea the rings state in colour. The previous
 // lockup set an article in tracked-out capitals, FRIEND condensed at 700, a
-// rotated gold square and ARCHIVE wide at 300, all inside 130 pixels: four
+// rotated accent square and ARCHIVE wide at 300, all inside 130 pixels: four
 // typographic arguments at a size where none of them can be heard.
 //
 // Every dimension derives from `--wm` (the cap height of the name), so one
@@ -34,7 +34,7 @@ interface Props {
  *
  * Centres 10 apart with r 8 — they overlap by more than half a radius, which
  * is what makes them read as two people and not as a chain link. The third
- * path is the weave: a 45° segment of the LEFT ring, repainted after the gold
+ * path is the weave: a 45° segment of the LEFT ring, repainted after the blue
  * one so it crosses in front at the lower intersection (16, 16.245). Round
  * caps hide where the repaint starts and stops.
  */
@@ -59,7 +59,7 @@ export function Wordmark({ size, compact = false, className }: Props) {
         aria-hidden="true"
       >
         <circle className="wordmark-ring-ink" cx="11" cy="10" r="8" />
-        <circle className="wordmark-ring-gold" cx="21" cy="10" r="8" />
+        <circle className="wordmark-ring-accent" cx="21" cy="10" r="8" />
         <path
           className="wordmark-ring-ink"
           d="M17.93 14 A8 8 0 0 1 13.07 17.73"

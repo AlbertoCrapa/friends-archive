@@ -93,10 +93,10 @@ export default async function UIStressPage({ searchParams }: Props) {
             <div className="border border-stone-800/50 p-10 text-center space-y-6 bg-stone-950 relative overflow-hidden">
               <div
                 className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] pointer-events-none"
-                style={{ background: 'radial-gradient(ellipse at center, #a87a000a 0%, transparent 70%)' }}
+                style={{ background: 'radial-gradient(ellipse at center, #1668bd0a 0%, transparent 70%)' }}
                 aria-hidden
               />
-              <p className="font-mono text-xs" style={{ color: '#d69b00a6' }}>
+              <p className="font-mono text-xs" style={{ color: '#1f86eca6' }}>
                 Track together. Remember always.
               </p>
               <h1
@@ -117,7 +117,7 @@ export default async function UIStressPage({ searchParams }: Props) {
 
             {/* How it works mock */}
             <div className="border border-stone-800/50 p-8 space-y-8">
-              <p className="font-mono text-xs " style={{ color: '#d69b00a6' }}>
+              <p className="font-mono text-xs " style={{ color: '#1f86eca6' }}>
                 How it works
               </p>
               <h2 className="font-serif text-4xl text-stone-100 font-light">Simple by design. Shared by nature.</h2>
@@ -266,7 +266,7 @@ export default async function UIStressPage({ searchParams }: Props) {
                         {plan.name}
                       </p>
                       {plan.popular && (
-                        <span className="font-mono text-[10px] px-2 py-0.5 border" style={{ borderColor: '#7a590066', color: 'var(--color-accent)' }}>
+                        <span className="font-mono text-[10px] px-2 py-0.5 border" style={{ borderColor: '#114a8666', color: 'var(--color-accent)' }}>
                           Popular
                         </span>
                       )}
@@ -454,7 +454,7 @@ export default async function UIStressPage({ searchParams }: Props) {
             {/* Stats bar */}
             <div className="max-w-2xl space-y-6">
               <div className="space-y-2">
-                <p className="font-mono text-xs " style={{ color: '#d69b0099' }}>Your profile</p>
+                <p className="font-mono text-xs " style={{ color: '#1f86ec99' }}>Your profile</p>
                 <h2 className="font-serif text-5xl text-stone-100 font-light">stress_user</h2>
                 <p className="font-mono text-xs" style={{ color: '#52525b' }}>Member since 1 January 2025</p>
               </div>
@@ -800,6 +800,24 @@ function buildDashboardProps(groups: MockGroup[]) {
 
   return {
     groups: rows,
+    // Two shapes the pending card has to survive: a long name with a
+    // description under it, and a bare private group with neither.
+    pendingGroups: [
+      {
+        id: 'pending-group-1',
+        name: 'The Criterion Completionists',
+        description: 'Everything in the collection, in spine order, however long it takes.',
+        visibility: 'public' as const,
+        requestedAt: new Date(Date.now() - 3 * 86400000).toISOString(),
+      },
+      {
+        id: 'pending-group-2',
+        name: 'Flat 3',
+        description: null,
+        visibility: 'private' as const,
+        requestedAt: new Date(Date.now() - 86400000).toISOString(),
+      },
+    ],
     ownedCount: rows.filter((row) => row.role === 'owner').length,
     atLimit: false,
     plan: 'free',

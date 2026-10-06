@@ -667,7 +667,7 @@ function SheetBody({
                 {tally.consuming > 0 ? (
                   <>
                     <span className="text-stone-700"> · </span>
-                    <span className="tabular-nums text-amber-400/90">{tally.consuming}</span> in
+                    <span className="tabular-nums text-warn-400/90">{tally.consuming}</span> in
                     progress
                   </>
                 ) : null}

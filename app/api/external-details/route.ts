@@ -31,5 +31,7 @@ export async function GET(request: Request) {
     metadata: details?.metadata ?? null,
     genre: details?.genre ?? null,
     image_url: details?.image_url ?? null,
+    external_id: details?.external_id ?? null,
+    external_url: details?.external_url ?? null,
   });
 }

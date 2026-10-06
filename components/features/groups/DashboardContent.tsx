@@ -12,8 +12,10 @@
 
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { Compass, Globe, Lock, Plus, Users } from 'lucide-react';
+import { Clock, Compass, Globe, Lock, Plus, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useFormStatus } from 'react-dom';
+import { cancelGroupAccessRequest } from '@/app/actions/join-requests';
 import { MediaPoster, TYPE_ICONS } from '@/components/features/media/MediaPoster';
 import { cn, safeImageUrl } from '@/lib/utils';
 import type { Group, GroupRole, ItemStatus, MediaType } from '@/types';
@@ -27,6 +29,21 @@ type GroupRow = Group & {
   covers: string[];
 };
 
+/**
+ * A group you have asked to join and have not been let into yet. It wears the
+ * same card as the groups you are in, because on this page it is the same kind
+ * of thing — an archive you are trying to reach. What it cannot wear is their
+ * contents: until the owner says yes, the covers, the counts and the member
+ * list are not yours to read, so the card's middle is given over to saying so.
+ */
+interface PendingGroup {
+  id: string;
+  name: string;
+  description: string | null;
+  visibility: Group['visibility'];
+  requestedAt: string;
+}
+
 interface RecentItem {
   id: string;
   title: string;
@@ -39,6 +56,7 @@ interface RecentItem {
 
 interface Props {
   groups: GroupRow[];
+  pendingGroups: PendingGroup[];
   ownedCount: number;
   atLimit: boolean;
   plan: string;
@@ -58,7 +76,7 @@ const TYPES: MediaType[] = ['movie', 'tv_series', 'book', 'video_game'];
  *  written out beside its colour so the colour never has to carry it alone. */
 const STATUS_STEPS: { key: ItemStatus; label: string; className: string }[] = [
   { key: 'completed', label: 'Finished', className: 'bg-emerald-500' },
-  { key: 'consuming', label: 'In progress', className: 'bg-amber-500' },
+  { key: 'consuming', label: 'In progress', className: 'bg-warn-500' },
   { key: 'plan_to_consume', label: 'Planned', className: 'bg-stone-500' },
   { key: 'not_interested', label: 'Skipped', className: 'bg-stone-700' },
 ];
@@ -72,6 +90,7 @@ function formatDay(value: string): string {
 
 export function DashboardContent({
   groups,
+  pendingGroups,
   ownedCount,
   atLimit,
   plan,
@@ -103,6 +122,15 @@ export function DashboardContent({
           <p className="mt-1 text-[13.5px] text-stone-500">
             {groups.length} {groups.length === 1 ? 'group' : 'groups'}, you own {ownedCount}
             {maxOwned !== null ? ` of ${maxOwned}` : ''}
+            {pendingGroups.length > 0 ? (
+              <>
+                <span aria-hidden className="px-1.5 text-stone-700">
+                  ·
+                </span>
+                {pendingGroups.length} {pendingGroups.length === 1 ? 'request' : 'requests'}{' '}
+                awaiting approval
+              </>
+            ) : null}
             {plan !== 'free' ? (
               <span className="ml-2 rounded-[var(--radius-sm)] bg-amber-500/15 px-1.5 py-0.5 text-[11.5px] font-medium text-amber-300">
                 {plan}
@@ -125,25 +153,48 @@ export function DashboardContent({
         )}
       </motion.header>
 
+      {/* The groups you have asked for live in the same grid as the ones you
+          have, at the end of it. They are the same card on purpose: on this
+          page they are the same kind of thing, an archive you are trying to
+          reach, and splitting them into their own list downstairs would mean
+          scrolling past everything to find out whether anyone let you in. What
+          changes is the inside — no shelf, no counts, and a way to take the
+          request back. */}
+      {groups.length + pendingGroups.length > 0 ? (
+        <section className="space-y-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {groups.map((group, i) => (
+              <motion.div
+                key={group.id}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, ease: EASE, delay: Math.min(i * 0.05, 0.3) }}
+              >
+                <GroupCard group={group} />
+              </motion.div>
+            ))}
+            {pendingGroups.map((group, i) => (
+              <motion.div
+                key={group.id}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  duration: 0.35,
+                  ease: EASE,
+                  delay: Math.min((groups.length + i) * 0.05, 0.3),
+                }}
+              >
+                <PendingGroupCard group={group} />
+              </motion.div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {groups.length === 0 ? (
         <EmptyState />
       ) : (
         <>
-          <section className="space-y-3">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {groups.map((group, i) => (
-                <motion.div
-                  key={group.id}
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.35, ease: EASE, delay: Math.min(i * 0.05, 0.3) }}
-                >
-                  <GroupCard group={group} />
-                </motion.div>
-              ))}
-            </div>
-          </section>
-
           <section className="grid gap-4 lg:grid-cols-5">
             {/*
               Four equal boxes holding four unrelated numbers is a scoreboard,
@@ -437,6 +488,114 @@ function GroupCard({ group }: { group: GroupRow }) {
         </div>
       </article>
     </Link>
+  );
+}
+
+/**
+ * The same card as a group you are in, with the two things it cannot know
+ * taken out and one thing it can put in their place.
+ *
+ * The chrome is copied rather than shared: a joined card is a Link wrapping an
+ * article, and this one cannot be, because the Cancel button has to sit inside
+ * it and a button inside an anchor is not a thing a browser will parse. So the
+ * article is the hover target and the link is stretched across it underneath,
+ * with the button lifted above — same lift, same border warm-up, same shape in
+ * the grid, valid markup.
+ */
+function PendingGroupCard({ group }: { group: PendingGroup }) {
+  return (
+    // Same two layers as a joined card, for the same reason the comment up
+    // there gives: the lift is stepped so the card's top edge only ever lands
+    // on whole pixels, and the border warms up on its own curve.
+    <div className="group relative h-full translate-y-0 transform-gpu transition-[translate] duration-[var(--duration-standard)] ease-[steps(2,end)] hover:-translate-y-0.5">
+      <article className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] bg-stone-900 border border-white/[0.07] transition-colors duration-[var(--duration-standard)] ease-[var(--ease-standard)] group-hover:border-white/25">
+        {/* The band a joined card fills with covers. There are none to show —
+            that is the whole point of the state — so it holds the lock instead,
+            at the size the artwork would have been. */}
+        <div className="relative grid h-[78px] place-items-center bg-stone-800">
+          <span className="pointer-events-none absolute -inset-px bg-gradient-to-t from-stone-900 via-stone-900/45 to-stone-900/10" />
+          {/* After the wash, not under it: a joined card's covers are meant to
+              sit behind that gradient, but the lock IS this card's picture. */}
+          <Lock className="relative h-5 w-5 text-stone-600" aria-hidden />
+          {/* The badge in a joined card's top-right corner is the first thing
+              read on it, so on this card that corner says the thing you came
+              back to check. Visibility keeps the other corner: still there,
+              no longer the headline. */}
+          <span className="absolute right-2 top-2">
+            <span className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] bg-amber-500/20 px-1.5 py-0.5 text-[11px] font-medium text-amber-200">
+              <Clock className="h-2.5 w-2.5" /> Waiting for approval
+            </span>
+          </span>
+          <span className="absolute left-2 top-2">
+            {group.visibility === 'public' ? (
+              <span className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] bg-stone-950/75 px-1.5 py-0.5 text-[11px] font-medium text-stone-300">
+                <Globe className="h-2.5 w-2.5" /> Public
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] bg-stone-950/75 px-1.5 py-0.5 text-[11px] font-medium text-stone-400">
+                <Lock className="h-2.5 w-2.5" /> Private
+              </span>
+            )}
+          </span>
+        </div>
+
+        <div className="flex flex-1 flex-col gap-2 p-4 pt-3">
+          {/* Stretched: the whole card is the target, the same as a joined one,
+              without nesting anything interactive inside an anchor. */}
+          <h3 className="line-clamp-2 text-[16px] font-semibold leading-snug tracking-[-0.02em] text-stone-50 transition-colors group-hover:text-amber-300">
+            <Link href={`/groups/${group.id}`} className="before:absolute before:inset-0">
+              {group.name}
+            </Link>
+          </h3>
+          {group.description ? (
+            <p className="line-clamp-2 text-[12.5px] leading-snug text-stone-500">
+              {group.description}
+            </p>
+          ) : null}
+
+          {/* Row for row with a joined card from here down, so the two come
+              out the same height and a row of the grid does not grow a step
+              taller wherever a request happens to land in it. The type bar's
+              slot stays empty — there is nothing to break down yet — and the
+              stats line becomes the line that says what is going on. The
+              slot still reserves the bar's 4px, so the card measures the same
+              as a joined one even when it is alone in its row. */}
+          <div className="mt-auto h-[4px]" />
+
+          <div className="flex items-center gap-3 pt-1 text-[12px] text-stone-500">
+            <span className="min-w-0 truncate">
+              Request sent {formatDay(group.requestedAt)}
+            </span>
+            {/* Above the stretched link, or the click lands on the card. The
+                negative margin gives the button a bigger hit area than its
+                text without making the row taller than the joined card's. */}
+            <form
+              action={cancelGroupAccessRequest.bind(null, group.id)}
+              className="relative ml-auto shrink-0"
+            >
+              <CancelRequestButton />
+            </form>
+          </div>
+        </div>
+      </article>
+    </div>
+  );
+}
+
+/** Sized like the "Owner" label it sits opposite, not like a Button: a
+ *  control with a button's padding in this row would make the pending card
+ *  taller than every card beside it. */
+function CancelRequestButton() {
+  const { pending } = useFormStatus();
+
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="-m-1 rounded-[var(--radius-sm)] p-1 text-[11.5px] font-medium text-stone-400 transition-colors duration-[var(--duration-standard)] hover:text-red-300 disabled:text-stone-600"
+    >
+      {pending ? 'Cancelling...' : 'Cancel request'}
+    </button>
   );
 }
 

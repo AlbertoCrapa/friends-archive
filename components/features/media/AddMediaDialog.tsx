@@ -703,7 +703,7 @@ export function AddMediaDialog({
                   </button>
                 </div>
               ) : limitReached ? (
-                <p className="text-[11px] font-mono text-amber-500/80">
+                <p className="text-[11px] font-mono text-warn-500/80">
                   Search limit reached for this item — please add it manually.
                 </p>
               ) : searchFailed ? (
@@ -916,7 +916,7 @@ function ExistingItemNotice({
       role="alert"
       className={cn(
         'relative isolate animate-fade-in overflow-hidden rounded-[var(--radius-md)] border bg-stone-900/70',
-        exact ? 'border-red-500/40' : 'border-amber-500/40',
+        exact ? 'border-red-500/40' : 'border-warn-500/40',
       )}
     >
       {/* The item tints its own warning, the same way its row does. */}
@@ -928,7 +928,7 @@ function ExistingItemNotice({
             'flex items-center gap-1.5 border-b px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.09em]',
             exact
               ? 'border-red-500/25 bg-red-500/[0.12] text-red-300'
-              : 'border-amber-500/25 bg-amber-500/[0.12] text-amber-300',
+              : 'border-warn-500/25 bg-warn-500/[0.12] text-warn-300',
           )}
         >
           <CopyCheck className="h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -969,7 +969,7 @@ function ExistingItemNotice({
                   'gap-1.5',
                   exact
                     ? 'border-red-500/40 text-red-200 hover:bg-red-500/10 hover:text-red-100'
-                    : 'border-amber-500/40 text-amber-200 hover:bg-amber-500/10 hover:text-amber-100',
+                    : 'border-warn-500/40 text-warn-200 hover:bg-warn-500/10 hover:text-warn-100',
                 )}
               >
                 {busy ? <Spinner className="h-3.5 w-3.5" /> : null}

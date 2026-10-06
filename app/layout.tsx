@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { PROVIDER_IMAGE_HOSTS } from '@/lib/utils';
-import { ScrollGutter } from '@/components/layout/ScrollGutter';
 import { ToastProvider } from '@/components/ui/toast';
+import { ArchiveImportProvider } from '@/components/features/groups/ArchiveImport';
 import '@/components/micro/micro.css';
 import './globals.css';
 
@@ -35,8 +35,11 @@ export default function RootLayout({
         {/* Holds the page's width still when a menu or a dialog locks
             scrolling — see the component for why CSS alone is not taken on
             trust here. */}
-        <ScrollGutter />
-        <ToastProvider>{children}</ToastProvider>
+        <ToastProvider>
+          {/* Inside the toast dock: an archive import keeps running across
+              navigations and reports back through a toast when it ends. */}
+          <ArchiveImportProvider>{children}</ArchiveImportProvider>
+        </ToastProvider>
       </body>
     </html>
   );

@@ -75,7 +75,7 @@ export function ProfileContent({
         <div className="space-y-2">
           <p
             className="font-mono text-xs "
-            style={{ color: '#d69b0099' }}
+            style={{ color: '#1f86ec99' }}
           >
             {isOwnProfile ? 'Your profile' : 'Member profile'}
           </p>
@@ -239,7 +239,7 @@ export function ProfileContent({
       >
         <p
           className="font-mono text-[10px] "
-          style={{ color: '#d69b0080' }}
+          style={{ color: '#1f86ec80' }}
         >
           Free &amp; open source
         </p>

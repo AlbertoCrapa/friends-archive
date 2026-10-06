@@ -81,6 +81,8 @@ export async function searchRawg(query: string): Promise<ExternalWork[]> {
 // ── Detail lookup (developer/publisher/platforms not in the search list) ──────
 
 interface RawgGameDetails {
+  id?: number;
+  slug?: string;
   released?: string;
   background_image?: string | null;
   developers?: Array<{ name?: string; slug?: string }>;
@@ -164,6 +166,11 @@ export async function getRawgDetails(id: string): Promise<ExternalDetails | null
     metadata,
     genre: genreFromNames(tagNames),
     image_url: rawgImage(d.background_image, 420),
+    // RAWG answers to a slug as well as an id, so this is how an archive import
+    // that only carries the page URL (a slug) gets back to the numeric id — and
+    // how one that only carries the id gets its page URL.
+    ...(d.id ? { external_id: `rawg:game:${d.id}` } : {}),
+    ...(d.slug ? { external_url: `https://rawg.io/games/${d.slug}` } : {}),
   };
 }
 
