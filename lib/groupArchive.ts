@@ -56,11 +56,11 @@ export interface GroupArchive {
 
 /**
  * Most items one import may carry. Every item can cost two paced provider
- * calls, so this caps one import at a few minutes of background work.
+ * calls, so this caps one import at roughly 10–20 minutes of background work.
  */
-export const MAX_IMPORT_ITEMS = 200;
+export const MAX_IMPORT_ITEMS = 500;
 /** Largest file accepted, checked before it is even read. */
-export const MAX_IMPORT_BYTES = 2 * 1024 * 1024;
+export const MAX_IMPORT_BYTES = 15 * 1024 * 1024;
 
 export interface RejectedItem {
   /** 1-based position in the file's items array */

@@ -162,7 +162,7 @@ export function GroupArchiveData({ group, userId }: Props) {
     if (importing) return;
     setBanner(null);
     if (file.size > MAX_IMPORT_BYTES) {
-      setBanner({ variant: 'error', message: 'This file is too large to be an archive (max 2 MB).' });
+      setBanner({ variant: 'error', message: 'This file is too large to be an archive (max 15 MB).' });
       return;
     }
     setReading(true);
@@ -268,7 +268,7 @@ export function GroupArchiveData({ group, userId }: Props) {
                     optional on import.
                   </li>
                   <li>
-                    One import takes at most {MAX_IMPORT_ITEMS} items (and a file of at most 2 MB). Split bigger
+                    One import takes at most {MAX_IMPORT_ITEMS} items (and a file of at most 15 MB). Split bigger
                     archives into several files. Only one import runs at a time.
                   </li>
                   <li>

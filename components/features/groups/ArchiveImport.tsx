@@ -10,7 +10,7 @@
 // so closing the tab mid-way keeps everything already done.
 //
 // Provider calls go out ONE AT A TIME with a gap per provider (GAP_MS): a
-// 200-item file must never look like a burst to TMDB / RAWG / Open Library.
+// 500-item file must never look like a burst to TMDB / RAWG / Open Library.
 // ============================================================================
 
 import {
@@ -38,6 +38,12 @@ import type { ExternalSource, ExternalWork, MediaType } from '@/types';
 
 /** Minimum time between two calls to the same provider. Open Library is the strictest. */
 const GAP_MS: Record<ExternalSource, number> = { tmdb: 500, rawg: 500, openlibrary: 1200 };
+
+/** Each gap is nudged by ±10–100 ms so the calls don't tick like a metronome. */
+function jitter(): number {
+  const amount = 10 + Math.random() * 90;
+  return Math.random() < 0.5 ? -amount : amount;
+}
 
 interface Job {
   groupId: string;
@@ -99,7 +105,7 @@ export function ArchiveImportProvider({ children }: { children: ReactNode }) {
 
   /** GET one of our provider routes, waiting out the provider's gap first. Null on any failure. */
   const paced = useCallback(async <T,>(source: ExternalSource, url: string): Promise<T | null> => {
-    const wait = (lastCallAt.current[source] ?? 0) + GAP_MS[source] - Date.now();
+    const wait = (lastCallAt.current[source] ?? 0) + GAP_MS[source] + jitter() - Date.now();
     if (wait > 0) await sleep(wait);
     lastCallAt.current[source] = Date.now();
     try {
