@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { confidentMatch } from '@/lib/offlineMatch';
+import { pickBestMatch } from '@/lib/groupArchive';
 import { likeLiteral, parseTags, safeImageUrl, serializeTags } from '@/lib/utils';
 import type { ExternalWork, ItemStatus, MediaItem, MediaMetadata, MediaType } from '@/types';
 
@@ -284,13 +284,36 @@ function settle(error: WriteError, what: string, notify: (message: string) => vo
   return 'dropped';
 }
 
-let flushing = false;
+let running: Promise<SyncReport> | null = null;
 
-/** Replays the outbox in order. Safe to call often; one run at a time. */
-export async function flush(notify: (message: string) => void): Promise<SyncReport> {
+/**
+ * Replays the outbox in order. Safe to call often: one run at a time, and a
+ * call during a run waits for that run rather than skipping it.
+ */
+export function flush(notify: (message: string) => void): Promise<SyncReport> {
+  if (isOffline()) return Promise.resolve({ processed: 0, updated: [] });
+  running ??= replayAll(notify).finally(() => {
+    running = null;
+  });
+  return running;
+}
+
+/**
+ * The member linked or edited a title by hand: a retry of its offline add
+ * no longer gets to search and overwrite it. Its insert and status already
+ * landed — the edit could not have found the row otherwise.
+ */
+export async function forgetAdd(itemId: string) {
+  for (const op of await pendingOps()) {
+    if (op.kind === 'add_item' && op.row.id === itemId) {
+      await outbox('readwrite', (store) => store.delete(op.seq));
+    }
+  }
+  await refreshPending();
+}
+
+async function replayAll(notify: (message: string) => void): Promise<SyncReport> {
   const report: SyncReport = { processed: 0, updated: [] };
-  if (flushing || isOffline()) return report;
-  flushing = true;
   try {
     const supabase = createClient();
     for (const op of await pendingOps()) {
@@ -299,7 +322,6 @@ export async function flush(notify: (message: string) => void): Promise<SyncRepo
       report.processed += 1;
     }
   } finally {
-    flushing = false;
     await refreshPending();
   }
   return report;
@@ -348,8 +370,8 @@ async function replay(
 
 /**
  * A title added offline: insert it as typed, then do the search the member
- * could not do. Linked automatically only when the match is certain; anything
- * else is left bare and flagged, because a wrong poster is worse than none.
+ * could not do, and link the best result. When nothing scores, it is left bare
+ * and flagged for the member to link in Edit.
  */
 async function replayAdd(
   supabase: Client,
@@ -372,6 +394,22 @@ async function replayAdd(
     if (status === 'stop') return status;
   }
 
+  // A search that did not ANSWER is not a search that found nothing. Right
+  // after reconnecting the first calls often fail, and flagging the title then
+  // would leave it bare for good. Keep the op: the retry's insert is a unique
+  // violation (already done), its status write is an upsert, and the search
+  // runs again. A 400 is the one answer that will never change.
+  let results: ExternalWork[];
+  try {
+    const res = await fetch(
+      `/api/external-search?type=${row.type}&q=${encodeURIComponent(row.title)}`,
+    );
+    if (!res.ok && res.status !== 400) return 'stop';
+    results = res.ok ? ((await res.json()) as { results: ExternalWork[] }).results ?? [] : [];
+  } catch {
+    return 'stop';
+  }
+
   // Somebody may have added the same thing while this device was away.
   const { data: twin } = await supabase
     .from('media_items')
@@ -384,18 +422,12 @@ async function replayAdd(
     .maybeSingle();
   if (twin) notify(`${label} may already be in this archive — check for a duplicate.`);
 
-  const year = Number(row.metadata.release_year ?? row.metadata.publication_year) || null;
-  let work: ExternalWork | null = null;
-  try {
-    const res = await fetch(
-      `/api/external-search?type=${row.type}&q=${encodeURIComponent(row.title)}`,
-    );
-    if (res.ok) {
-      work = confidentMatch(row.title, year, ((await res.json()) as { results: ExternalWork[] }).results);
-    }
-  } catch {
-    // treated as no match
-  }
+  // The same scoring the archive import links with: the exact title is enough,
+  // a looser one needs the year or a credited name typed offline to back it.
+  const work = pickBestMatch(
+    { ...row, status: op.status, external_id: null, external_url: null },
+    results,
+  );
 
   if (!work) {
     // Edit rebuilds metadata from its form, so linking it there clears the flag.

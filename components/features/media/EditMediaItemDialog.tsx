@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { FormBanner } from '@/components/ui/form-banner';
 import { useToast } from '@/components/ui/toast';
-import { blockedOffline } from '@/lib/offline';
+import { blockedOffline, flush, forgetAdd } from '@/lib/offline';
 import { ExternalLink, ImageDown, Link2, Search, X } from 'lucide-react';
 import {
   Dialog,
@@ -93,7 +93,10 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
 
   // Inline "link to external" search (only shown when not currently linked).
   // Same throttled, quota-capped hook the Add dialog uses.
-  const [linkQuery, setLinkQuery] = useState('');
+  // A title the offline sync could not place opens already searching for itself.
+  const [linkQuery, setLinkQuery] = useState(
+    !item.external_id && metadata.needs_match ? item.title : '',
+  );
   const {
     results: suggestions,
     isSearching: searching,
@@ -244,6 +247,11 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
     setError(null);
     setLoading(true);
 
+    // A title added offline that has not synced yet has no row to update.
+    // Sync first, so the edit lands on it — and lands last, so the member's
+    // own pick wins over whatever the sync linked.
+    await flush((message) => toast({ message, tone: 'destructive' }));
+
     const supabase = createClient();
     const { data, error: updateError } = await supabase
       .from('media_items')
@@ -265,6 +273,7 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
       setLoading(false);
       return;
     }
+    await forgetAdd(item.id);
 
     // Status is per-member: only the editor's own item_statuses row changes.
     await supabase
