@@ -37,35 +37,10 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getExternalStory } from '@/lib/providers';
+import { rateGuard } from '@/lib/rateGuard';
 
-/** Per-user ceiling: a human opening items cannot get near it, a loop does. */
-const MAX_PER_WINDOW = 40;
-const WINDOW_MS = 60_000;
-
-/**
- * Per-instance, not global — serverless gives each instance its own memory, so
- * this bounds a hot instance rather than the whole deployment. That is the
- * right size for the job: the shared fetch cache already absorbs repeats, and
- * this only has to stop one client from hammering cache MISSES.
- */
-const seen = new Map<string, { count: number; windowStart: number }>();
-
-function overBudget(userId: string): boolean {
-  const now = Date.now();
-  const entry = seen.get(userId);
-  if (!entry || now - entry.windowStart > WINDOW_MS) {
-    seen.set(userId, { count: 1, windowStart: now });
-    // Opportunistic sweep: the map only ever holds users seen this minute.
-    if (seen.size > 500) {
-      for (const [key, value] of seen) {
-        if (now - value.windowStart > WINDOW_MS) seen.delete(key);
-      }
-    }
-    return false;
-  }
-  entry.count += 1;
-  return entry.count > MAX_PER_WINDOW;
-}
+/** The shared fetch cache absorbs repeats; this stops a client hammering MISSES. */
+const overBudget = rateGuard(40, 60_000);
 
 export async function GET(request: Request) {
   const supabase = await createClient();

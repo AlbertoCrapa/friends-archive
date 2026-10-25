@@ -6,7 +6,7 @@
 // limits — nothing else in the meter knows a provider by name.
 // ============================================
 
-export type ApiProvider = 'tmdb' | 'rawg' | 'openlibrary';
+export type ApiProvider = 'tmdb' | 'rawg' | 'openlibrary' | 'gemini';
 
 export interface ProviderMeter {
   id: ApiProvider;
@@ -59,6 +59,16 @@ export const PROVIDER_METERS: ProviderMeter[] = [
     dashboardUrl: 'https://openlibrary.org/developers/api',
     note: 'No key and no bill — but they rate-limit by IP. The budget here is ours, set to catch a runaway loop.',
   },
+  {
+    id: 'gemini',
+    label: 'Gemini',
+    keyEnv: 'GEMINI_API_KEY',
+    // Free tier caps per model per day and Google moves the number; the card
+    // shows volume and their console holds the real limit.
+    quota: null,
+    dashboardUrl: 'https://aistudio.google.com/usage',
+    note: 'Reads pasted social links. Free tier is a per-day request cap set by Google — check their console for today’s number.',
+  },
 ];
 
 export const METER_BY_ID: Record<ApiProvider, ProviderMeter> = Object.fromEntries(
@@ -79,6 +89,7 @@ export function providerForUrl(url: string): ApiProvider | null {
   if (host === 'api.themoviedb.org') return 'tmdb';
   if (host === 'api.rawg.io') return 'rawg';
   if (host === 'openlibrary.org') return 'openlibrary';
+  if (host === 'generativelanguage.googleapis.com') return 'gemini';
   return null;
 }
 

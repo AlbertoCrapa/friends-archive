@@ -23,6 +23,8 @@ const PROVIDER_CONFIG: ChartConfig = {
   tmdb: { label: 'TMDB', color: 'var(--chart-movie)' },
   rawg: { label: 'RAWG', color: 'var(--chart-video_game)' },
   openlibrary: { label: 'Open Library', color: 'var(--chart-book)' },
+  // Not a shelf of its own — it reads links for all of them. The one hue left.
+  gemini: { label: 'Gemini', color: 'var(--chart-tv_series)' },
 };
 
 /** Where a gauge stops being informative and starts being a warning. */
@@ -126,7 +128,7 @@ export function ApiUsageDashboard({ report }: { report: UsageReport }) {
               />
               <YAxis tickLine={false} axisLine={false} width={46} allowDecimals={false} />
               <ChartTooltip content={<ChartTooltipContent />} />
-              {(['tmdb', 'rawg', 'openlibrary'] as const).map((key) => (
+              {(['tmdb', 'rawg', 'openlibrary', 'gemini'] as const).map((key) => (
                 <Area
                   key={key}
                   type="monotone"

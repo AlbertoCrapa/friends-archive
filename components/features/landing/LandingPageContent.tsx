@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { motion, useInView } from 'framer-motion';
 import { useRef } from 'react';
+import { HideOnScrollHeader } from '@/components/layout/HideOnScrollHeader';
 import { Button } from '@/components/ui/button';
 import { Wordmark } from '@/components/layout/Wordmark';
 import {
@@ -67,7 +68,7 @@ export function LandingPageContent({ isSignedIn, nickname }: Props) {
 
 function LandingNav({ isSignedIn, nickname }: Props) {
   return (
-    <header className="sticky top-0 z-40 border-b border-stone-800/50 bg-stone-950/96 backdrop-blur-sm">
+    <HideOnScrollHeader className="sticky top-0 z-40 border-b border-stone-800/50 bg-stone-950/96 backdrop-blur-sm">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
         <Wordmark className="select-none" />
         <nav className="flex items-center gap-2 sm:gap-3 shrink-0">
@@ -94,7 +95,7 @@ function LandingNav({ isSignedIn, nickname }: Props) {
           )}
         </nav>
       </div>
-    </header>
+    </HideOnScrollHeader>
   );
 }
 

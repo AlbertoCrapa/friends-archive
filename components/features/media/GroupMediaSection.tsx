@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { AddMediaDialog } from './AddMediaDialog';
+import { LinkImportDialog } from './LinkImportDialog';
 import { ArchiveControls, type ArchiveView, type SortKey, type StatusFilter, type TypeFilter } from './ArchiveControls';
 // The stats view is one of three, and the only one that needs a charting
 // library. Loading it on demand keeps ~100kB of Recharts off the archive for
@@ -581,14 +582,32 @@ export function GroupMediaSection({
               }
             : undefined
         }
-        action={
+        // ponytail: two dialog instances (one per breakpoint), each with its own
+        // state; fine while it only holds a pasted URL.
+        searchAction={
           isMember ? (
-            <AddMediaDialog
+            // Square on the phone line it shares with the search.
+            <LinkImportDialog
               groupId={groupId}
               userId={userId}
-              activeType={activeType as 'all' | MediaType}
               onAdded={handleAdded}
+              triggerClassName="w-9 px-0"
             />
+          ) : null
+        }
+        action={
+          isMember ? (
+            <div className="flex items-center gap-2">
+              <div className="hidden md:block">
+                <LinkImportDialog groupId={groupId} userId={userId} onAdded={handleAdded} />
+              </div>
+              <AddMediaDialog
+                groupId={groupId}
+                userId={userId}
+                activeType={activeType as 'all' | MediaType}
+                onAdded={handleAdded}
+              />
+            </div>
           ) : null
         }
       />

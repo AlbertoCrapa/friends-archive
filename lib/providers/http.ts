@@ -23,12 +23,16 @@ const DEFAULT_TIMEOUT_MS = 3000;
  * `revalidateSeconds` is how long Next may serve the same URL from its own
  * server-side cache. See the note on the fetch call: for reference data this is
  * the cheapest layer we have, because it is shared across every user.
+ *
+ * `body` turns it into an uncached JSON POST (Gemini) — same timeout, same
+ * meter, same never-throws.
  */
 export async function fetchJson<T>(
   url: string,
   headers?: Record<string, string>,
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
-  revalidateSeconds: number = 3600
+  revalidateSeconds: number = 3600,
+  body?: unknown
 ): Promise<T | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -41,7 +45,14 @@ export async function fetchJson<T>(
   try {
     const res = await fetch(url, {
       signal: controller.signal,
-      headers: { Accept: 'application/json', ...headers },
+      headers: {
+        Accept: 'application/json',
+        ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        ...headers,
+      },
+      ...(body !== undefined
+        ? { method: 'POST', body: JSON.stringify(body), cache: 'no-store' as const }
+        : { next: { revalidate: revalidateSeconds } }),
       // External reference data is stable; let Next cache identical queries.
       //
       // This cache is SHARED BETWEEN USERS — it lives on the server, keyed by
@@ -51,13 +62,12 @@ export async function fetchJson<T>(
       // read reference data nobody edits (a synopsis, a runtime) pass a longer
       // window; search keeps the short default because a typed query is
       // different every time anyway.
-      next: { revalidate: revalidateSeconds },
     });
     status = res.status;
     if (!res.ok) return null;
-    const body = (await res.json()) as T;
+    const json = (await res.json()) as T;
     ok = true;
-    return body;
+    return json;
   } catch {
     return null;
   } finally {

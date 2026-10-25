@@ -12,6 +12,7 @@ import {
 import { JoinRequestsBell } from '@/components/features/groups/JoinRequestsBell';
 import { PrimaryNavButton } from '@/components/layout/PrimaryNavButton';
 import { Wordmark } from '@/components/layout/Wordmark';
+import { HideOnScrollHeader } from '@/components/layout/HideOnScrollHeader';
 import { SignOutMenuItem } from '@/components/layout/SignOutMenuItem';
 import { requireAdmin } from '@/lib/admin';
 import { Gauge, User } from 'lucide-react';
@@ -94,7 +95,7 @@ export async function Header() {
   }
 
   return (
-    <header className="sticky top-0 z-40 border-b border-stone-800/50 bg-stone-950/80 backdrop-blur-sm">
+    <HideOnScrollHeader className="sticky top-0 z-40 border-b border-stone-800/50 bg-stone-950/80 backdrop-blur-sm">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
         {/* One mark at every width: the rings are always there and the words
             step aside on a narrow bar, where the nav needs the room. Two
@@ -144,6 +145,6 @@ export async function Header() {
           )}
         </nav>
       </div>
-    </header>
+    </HideOnScrollHeader>
   );
 }

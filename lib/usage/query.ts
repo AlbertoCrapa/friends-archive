@@ -43,6 +43,7 @@ export interface UsageDay {
   tmdb: number;
   rawg: number;
   openlibrary: number;
+  gemini: number;
   errors: number;
 }
 
@@ -158,6 +159,7 @@ export async function getUsageReport(): Promise<UsageReport> {
       tmdb: forDay.find((r) => r.provider === 'tmdb')?.upstream_calls ?? 0,
       rawg: forDay.find((r) => r.provider === 'rawg')?.upstream_calls ?? 0,
       openlibrary: forDay.find((r) => r.provider === 'openlibrary')?.upstream_calls ?? 0,
+      gemini: forDay.find((r) => r.provider === 'gemini')?.upstream_calls ?? 0,
       errors: forDay.reduce((sum, r) => sum + r.errors, 0),
     });
   }

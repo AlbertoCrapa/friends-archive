@@ -292,6 +292,12 @@ body {
   margin: 0;
   padding: 0;
   min-height: 100vh;
+}
+
+/* Solid colour on <html> only. A body background paints ABOVE the z-index:-1
+   ground below (negative z-index sits under in-flow block backgrounds), so
+   giving body a colour hides the gradient entirely. */
+html {
   background-color: var(--color-background);
 }
 
@@ -300,9 +306,9 @@ body {
    ----------------------------------------------------------------------------
    One background for the whole product, painted once on the body and never
    again: three very wide, very low-opacity washes over the near-black, in the
-   three hues the app already owns — the accent blue at the top left where the
-   eye starts, the chart magenta at the top right, the chart teal lifting the
-   bottom edge.
+   three hues the app already owns, all rising from the bottom edge — the
+   accent blue at the left, the chart magenta at the right, the chart teal in
+   the middle.
    Nowhere does a stop get near enough to full strength to read as a colour;
    what it reads as is depth, which is the only thing a ground is allowed to do
    behind type this fine.
@@ -329,10 +335,10 @@ body::before {
      --color-accent, --chart-book and --chart-tv_series at 4–8%; change them
      here if those ever change. */
   background:
-    radial-gradient(118% 86% at 6% -12%, rgba(44, 153, 248, 0.08) 0%, transparent 58%),
-    radial-gradient(96% 74% at 104% -4%, rgba(215, 101, 182, 0.05) 0%, transparent 60%),
+    radial-gradient(118% 86% at 6% 112%, rgba(44, 153, 248, 0.08) 0%, transparent 58%),
+    radial-gradient(96% 74% at 104% 104%, rgba(215, 101, 182, 0.05) 0%, transparent 60%),
     radial-gradient(108% 70% at 52% 116%, rgba(18, 148, 131, 0.045) 0%, transparent 62%),
-    linear-gradient(180deg, #0f1118 0%, #0b0b0f 62%);
+    linear-gradient(0deg, #0f1118 0%, #0b0b0f 62%);
 }
 
 /*
@@ -817,6 +823,16 @@ body::before {
   .ui-dense.ui-touch {
     min-height: 0;
   }
+}
+
+/* The archive bar wraps differently at every width, so whatever lands on a
+   line together has to already match: every control in it is the search's
+   36px — chips, buttons, segments — under a cursor or a finger alike. */
+.archive-bar .ui-touch {
+  min-height: 0;
+}
+.archive-bar .mi-select {
+  --gs-chip: 36px;
 }
 
 /* A label in this system is small, plain and quiet. It is never tracked-out

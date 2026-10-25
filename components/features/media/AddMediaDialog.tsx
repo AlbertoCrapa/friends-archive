@@ -67,7 +67,7 @@ interface Props {
   onAdded?: (item: MediaItem & { status: ItemStatus }) => void;
 }
 
-const SELECT_COLUMNS =
+export const SELECT_COLUMNS =
   'id, group_id, title, type, genre, metadata, added_by, external_id, external_source, external_url, image_url, created_at, updated_at';
 
 /**

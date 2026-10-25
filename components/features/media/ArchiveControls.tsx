@@ -3,6 +3,7 @@
 import { BarChart3, LayoutGrid, ListChecks, Rows3, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 import { GlideSelect } from '@/components/micro/GlideSelect';
 import { RubberSegment } from '@/components/micro/RubberSegment';
 import { TYPE_ICONS } from './MediaPoster';
@@ -23,6 +24,17 @@ const TYPE_LABELS: { value: TypeFilter; label: string; icon?: React.ReactNode }[
 ];
 
 const STATUS_OPTIONS = statusFilterOptions('Any status');
+
+// Phone only: the buttons beside the search fold away while it has focus and
+// the search grows into their room. The clip needs overflow hidden, so a 4px
+// pad (cancelled by negative margins) keeps the focus ring inside it. From
+// `sm` these wrappers are plain flex items again.
+const FOLD = [
+  'shrink-0 overflow-hidden ml-1 -mr-1 -my-1 p-1',
+  'transition-[max-width,margin,padding,opacity] duration-300 ease-[var(--ease-standard)] motion-reduce:transition-none',
+  'max-sm:group-has-[input:focus]:max-w-0 max-sm:group-has-[input:focus]:mx-0 max-sm:group-has-[input:focus]:px-0 max-sm:group-has-[input:focus]:opacity-0',
+  'sm:m-0 sm:max-w-none sm:overflow-visible sm:p-0',
+].join(' ');
 
 const SORT_OPTIONS = [
   { value: 'recent', label: 'Recently added' },
@@ -51,6 +63,8 @@ interface Props {
   onClear: () => void;
   /** Sits at the end of the first row. The archive's one primary action. */
   action?: React.ReactNode;
+  /** Below `md`, shown beside the search instead of in the first row. */
+  searchAction?: React.ReactNode;
   /**
    * Selection mode. Present only where the viewer can act on items — a
    * read-only visitor has nothing to do with a handful of rows, so they are
@@ -88,6 +102,7 @@ export function ArchiveControls({
   hasActiveFilter,
   onClear,
   action,
+  searchAction,
   selecting,
   onSelecting,
 }: Props) {
@@ -95,7 +110,7 @@ export function ArchiveControls({
     // No backdrop blur. At 96% opacity it bought nothing visible, and a
     // backdrop-filter turns this bar into the containing block for every fixed
     // element inside it.
-    <div className="sticky top-[56px] z-20 -mx-4 border-b border-stone-800/70 bg-stone-950/96 px-4 py-2.5 sm:-mx-6 sm:px-6 sm:py-3">
+    <div className="archive-bar sticky top-[56px] z-20 transition-[top] duration-300 ease-out motion-reduce:transition-none [html[data-nav-hidden]_&]:top-0 -mx-4 border-b border-stone-800/70 bg-stone-950/96 px-4 py-2.5 sm:-mx-6 sm:px-6 sm:py-3">
       <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1 overflow-x-auto">
           <RubberSegment
@@ -129,7 +144,11 @@ export function ArchiveControls({
 
       {view === 'stats' ? null : (
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <div className="relative min-w-0 basis-full sm:max-w-xs sm:flex-1 sm:basis-auto">
+          {/* On a phone the search shares its line with the side actions; from
+              `sm` this wrapper dissolves (`contents`) and the order classes put
+              multi-select back after the menus. */}
+          <div className="group flex w-full items-center sm:contents">
+          <div className="relative min-w-0 flex-1 sm:max-w-xs">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-500" />
             <Input
               type="search"
@@ -150,6 +169,30 @@ export function ArchiveControls({
             ) : null}
           </div>
 
+          {searchAction ? <div className={cn(FOLD, 'max-w-11 md:hidden')}>{searchAction}</div> : null}
+
+          {onSelecting ? (
+            /* Next to the filters rather than next to Add, because gathering
+               is a reading job: you turn it on, then keep filtering. */
+            <div className={cn(FOLD, 'max-w-36 sm:order-1')}>
+            <Button
+              variant={selecting ? 'secondary' : 'outline'}
+              size="sm"
+              aria-pressed={selecting}
+              aria-label={selecting ? 'Leave multi-select' : 'Multi-select'}
+              onClick={() => onSelecting(!selecting)}
+              /* 36px like everything in the bar (.archive-bar), and the label
+                 stays where a label belongs — next to its glyph, on a phone as
+                 well as a desk. */
+              className="h-9 gap-1.5 whitespace-nowrap px-2.5 sm:px-3"
+            >
+              <ListChecks className="h-3.5 w-3.5" />
+              {selecting ? 'Done' : 'Multi-select'}
+            </Button>
+            </div>
+          ) : null}
+          </div>
+
           <GlideSelect
             label="Status"
             value={status}
@@ -163,28 +206,7 @@ export function ArchiveControls({
             options={SORT_OPTIONS}
           />
 
-          {onSelecting ? (
-            /* Next to the filters rather than next to Add, because gathering
-               is a reading job: you turn it on, then keep filtering. */
-            <Button
-              variant={selecting ? 'secondary' : 'outline'}
-              size="sm"
-              aria-pressed={selecting}
-              aria-label={selecting ? 'Leave multi-select' : 'Multi-select'}
-              onClick={() => onSelecting(!selecting)}
-              /* The size fix was the height, not the word: every Button grows
-                 to 44px under a finger, so this stood a head taller than the
-                 two chips beside it. Held to the chips' 32px it sits in the
-                 row, and the label stays where a label belongs — next to its
-                 glyph, on a phone as well as a desk. */
-              className="ui-dense h-8 gap-1.5 whitespace-nowrap px-2.5 sm:px-3"
-            >
-              <ListChecks className="h-3.5 w-3.5" />
-              {selecting ? 'Done' : 'Multi-select'}
-            </Button>
-          ) : null}
-
-          <span className="ml-auto shrink-0 text-[12.5px] text-stone-500">
+          <span className="ml-auto shrink-0 text-[12.5px] text-stone-500 sm:order-2">
             {shown} {shown === 1 ? 'item' : 'items'}
           </span>
         </div>
