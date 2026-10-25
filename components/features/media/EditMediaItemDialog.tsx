@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { FormBanner } from '@/components/ui/form-banner';
 import { useToast } from '@/components/ui/toast';
+import { blockedOffline } from '@/lib/offline';
 import { ExternalLink, ImageDown, Link2, Search, X } from 'lucide-react';
 import {
   Dialog,
@@ -238,6 +239,8 @@ export function EditMediaItemDialog({ item, userId, onUpdated, children, open: c
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    // The item is shared: an edit made blind could land on top of somebody else's.
+    if (blockedOffline(toast)) return;
     setError(null);
     setLoading(true);
 

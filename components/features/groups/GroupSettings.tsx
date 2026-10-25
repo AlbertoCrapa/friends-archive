@@ -19,6 +19,8 @@ import {
 } from '@/components/ui/select';
 import { Check, LogOut, Trash2, UserMinus, X } from 'lucide-react';
 import { GroupArchiveData } from '@/components/features/groups/GroupArchiveData';
+import { OfflineAppSetting } from '@/components/features/groups/OfflineApp';
+import { blockedOffline } from '@/lib/offline';
 
 interface Group {
   id: string;
@@ -71,6 +73,7 @@ export function GroupSettings({ group, members, joinRequests, currentUserId, isO
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
+    if (blockedOffline(toast)) return;
     setError(null);
     setSaving(true);
 
@@ -96,7 +99,7 @@ export function GroupSettings({ group, members, joinRequests, currentUserId, isO
   }
 
   async function removeMember(userId: string) {
-    if (userId === currentUserId) return;
+    if (userId === currentUserId || blockedOffline(toast)) return;
     setRemovingMember(userId);
     const nickname = members.find((member) => member.user_id === userId)?.profiles?.nickname ?? 'That member';
     const supabase = createClient();
@@ -125,6 +128,7 @@ export function GroupSettings({ group, members, joinRequests, currentUserId, isO
   }
 
   async function resolveRequest(requestId: string, action: 'approve' | 'decline') {
+    if (blockedOffline(toast)) return;
     setResolvingRequest(requestId);
     setRequestError(null);
     const supabase = createClient();
@@ -155,6 +159,7 @@ export function GroupSettings({ group, members, joinRequests, currentUserId, isO
   }
 
   async function deleteGroup() {
+    if (blockedOffline(toast)) return;
     setDeletingGroup(true);
     const supabase = createClient();
     const { error: deleteError } = await supabase.from('groups').delete().eq('id', group.id);
@@ -177,6 +182,7 @@ export function GroupSettings({ group, members, joinRequests, currentUserId, isO
   }
 
   async function leaveGroup() {
+    if (blockedOffline(toast)) return;
     setLeavingGroup(true);
     setLeaveError(null);
     const supabase = createClient();
@@ -350,6 +356,12 @@ export function GroupSettings({ group, members, joinRequests, currentUserId, isO
             </div>
           ))}
         </div>
+      </section>
+
+      {/* This device */}
+      <section className="space-y-4">
+        <h2 className="font-mono text-xs" style={{ color: '#52525b' }}>This device</h2>
+        <OfflineAppSetting groupId={group.id} />
       </section>
 
       {/* Archive data */}

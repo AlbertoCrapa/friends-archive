@@ -14,6 +14,7 @@ import { useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ui/toast';
 import { countLabel } from '@/lib/utils';
+import { blockedOffline } from '@/lib/offline';
 import type { MediaItemWithDetails } from '@/types';
 
 export function useItemDelete({
@@ -27,6 +28,7 @@ export function useItemDelete({
 
   return useCallback(
     (item: MediaItemWithDetails) => {
+      if (blockedOffline(toast)) return;
       onDeleted?.(item.id);
       toast({
         tone: 'destructive',
@@ -82,7 +84,7 @@ export function useItemsDelete({
 
   return useCallback(
     (items: MediaItemWithDetails[]) => {
-      if (items.length === 0) return;
+      if (items.length === 0 || blockedOffline(toast)) return;
       const ids = items.map((item) => item.id);
       items.forEach((item) => onDeleted?.(item.id));
 

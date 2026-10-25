@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useExternalSearch } from '@/hooks/useExternalSearch';
+import { isOffline, offlineItem, useOffline, writeOrQueue } from '@/lib/offline';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Input } from '@/components/ui/input';
@@ -34,6 +35,7 @@ import { getStatusOptions } from '@/types';
 import {
   cn,
   formatRelativeDate,
+  likeLiteral,
   parsePeople,
   parseTags,
   peopleFields,
@@ -91,15 +93,6 @@ interface ExistingItem {
   createdAt: string;
   /** Who put it there. Null when that profile could not be read. */
   addedBy: string | null;
-}
-
-/**
- * `%` and `_` are wildcards to LIKE, and a title is allowed to contain both
- * ("50% off", "Hard_Reset"). Escaped with the default `\`, they match
- * themselves.
- */
-function likeLiteral(value: string): string {
-  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
 
 export function AddMediaDialog({
@@ -163,6 +156,7 @@ export function AddMediaDialog({
   const [checking, setChecking] = useState(false);
   const { toast } = useToast();
   const [enriching, setEnriching] = useState(false);
+  const offline = useOffline();
 
   // Throttled, quota-capped external search (debounce + cooldown + caps).
   // Disabled once an item is linked so a selection can't re-trigger calls.
@@ -173,7 +167,7 @@ export function AddMediaDialog({
     unavailable: searchFailed,
     callsRemaining,
     reset: resetSearch,
-  } = useExternalSearch(type, title, open && !externalId);
+  } = useExternalSearch(type, title, open && !externalId && !offline);
 
   const showSuggestions = !externalId && suggestions.length > 0;
 
@@ -409,8 +403,9 @@ export function AddMediaDialog({
 
     // The check runs before anything is written, and its own failure is not
     // allowed to stop an add: a duplicate is an annoyance, a member who cannot
-    // add anything because a lookup timed out is a broken archive.
-    if (!force) {
+    // add anything because a lookup timed out is a broken archive. Offline
+    // there is nothing to ask; the sync checks for duplicates instead.
+    if (!force && !isOffline()) {
       setChecking(true);
       let found: ExistingItem | null = null;
       try {
@@ -432,22 +427,55 @@ export function AddMediaDialog({
     // the time it is raised the field is already empty for the next one.
     const addedTitle = title.trim();
     const supabase = createClient();
-    const { data: insertedItem, error: insertError } = await supabase
-      .from('media_items')
-      .insert({
+    // The id is made here so a title added offline can be pointed at — by a
+    // status, a comment — before the database has ever seen it.
+    const op = {
+      kind: 'add_item' as const,
+      userId,
+      status,
+      at: new Date().toISOString(),
+      row: {
+        id: crypto.randomUUID(),
         group_id: groupId,
         added_by: userId,
         title: title.trim(),
         type,
         genre: serializeTags(tags) || null,
         metadata: buildMetadata(),
-        external_id: externalId,
-        external_source: externalSource,
-        external_url: externalUrl,
-        image_url: imageUrl,
-      })
-      .select(SELECT_COLUMNS)
-      .single();
+      },
+    };
+    const result = await writeOrQueue(op, () =>
+      supabase
+        .from('media_items')
+        .insert({
+          ...op.row,
+          external_id: externalId,
+          external_source: externalSource,
+          external_url: externalUrl,
+          image_url: imageUrl,
+        })
+        .select(SELECT_COLUMNS)
+        .single(),
+    );
+
+    // Kept on the device: the sync inserts it, searches it and links it.
+    if (result === null) {
+      resetForm();
+      setOpen(false);
+      onAdded?.(offlineItem(op));
+      toast({
+        message: (
+          <>
+            Saved <b>{addedTitle}</b> on this device — its details are found when you are back
+            online.
+          </>
+        ),
+      });
+      setLoading(false);
+      return;
+    }
+
+    const { data: insertedItem, error: insertError } = result;
 
     if (insertError) {
       setError('Could not add this item right now. Please try again.');
@@ -649,8 +677,12 @@ export function AddMediaDialog({
                 )}
               </div>
 
-              {/* Linked / manual / unavailable hint line */}
-              {externalId ? (
+              {/* Offline / linked / manual / unavailable hint line */}
+              {offline && !externalId ? (
+                <p className="text-[11px] font-mono text-warn-500/80">
+                  Offline — add it by name. Its details are found when you are back online.
+                </p>
+              ) : externalId ? (
                 /* Linked: show what was actually captured — artwork included — so
                    the poster is confirmed here rather than being a surprise in the
                    list after saving. */

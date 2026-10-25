@@ -25,6 +25,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ui/toast';
+import { isOffline } from '@/lib/offline';
 import { transferKey, type TransferMode } from '@/lib/itemTransfer';
 import { countLabel } from '@/lib/utils';
 import type { ItemStatus, MediaItemWithDetails, MediaType } from '@/types';
@@ -347,6 +348,7 @@ export function useItemTransfer({
       target: TransferTarget;
       mode: TransferMode;
     }): Promise<SendResult> => {
+      if (isOffline()) return { ok: false, count: 0, error: 'You are offline — sending needs a connection.' };
       if (mode === 'move') {
         move(items, target);
         return { ok: true, count: items.length };

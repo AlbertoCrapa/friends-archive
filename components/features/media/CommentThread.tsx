@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
+import { blockedOffline, pendingOps, writeOrQueue } from '@/lib/offline';
 import { cn, formatRelativeDate } from '@/lib/utils';
 import { COMMENT_MAX_LENGTH } from '@/types';
 
@@ -98,7 +99,13 @@ export function CommentThread({
         .select('id, author_id, body, created_at, profiles(nickname)')
         .eq('media_item_id', itemId)
         .order('created_at', { ascending: true });
+      // Offline the answer is the saved copy, which has never seen the
+      // comments written on this device since — they are still in the outbox.
       const next = (data ?? []) as unknown as CommentRow[];
+      const known = new Set(next.map((comment) => comment.id));
+      for (const op of await pendingOps()) {
+        if (op.kind === 'comment' && op.itemId === itemId && !known.has(op.id)) next.push(asRow(op));
+      }
       commentsCache.set(itemId, next);
       if (!alive) return;
       setComments(next);
@@ -134,29 +141,29 @@ export function CommentThread({
 
     setPosting(true);
     setError(null);
-    const supabase = createClient();
-    const { data, error: insertError } = await supabase
-      .from('comments')
-      .insert({ media_item_id: itemId, author_id: userId, body })
-      .select('id, author_id, body, created_at')
-      .single();
+    // Made here, so a comment written offline is the same row before and after
+    // it syncs.
+    const op = {
+      kind: 'comment' as const,
+      userId,
+      itemId,
+      id: crypto.randomUUID(),
+      body,
+      at: new Date().toISOString(),
+    };
+    const result = await writeOrQueue(op, () =>
+      createClient()
+        .from('comments')
+        .insert({ id: op.id, media_item_id: itemId, author_id: userId, body }),
+    );
 
-    if (insertError || !data) {
+    if (result?.error) {
       setError('Could not post your comment right now. Please try again.');
       setPosting(false);
       return;
     }
 
-    commit([
-      ...(comments ?? []),
-      {
-        id: data.id,
-        author_id: data.author_id,
-        body: data.body,
-        created_at: data.created_at,
-        profiles: currentUserNickname ? { nickname: currentUserNickname } : null,
-      },
-    ]);
+    commit([...(comments ?? []), asRow(op)]);
     setDraft('');
     setPosting(false);
   }
@@ -167,9 +174,19 @@ export function CommentThread({
     setError(null);
   }
 
+  function asRow(op: { id: string; body: string; at: string }): CommentRow {
+    return {
+      id: op.id,
+      author_id: userId!,
+      body: op.body,
+      created_at: op.at,
+      profiles: currentUserNickname ? { nickname: currentUserNickname } : null,
+    };
+  }
+
   async function saveEdit(commentId: string) {
     const body = editDraft.trim();
-    if (!body) return;
+    if (!body || blockedOffline(toast)) return;
 
     setSavingEdit(true);
     setError(null);
@@ -196,6 +213,7 @@ export function CommentThread({
    * from, so an undone deletion leaves the thread in the order it was written.
    */
   function deleteComment(comment: CommentRow) {
+    if (blockedOffline(toast)) return;
     setError(null);
     const list = comments ?? [];
     const index = list.findIndex((c) => c.id === comment.id);

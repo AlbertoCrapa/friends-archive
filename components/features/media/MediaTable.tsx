@@ -485,6 +485,13 @@ function ArchiveRow({
                   <ExternalLink className="h-3 w-3" />
                 </a>
               ) : null}
+              {/* Added offline and the sync could not tell which work it is
+                  (lib/offline.ts). Linking it in Edit clears this. */}
+              {(item.metadata as { needs_match?: boolean } | null)?.needs_match ? (
+                <span className="shrink-0 rounded-[var(--radius-sm)] bg-warn-500/15 px-1.5 py-0.5 text-[10.5px] font-medium text-warn-300">
+                  Needs match
+                </span>
+              ) : null}
             </div>
 
             <p className="flex min-w-0 items-center gap-1.5 text-[12px] text-stone-500">

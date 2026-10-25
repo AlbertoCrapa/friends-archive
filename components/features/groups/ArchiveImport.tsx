@@ -25,6 +25,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ui/toast';
+import { blockedOffline } from '@/lib/offline';
 import { Spinner } from '@/components/ui/spinner';
 import { safeImageUrl } from '@/lib/utils';
 import {
@@ -303,13 +304,13 @@ export function ArchiveImportProvider({ children }: { children: ReactNode }) {
 
   const start = useCallback(
     (job: Job) => {
-      if (runningRef.current) return false;
+      if (runningRef.current || blockedOffline(toast)) return false;
       runningRef.current = true;
       setProgress({ groupName: job.groupName, done: 0, total: job.items.length });
       void run(job);
       return true;
     },
-    [run]
+    [run, toast]
   );
 
   // Closing the tab stops the import (saved items stay saved) — ask first.

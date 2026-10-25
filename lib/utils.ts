@@ -44,6 +44,15 @@ export function countLabel(count: number): string {
   return `${count} ${count === 1 ? 'item' : 'items'}`;
 }
 
+/**
+ * `%` and `_` are wildcards to LIKE, and a title is allowed to contain both
+ * ("50% off", "Hard_Reset"). Escaped with the default `\`, they match
+ * themselves.
+ */
+export function likeLiteral(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
 export function truncate(str: string, maxLength: number): string {
   if (str.length <= maxLength) return str;
   return str.slice(0, maxLength - 3) + '…';

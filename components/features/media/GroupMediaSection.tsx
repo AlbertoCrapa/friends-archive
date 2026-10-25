@@ -22,6 +22,8 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
 import { useItemsDelete } from '@/hooks/useItemDelete';
 import { useItemStatus } from '@/hooks/useItemStatus';
+import { OfflineBadge } from '@/components/features/groups/OfflineApp';
+import { offlineItem, pendingOps, type SyncReport } from '@/lib/offline';
 import { countLabel, getSearchTags } from '@/lib/utils';
 import { getStatusLabel } from '@/types';
 import type { ItemStatus, MediaItemWithDetails, MediaType } from '@/types';
@@ -283,6 +285,46 @@ export function GroupMediaSection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * Offline, this page is the copy from the last online visit, which has never
+   * seen what was changed on this device since. Lay the outbox back over it.
+   */
+  useEffect(() => {
+    void pendingOps().then((ops) => {
+      const added: MediaItemWithDetails[] = [];
+      const statusById = new Map<string, ItemStatus>();
+      for (const op of ops) {
+        if (op.kind === 'add_item' && op.row.group_id === groupId) {
+          added.unshift({
+            ...offlineItem(op),
+            added_by_profile: currentUserNickname ? { nickname: currentUserNickname } : undefined,
+            consumption_records: [],
+          });
+          statusById.set(op.row.id, op.status);
+        } else if (op.kind === 'status') {
+          for (const id of op.itemIds) statusById.set(id, op.status);
+        }
+      }
+      if (statusById.size === 0) return;
+      setItems((prev) => {
+        const known = new Set(prev.map((item) => item.id));
+        return [...added.filter((item) => !known.has(item.id)), ...prev].map((item) =>
+          statusById.has(item.id) ? { ...item, status: statusById.get(item.id)! } : item,
+        );
+      });
+      statusById.forEach((status, id) => statusController.noteStatus(id, status));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** What the sync wrote — a title it linked gets its poster and details. */
+  function handleSynced(updated: SyncReport['updated']) {
+    const byId = new Map(updated.map((patch) => [patch.id, patch]));
+    setItems((prev) =>
+      prev.map((item) => (byId.has(item.id) ? ({ ...item, ...byId.get(item.id) } as MediaItemWithDetails) : item)),
+    );
+  }
+
   function toggleTag(tag: string) {
     setActiveTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
     setPage(1);
@@ -489,6 +531,8 @@ export function GroupMediaSection({
   return (
     // Room at the foot for the floating add button, which only floats on a phone.
     <div className="pb-24 md:pb-10">
+      {isMember ? <OfflineBadge groupId={groupId} onSynced={handleSynced} /> : null}
+
       {/* Touch: the same action as a disc in the thumb corner. It steps aside
           while the tray is up — one floating control per corner, and the tray
           is the one that matters while you are gathering. */}

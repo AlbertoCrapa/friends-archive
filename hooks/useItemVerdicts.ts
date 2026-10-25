@@ -23,6 +23,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { writeOrQueue } from '@/lib/offline';
 import type { ItemStatus } from '@/types';
 
 export interface Verdict {
@@ -170,18 +171,25 @@ export function useItemVerdicts({
         return next;
       });
 
-      const supabase = createClient();
-      const payload: Record<string, unknown> = { media_item_id: itemId, user_id: userId };
-      if ('note' in patch) payload.note = patch.note;
-      if ('rating' in patch && ratingColumn !== false) payload.rating = patch.rating;
+      const fields: Record<string, unknown> = {};
+      if ('note' in patch) fields.note = patch.note;
+      if ('rating' in patch && ratingColumn !== false) fields.rating = patch.rating;
 
-      const { error } = await supabase
-        .from('consumption_records')
-        .upsert(payload, { onConflict: 'media_item_id,user_id' });
+      // Offline it waits on the device: a verdict is the member's own.
+      // ponytail: a reload while still offline shows the saved copy without it
+      // until it syncs; overlay the outbox here if that ever matters.
+      const result = await writeOrQueue({ kind: 'verdict', userId, itemId, patch: fields }, () =>
+        createClient()
+          .from('consumption_records')
+          .upsert(
+            { media_item_id: itemId, user_id: userId, ...fields },
+            { onConflict: 'media_item_id,user_id' },
+          ),
+      );
 
-      if (error) {
+      if (result?.error) {
         setVerdicts(previous);
-        return { error: error.message };
+        return { error: result.error.message };
       }
       return { error: null };
     },

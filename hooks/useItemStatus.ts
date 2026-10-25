@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { writeOrQueue, writeStatuses } from '@/lib/offline';
 import type { ItemStatus, MediaItemWithDetails } from '@/types';
 
 interface Options {
@@ -83,26 +84,14 @@ export function useItemStatus({
     });
     setSavingId(item.id);
 
-    const supabase = createClient();
-    const { error } = await supabase
-      .from('item_statuses')
-      .upsert(
-        { media_item_id: item.id, user_id: userId, status: next },
-        { onConflict: 'media_item_id,user_id' }
-      );
+    // Offline it is kept on the device and counts as saved: it is the member's
+    // own status, so nobody else's change can collide with it on the way in.
+    const result = await writeOrQueue(
+      { kind: 'status', userId, itemIds: [item.id], status: next },
+      () => writeStatuses(createClient(), userId, [item.id], next),
+    );
 
-    if (!error) {
-      if (willConsume) {
-        await supabase
-          .from('consumption_records')
-          .upsert({ user_id: userId, media_item_id: item.id }, { onConflict: 'media_item_id,user_id' });
-      } else {
-        await supabase
-          .from('consumption_records')
-          .delete()
-          .eq('user_id', userId)
-          .eq('media_item_id', item.id);
-      }
+    if (!result?.error) {
       onUpdated?.({ ...item, status: next });
       setPending((prev) => {
         const { [item.id]: _done, ...rest } = prev;
@@ -157,33 +146,15 @@ export function useItemStatus({
     });
     setSavingMany(true);
 
-    const supabase = createClient();
-    const { error } = await supabase.from('item_statuses').upsert(
-      ids.map((id) => ({ media_item_id: id, user_id: userId, status: next })),
-      { onConflict: 'media_item_id,user_id' }
+    // The consumption records it writes are bare, with no note and no rating
+    // on them — those are written only by their owner on the item sheet, and a
+    // bulk mark is not a verdict.
+    const result = await writeOrQueue(
+      { kind: 'status', userId, itemIds: ids, status: next },
+      () => writeStatuses(createClient(), userId, ids, next),
     );
 
-    let failed = !!error;
-
-    if (!failed) {
-      // The bare record, with no note and no rating on it — those are written
-      // only by their owner on the item sheet, and a bulk mark is not a verdict.
-      const { error: recordError } = willConsume
-        ? await supabase
-            .from('consumption_records')
-            .upsert(
-              ids.map((id) => ({ media_item_id: id, user_id: userId })),
-              { onConflict: 'media_item_id,user_id' }
-            )
-        : await supabase
-            .from('consumption_records')
-            .delete()
-            .eq('user_id', userId)
-            .in('media_item_id', ids);
-      failed = !!recordError;
-    }
-
-    if (failed) {
+    if (result?.error) {
       setPending((prev) => {
         const draft = { ...prev };
         for (const id of ids) draft[id] = previous.get(id) ?? 'plan_to_consume';
