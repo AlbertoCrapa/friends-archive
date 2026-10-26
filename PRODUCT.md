@@ -59,8 +59,8 @@ Emotional goal: the confidence you feel picking up a tool that was made carefull
 
 1. **Coherence over spectacle.** The homepage may be the most beautiful page in
    the product; it may not be a different product. Existing tokens only:
-   near-black ground, `#18181b` / `#27272a` surfaces, `#2c99f8` accent, Bricolage
-   Grotesque, 6/10/16 radii.
+   near-black ground, `#18181b` / `#27272a` surfaces, `#2c99f8` accent, San
+   Francisco (system font), 6/10/16 radii.
 2. **Colour means something.** The four media types carry the app's chart hues
    (`--chart-movie` / `--chart-tv_series` / `--chart-book` / `--chart-video_game`)
    on marketing surfaces too, so the colour a visitor learns on the homepage is

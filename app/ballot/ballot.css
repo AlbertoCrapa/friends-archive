@@ -35,8 +35,7 @@
   min-height: 100vh;
   background: var(--bg);
   color: var(--ink);
-  font-family: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
-  font-variation-settings: "opsz" 14;
+  font-family: var(--font-sans);
   font-size: 15px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
@@ -78,7 +77,7 @@
 }
 
 /* ── Type ────────────────────────────────────────────────────────────────
-   One family, one optical-size axis. Display sizes ask Bricolage for its
+   One family, one optical-size axis. Display sizes ask SF for its
    large-optical cut, text keeps the small one. */
 
 .bl-display {
