@@ -58,13 +58,16 @@ export function Wordmark({ size, compact = false, className }: Props) {
         strokeWidth={RING_STROKE}
         aria-hidden="true"
       >
-        <circle className="wordmark-ring-ink" cx="11" cy="10" r="8" />
-        <circle className="wordmark-ring-accent" cx="21" cy="10" r="8" />
-        <path
-          className="wordmark-ring-ink"
-          d="M17.93 14 A8 8 0 0 1 13.07 17.73"
-          strokeLinecap="round"
-        />
+        {/* Turned 30° like the app icon; the box is overflow: visible. */}
+        <g transform="rotate(30 16 10)">
+          <circle className="wordmark-ring-ink" cx="11" cy="10" r="8" />
+          <circle className="wordmark-ring-accent" cx="21" cy="10" r="8" />
+          <path
+            className="wordmark-ring-ink"
+            d="M17.93 14 A8 8 0 0 1 13.07 17.73"
+            strokeLinecap="round"
+          />
+        </g>
       </svg>
 
       <span aria-hidden className="wordmark-name">

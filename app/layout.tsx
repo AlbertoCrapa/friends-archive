@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { PROVIDER_IMAGE_HOSTS } from '@/lib/utils';
+import { SPLASH_SCREENS } from '@/lib/splash.mjs';
 import { ToastProvider } from '@/components/ui/toast';
 import { ArchiveImportProvider } from '@/components/features/groups/ArchiveImport';
 import '@/components/micro/micro.css';
@@ -11,7 +12,14 @@ export const metadata: Metadata = {
   // iOS ignores the manifest for these: they make "Add to Home Screen" open
   // full-screen with our icon and name.
   // (The home-screen icon itself is app/apple-icon.png.)
-  appleWebApp: { capable: true, title: 'Archive', statusBarStyle: 'black' },
+  // startupImage is the launch splash (drawn by scripts/render-icons.mjs);
+  // without it iOS opens on a blank white screen.
+  appleWebApp: {
+    capable: true,
+    title: 'Archive',
+    statusBarStyle: 'black',
+    startupImage: SPLASH_SCREENS.map(({ file, media }) => ({ url: file, media })),
+  },
 };
 
 export default function RootLayout({

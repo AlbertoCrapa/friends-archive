@@ -568,8 +568,12 @@ function ChatToCatalogue() {
         <div className={reduce ? 'py-16' : 'sticky top-0 flex h-svh items-center'}>
           <div className="mx-auto grid w-full max-w-6xl gap-4 px-4 sm:px-6 md:grid-cols-2 md:gap-10">
             <Pane label="Group chat">
-              <div className="flex flex-col gap-2.5">
+              {/* Like any chat: messages settle at the bottom, over the message box. */}
+              <div className="mt-auto flex flex-col gap-2.5">
                 {CHAT.map((m, i) => <Bubble key={m.title} m={m} i={i} p={scrollYProgress} reduce={!!reduce} />)}
+              </div>
+              <div aria-hidden className="mt-4 flex h-10 items-center rounded-full border border-white/[0.08] bg-black/20 px-4 text-[13px] text-stone-500">
+                Message
               </div>
             </Pane>
             <Pane label="Friday Night Crew">
@@ -587,7 +591,7 @@ function ChatToCatalogue() {
 
 function Pane({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="rounded-[var(--radius-lg)] border border-white/[0.08] p-3 sm:p-5" style={{ backgroundColor: 'var(--color-surface)' }}>
+    <div className="flex flex-col rounded-[var(--radius-lg)] border border-white/[0.08] p-3 sm:p-5" style={{ backgroundColor: 'var(--color-surface)' }}>
       <div className="mb-3 text-[13px] font-semibold tracking-[-0.01em] text-stone-200">{label}</div>
       {children}
     </div>
@@ -596,12 +600,24 @@ function Pane({ label, children }: { label: string; children: ReactNode }) {
 
 type ChatMsg = (typeof CHAT)[number];
 
+/**
+ * `from` until `a`, easing to `to` by `b`, held to the end. Spelled out across
+ * the whole 0–1 track because framer runs these as native scroll animations,
+ * which reject offsets outside 0–1 and, past the last keyframe, fall back to
+ * the starting value — a row that had arrived would vanish again.
+ */
+function useSpan(p: MotionValue<number>, a: number, b: number, from: number, to: number) {
+  return useTransform(p, [0, Math.max(a, 0), b, 1], [from, from, to, to]);
+}
+
 function Bubble({ m, i, p, reduce }: { m: ChatMsg; i: number; p: MotionValue<number>; reduce: boolean }) {
-  const opacity = useTransform(p, [i * 0.09, i * 0.09 + 0.07], [0, 1]);
-  const y = useTransform(p, [i * 0.09, i * 0.09 + 0.07], [16, 0]);
+  // Shifted back one step, so the first message is already there when the pane arrives.
+  const first = i === 0;
+  const opacity = useSpan(p, (i - 1) * 0.09, i * 0.09 || 0.01, first ? 1 : 0, 1);
+  const y = useSpan(p, (i - 1) * 0.09, i * 0.09 || 0.01, first ? 0 : 16, 0);
   // Once the title is shelved, the bubble fades back: the chat scrolls on, the entry stays.
-  const fade = useTransform(p, [0.42 + i * 0.1, 0.5 + i * 0.1], [1, 0.4]);
-  const mark = useTransform(p, [0.4 + i * 0.1, 0.46 + i * 0.1], [0, 1]);
+  const fade = useSpan(p, 0.42 + i * 0.1, 0.5 + i * 0.1, 1, 0.4);
+  const mark = useSpan(p, 0.4 + i * 0.1, 0.46 + i * 0.1, 0, 1);
   const you = m.from === 'you';
 
   return (
@@ -638,14 +654,32 @@ function Bubble({ m, i, p, reduce }: { m: ChatMsg; i: number; p: MotionValue<num
 }
 
 function Shelved({ m, i, p, reduce }: { m: ChatMsg; i: number; p: MotionValue<number>; reduce: boolean }) {
-  const range = [0.42 + i * 0.1, 0.5 + i * 0.1];
-  const opacity = useTransform(p, range, [0, 1]);
-  const x = useTransform(p, range, [-24, 0]);
+  const [a, b] = [0.42 + i * 0.1, 0.5 + i * 0.1];
+  const opacity = useSpan(p, a, b, 0, 1);
+  const empty = useSpan(p, a, b, 1, 0);
+  const x = useSpan(p, a, b, -24, 0);
+  const Glyph = TYPE_ICONS[m.type];
 
   return (
-    <motion.li style={reduce ? undefined : { opacity, x }} className="list-none">
-      <ArchiveRow dense row={{ title: m.title, type: m.type, meta: `${m.meta} · added by ${m.from}`, others: [], mine: 'plan_to_consume' }} />
-    </motion.li>
+    <li className="relative list-none">
+      {/* The empty slot the title lands in, so the shelf reads as waiting rather than blank. */}
+      <motion.div
+        aria-hidden
+        style={reduce ? { opacity: 0 } : { opacity: empty }}
+        className="absolute inset-0 flex items-center gap-3 rounded-[12px] border border-dashed border-white/[0.12] px-2"
+      >
+        <span className="grid h-14 w-[38px] place-items-center rounded-[var(--radius-md)] bg-white/[0.03] text-stone-600">
+          <Glyph className="h-4 w-4" />
+        </span>
+        <span className="flex flex-col gap-1.5">
+          <span className="h-2.5 w-28 rounded-full bg-white/[0.05]" />
+          <span className="h-2 w-20 rounded-full bg-white/[0.04]" />
+        </span>
+      </motion.div>
+      <motion.div style={reduce ? undefined : { opacity, x }}>
+        <ArchiveRow dense row={{ title: m.title, type: m.type, meta: `${m.meta} · added by ${m.from}`, others: [], mine: 'plan_to_consume' }} />
+      </motion.div>
+    </li>
   );
 }
 
@@ -938,7 +972,7 @@ const KINDS: Record<MediaType, { label: string; photo: string; examples: string[
   movie: { label: 'Movies', photo: '/landing/movie.jpg', examples: ['Dune: Part Two', 'Past Lives', 'Anora'] },
   tv_series: { label: 'TV Series', photo: '/landing/tv_series.jpg', examples: ['The Bear', 'Shōgun', 'Severance'] },
   book: { label: 'Books', photo: '/landing/book.jpg', examples: ['Piranesi', 'Project Hail Mary', 'Stoner'] },
-  video_game: { label: 'Video Games', photo: '/landing/video_game.jpg', examples: ['Elden Ring', 'Hades II', 'Split Fiction'] },
+  video_game: { label: 'Games', photo: '/landing/video_game.jpg', examples: ['Elden Ring', 'Hades II', 'Split Fiction'] },
 };
 
 function MediaTypes() {
@@ -958,19 +992,19 @@ function MediaTypes() {
             const active = open === t;
             const Glyph = TYPE_ICONS[t];
             return (
-              <motion.button
+              // Width is animated as flex-grow in CSS, not with framer's `layout`: a
+              // layout animation scales the box, and the photo inside squashes with it.
+              <button
                 key={t}
                 type="button"
-                layout
                 onClick={() => setOpen(t)}
                 onPointerEnter={(e) => e.pointerType === 'mouse' && setOpen(t)}
                 aria-expanded={active}
-                transition={{ duration: 0.6, ease: EASE }}
                 className={cn(
-                  'group relative isolate flex flex-col overflow-hidden rounded-[var(--radius-lg)] border p-5 text-left transition-[border-color] sm:p-6',
-                  active ? 'min-h-[340px] border-white/20' : 'min-h-[96px] border-white/10 hover:border-white/20',
+                  'group relative isolate flex min-w-0 basis-0 flex-col overflow-hidden rounded-[var(--radius-lg)] border p-5 text-left transition-[flex-grow,min-height,border-color] duration-[600ms] ease-[cubic-bezier(0.23,1,0.32,1)] sm:p-6',
+                  active ? 'min-h-[340px] grow-[3] border-white/20' : 'min-h-[96px] grow border-white/10 hover:border-white/20',
                 )}
-                style={{ flex: active ? 3 : 1, backgroundColor: 'var(--color-surface)' }}
+                style={{ backgroundColor: 'var(--color-surface)' }}
               >
                 <Image
                   src={KINDS[t].photo}
@@ -990,16 +1024,20 @@ function MediaTypes() {
                   <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[var(--radius-md)] bg-stone-950/70 ring-1 ring-white/10" style={{ color: HUE[t] }}>
                     <Glyph className="h-4 w-4" aria-hidden />
                   </span>
-                  <span className="text-[1.25rem] font-semibold tracking-[-0.025em] text-stone-50">{KINDS[t].label}</span>
+                  <span className="whitespace-nowrap text-[1.25rem] font-semibold tracking-[-0.025em] text-stone-50">{KINDS[t].label}</span>
                 </span>
-                <AnimatePresence>
-                  {active && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 12 }}
-                      animate={{ opacity: 1, y: 0, transition: { delay: 0.15, duration: 0.5, ease: EASE } }}
-                      exit={{ opacity: 0, transition: { duration: 0.1 } }}
-                      className="mt-4 flex flex-col gap-4"
-                    >
+                {/* Always mounted, opened by height (0fr → 1fr) on the same curve as the
+                    width, and laid out at a fixed width on a desk so the text never
+                    re-wraps mid-transition — any of those made the label hop. */}
+                <div
+                  aria-hidden={!active}
+                  className={cn(
+                    'grid transition-[grid-template-rows,opacity] duration-[600ms] ease-[cubic-bezier(0.23,1,0.32,1)]',
+                    active ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
+                  )}
+                >
+                  <div className="min-h-0 overflow-hidden">
+                    <div className="flex flex-col gap-4 pt-4 md:w-[340px]">
                       <div className="flex flex-wrap gap-1">
                         {Object.keys(METADATA_FIELDS[t]).map((f) => (
                           <span key={f} className="inline-flex h-[22px] items-center rounded-[var(--radius-sm)] bg-stone-800/90 px-2 text-[11.5px] font-medium text-stone-200">
@@ -1008,10 +1046,10 @@ function MediaTypes() {
                         ))}
                       </div>
                       <p className="text-[13.5px] text-stone-300">{KINDS[t].examples.join(' · ')}</p>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </motion.button>
+                    </div>
+                  </div>
+                </div>
+              </button>
             );
           })}
         </Reveal>
@@ -1184,9 +1222,12 @@ function FinalCta({ isSignedIn }: { isSignedIn: boolean }) {
     <section className="relative overflow-hidden px-4 py-28 text-center sm:py-40">
       <div className="relative mx-auto flex max-w-2xl flex-col items-center">
         {/* The mark, drawn: two friends, one ring each. */}
-        <svg viewBox="0 0 32 20" fill="none" strokeWidth={1.4} strokeLinecap="round" className="h-16 w-auto sm:h-20" aria-hidden>
-          <motion.circle cx="11" cy="10" r="8" stroke="var(--color-text-primary)" {...draw(0)} />
-          <motion.circle cx="21" cy="10" r="8" stroke="var(--color-accent)" {...draw(0.25)} />
+        {/* Turned 30° like the app icon; the rings overflow the box a little. */}
+        <svg viewBox="0 0 32 20" fill="none" strokeWidth={1.4} strokeLinecap="round" className="h-16 w-auto overflow-visible sm:h-20" aria-hidden>
+          <g transform="rotate(30 16 10)">
+            <motion.circle cx="11" cy="10" r="8" stroke="var(--color-text-primary)" {...draw(0)} />
+            <motion.circle cx="21" cy="10" r="8" stroke="var(--color-accent)" {...draw(0.25)} />
+          </g>
         </svg>
         <Reveal>
           <h2 className="type-display mt-10 text-[2.75rem] text-stone-50 sm:text-[4.5rem]">
