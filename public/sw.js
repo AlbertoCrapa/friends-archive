@@ -1,8 +1,13 @@
-// The Friend Archive — offline copies for groups installed on this device.
-// Registered only once a member turns a group's offline mode on (lib/offline.ts).
+// The Friend Archive — offline copies for the installed app on this device.
+// Registered once the app is installed or a member turns a group's offline
+// mode on (lib/offline.ts).
 //
-// Pages and data: NETWORK FIRST. Online you always get the live archive, and
-// every good answer is kept, so offline you get the last one you saw.
+// Opening a page (dashboard, a group): STALE WHILE REVALIDATE. The last copy is
+// on screen at once — that is what makes the app open fast — while the live
+// one is fetched behind it; the page then refreshes itself to the live data
+// (InstalledApp in components/features/groups/OfflineApp.tsx).
+// Data and in-app navigation: NETWORK FIRST. Online you always get the live
+// archive, and every good answer is kept, so offline you get the last one.
 // Build assets and posters: CACHE FIRST. A hashed chunk never changes, and a
 // poster that is already on the device does not need fetching twice.
 //
@@ -32,7 +37,11 @@ self.addEventListener('fetch', (event) => {
   } else if (url.origin === self.location.origin) {
     if (url.pathname.startsWith('/_next/static/')) {
       event.respondWith(cacheFirst(request, STATIC));
-    } else if (url.pathname.startsWith('/groups/') || url.pathname.startsWith('/icon')) {
+    } else if (url.pathname === '/dashboard' || url.pathname.startsWith('/groups/')) {
+      event.respondWith(
+        request.mode === 'navigate' ? staleWhileRevalidate(event, PAGES) : networkFirst(request, PAGES),
+      );
+    } else if (url.pathname.startsWith('/icon')) {
       event.respondWith(networkFirst(request, PAGES));
     } else if (url.pathname === '/api/external-details' || url.pathname === '/api/item-story') {
       event.respondWith(networkFirst(request, DATA));
@@ -59,7 +68,7 @@ async function networkFirst(request, cacheName) {
   const key = keyOf(request);
   try {
     const response = await fetch(request);
-    if (response.ok) {
+    if (response.ok && !response.redirected) {
       const cache = await caches.open(cacheName);
       await cache.put(key, response.clone());
     }
@@ -69,6 +78,30 @@ async function networkFirst(request, cacheName) {
     if (hit) return hit;
     throw error;
   }
+}
+
+/**
+ * The kept copy now, the network into the cache behind it. No copy yet (first
+ * open on this device): plain network first.
+ * ponytail: a copy from before a deploy can point at chunks the new deploy no
+ * longer serves; the ones it already used are in fa-static, and the refresh
+ * after load brings the new build. Add a build-id check if a stale open breaks.
+ */
+async function staleWhileRevalidate(event, cacheName) {
+  const request = event.request;
+  const hit = await caches.match(keyOf(request), { ignoreVary: true });
+  if (!hit) return networkFirst(request, cacheName);
+  event.waitUntil(
+    fetch(request)
+      .then(async (response) => {
+        // A redirect (signed out → /login) is not a copy of this page.
+        if (response.ok && !response.redirected) {
+          await (await caches.open(cacheName)).put(keyOf(request), response);
+        }
+      })
+      .catch(() => null),
+  );
+  return hit;
 }
 
 async function cacheFirst(request, cacheName, limit) {

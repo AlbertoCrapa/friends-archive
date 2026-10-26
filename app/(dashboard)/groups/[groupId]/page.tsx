@@ -1,10 +1,9 @@
 import { Suspense } from 'react';
 import { notFound, redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getUser } from '@/lib/supabase/server';
 import { GroupMediaLoader } from '@/components/features/media/GroupMediaLoader';
 import { RequestAccessPanel } from '@/components/features/groups/RequestAccessPanel';
 import { ShareGroupButton } from '@/components/features/groups/ShareGroupButton';
-import { GroupAppLinks } from '@/components/features/groups/OfflineApp';
 import { Button } from '@/components/ui/button';
 import { PageLoader } from '@/components/ui/page-loader';
 import { ArrowLeft, Globe, Lock, Settings, Users } from 'lucide-react';
@@ -26,7 +25,7 @@ export default async function GroupDetailPage({ params, searchParams }: Props) {
   const activeType = rawType ?? 'all';
 
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getUser();
 
   if (!user) redirect('/login');
 
@@ -104,7 +103,6 @@ export default async function GroupDetailPage({ params, searchParams }: Props) {
 
   return (
     <div className="space-y-8">
-      {isMember ? <GroupAppLinks groupId={groupId} groupName={group.name} /> : null}
       {/* Group header — renders immediately */}
       <header className="space-y-3">
         <Link

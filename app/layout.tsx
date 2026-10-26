@@ -8,6 +8,10 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'The Friend Archive',
   description: 'Track together. Remember always.',
+  // iOS ignores the manifest for these: they make "Add to Home Screen" open
+  // full-screen with our icon and name.
+  // (The home-screen icon itself is app/apple-icon.png.)
+  appleWebApp: { capable: true, title: 'Archive', statusBarStyle: 'black' },
 };
 
 export default function RootLayout({

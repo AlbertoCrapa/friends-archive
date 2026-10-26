@@ -1,5 +1,17 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+import { cache } from 'react';
+
+/**
+ * The signed-in user, asked of Supabase Auth ONCE per request. getUser() is a
+ * network round trip, and the layout, the header, the admin check and the page
+ * all need it — uncached that was four trips in a row before anything drew.
+ */
+export const getUser = cache(async () => {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  return user;
+});
 
 /**
  * Server-side Supabase client.

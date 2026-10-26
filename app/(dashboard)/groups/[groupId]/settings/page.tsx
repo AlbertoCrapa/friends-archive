@@ -2,7 +2,6 @@ import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { GroupSettings } from '@/components/features/groups/GroupSettings';
-import { GroupAppLinks } from '@/components/features/groups/OfflineApp';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 import type { JoinRequestRow, Member } from '@/components/features/groups/GroupSettings';
@@ -61,7 +60,6 @@ export default async function GroupSettingsPage({ params }: Props) {
 
   return (
     <div className="max-w-2xl space-y-8">
-      <GroupAppLinks groupId={groupId} groupName={group.name} />
       <div>
         <Link href={`/groups/${groupId}`} className="inline-flex mb-4">
           <Button variant="ghost" size="sm" className="gap-2">

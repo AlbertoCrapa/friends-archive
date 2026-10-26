@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { useFormStatus } from 'react-dom';
 import { cancelGroupAccessRequest } from '@/app/actions/join-requests';
 import { MediaPoster, TYPE_ICONS } from '@/components/features/media/MediaPoster';
+import { InstallCard } from '@/components/features/install/InstallApp';
 import { cn, safeImageUrl } from '@/lib/utils';
 import type { Group, GroupRole, ItemStatus, MediaType } from '@/types';
 import { getTypePluralLabel } from '@/types';
@@ -152,6 +153,9 @@ export function DashboardContent({
           </Link>
         )}
       </motion.header>
+
+      {/* Once per device, until installed or dismissed. */}
+      <InstallCard />
 
       {/* The groups you have asked for live in the same grid as the ones you
           have, at the end of it. They are the same card on purpose: on this

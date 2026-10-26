@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getUser } from '@/lib/supabase/server';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -32,29 +32,44 @@ async function signOut() {
 
 export async function Header() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getUser();
 
   let nickname: string | null = null;
   let pendingRequests: PendingJoinRequest[] = [];
   let acceptedRequests: AcceptedJoinRequest[] = [];
-  // The only way into /admin from inside the app. Everyone else's menu has no
-  // idea the page exists, and the page itself 404s for them regardless.
-  const isAdmin = user ? (await requireAdmin()) !== null : false;
+  let isAdmin = false;
   if (user) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('nickname')
-      .eq('id', user.id)
-      .single();
-    nickname = profile?.nickname ?? null;
+    const acceptedSince = new Date(
+      Date.now() - ACCEPTED_NOTIFICATION_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+    ).toISOString();
 
-    // Owner notifications: pending access requests for groups this user owns
-    const { data: requestRows } = await supabase
-      .from('group_join_requests')
-      .select('id, group_id, created_at, groups!inner(name, owner_id), profiles!group_join_requests_user_id_fkey(nickname)')
-      .eq('status', 'pending')
-      .eq('groups.owner_id', user.id)
-      .order('created_at', { ascending: false });
+    // All at once: none of these needs another's answer, and in a row they
+    // were four round trips between opening the app and seeing the header.
+    const [admin, { data: profile }, { data: requestRows }, { data: acceptedRows }] =
+      await Promise.all([
+        // The only way into /admin from inside the app. Everyone else's menu
+        // has no idea the page exists, and the page itself 404s for them.
+        requireAdmin(),
+        supabase.from('profiles').select('nickname').eq('id', user.id).single(),
+        // Owner notifications: pending access requests for groups this user owns
+        supabase
+          .from('group_join_requests')
+          .select('id, group_id, created_at, groups!inner(name, owner_id), profiles!group_join_requests_user_id_fkey(nickname)')
+          .eq('status', 'pending')
+          .eq('groups.owner_id', user.id)
+          .order('created_at', { ascending: false }),
+        // Requester notifications: requests of this user that an owner recently
+        // approved — "X accepted you, you're now part of the group".
+        supabase
+          .from('group_join_requests')
+          .select('id, group_id, resolved_at, groups!inner(name), profiles!group_join_requests_resolved_by_fkey(nickname)')
+          .eq('user_id', user.id)
+          .eq('status', 'approved')
+          .gte('resolved_at', acceptedSince)
+          .order('resolved_at', { ascending: false }),
+      ]);
+    isAdmin = admin !== null;
+    nickname = profile?.nickname ?? null;
 
     pendingRequests = (requestRows ?? []).map((row) => {
       const groupRel = row.groups as unknown as { name: string };
@@ -67,19 +82,6 @@ export async function Header() {
         created_at: row.created_at,
       };
     });
-
-    // Requester notifications: requests of this user that an owner recently
-    // approved — "X accepted you, you're now part of the group".
-    const acceptedSince = new Date(
-      Date.now() - ACCEPTED_NOTIFICATION_WINDOW_DAYS * 24 * 60 * 60 * 1000,
-    ).toISOString();
-    const { data: acceptedRows } = await supabase
-      .from('group_join_requests')
-      .select('id, group_id, resolved_at, groups!inner(name), profiles!group_join_requests_resolved_by_fkey(nickname)')
-      .eq('user_id', user.id)
-      .eq('status', 'approved')
-      .gte('resolved_at', acceptedSince)
-      .order('resolved_at', { ascending: false });
 
     acceptedRequests = (acceptedRows ?? []).map((row) => {
       const groupRel = row.groups as unknown as { name: string };

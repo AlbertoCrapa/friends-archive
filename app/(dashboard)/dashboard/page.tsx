@@ -1,7 +1,8 @@
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getUser } from '@/lib/supabase/server';
 import { transferKey } from '@/lib/itemTransfer';
 import type { Group, GroupRole, ItemStatus, MediaType } from '@/types';
 import { DashboardContent } from '@/components/features/groups/DashboardContent';
+import { OfflineBadge } from '@/components/features/groups/OfflineApp';
 
 /** Covers the strip shows. */
 const RECENT_SHOWN = 6;
@@ -14,36 +15,82 @@ const RECENT_POOL = RECENT_SHOWN * 5;
 
 export default async function DashboardPage() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = (await getUser())!;
 
-  // Fetch all groups the user belongs to with member + item counts
-  const { data: memberships } = await supabase
-    .from('group_members')
-    .select(`
-      role,
-      groups (
-        id,
-        name,
-        description,
-        visibility,
-        created_at
-      )
-    `)
-    .eq('user_id', user!.id)
-    .order('created_at', { referencedTable: 'groups', ascending: false });
+  // TWO ROUNDS, not five in a row. Round one: everything that only needs the
+  // user, memberships included. Round two: everything that needs the group ids
+  // round one found. Each round costs its slowest query, not their sum.
+  const [
+    { data: memberships },
+    { data: subscription },
+    { count: consumedCount },
+    { count: addedCount },
+    { data: pendingRows },
+  ] = await Promise.all([
+    supabase
+      .from('group_members')
+      .select(`
+        role,
+        groups (
+          id,
+          name,
+          description,
+          visibility,
+          created_at
+        )
+      `)
+      .eq('user_id', user.id)
+      .order('created_at', { referencedTable: 'groups', ascending: false }),
+    supabase.from('subscriptions').select('plan, status').eq('user_id', user.id).single(),
+    supabase.from('consumption_records').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+    supabase.from('media_items').select('id', { count: 'exact', head: true }).eq('added_by', user.id),
+    // Groups you have asked to join and are still waiting on. Group METADATA
+    // is readable by any signed-in user — that is what makes a private link
+    // resolve to a page with a name and a request button — so this join
+    // reaches the name and visibility of a group you are not in yet. Its
+    // CONTENTS stay shut, which is why these rows carry no counts and no
+    // covers: there is nothing honest to put there until you are let in.
+    supabase
+      .from('group_join_requests')
+      .select('id, created_at, groups ( id, name, description, visibility )')
+      .eq('user_id', user.id)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false }),
+  ]);
 
-  // Fetch item rows per group in one query (counts + type breakdown)
   const groupIds = (memberships ?? []).map((m) => (m.groups as unknown as Group)?.id).filter(Boolean);
-  // One pass over the same rows feeds three things: the per-group counts, the
-  // overall type breakdown, and the handful of covers each group card wears.
-  // Artwork is already on the row, so none of it costs another round trip.
-  const { data: itemCountRows } = groupIds.length
-    ? await supabase
-        .from('media_items')
-        .select('group_id, type, image_url, created_at')
-        .in('group_id', groupIds)
-        .order('created_at', { ascending: false })
-    : { data: [] as Array<{ group_id: string; type: MediaType; image_url: string | null; created_at: string }> };
+  const none = { data: [] as never[] };
+  const [
+    { data: itemCountRows },
+    { data: myStatusRows },
+    { data: memberCountRows },
+    { data: recentRows },
+  ] = groupIds.length
+    ? await Promise.all([
+        // One pass over the same rows feeds three things: the per-group counts,
+        // the overall type breakdown, and the handful of covers each group card
+        // wears. Artwork is already on the row, so none of it costs another trip.
+        supabase
+          .from('media_items')
+          .select('group_id, type, image_url, created_at')
+          .in('group_id', groupIds)
+          .order('created_at', { ascending: false }),
+        // Status breakdown is PERSONAL: the current user's own item_statuses
+        // rows for items in their groups. No row counts as 'plan_to_consume'.
+        supabase
+          .from('item_statuses')
+          .select('status, media_items!inner(group_id)')
+          .eq('user_id', user.id)
+          .in('media_items.group_id', groupIds),
+        supabase.from('group_members').select('group_id').in('group_id', groupIds),
+        supabase
+          .from('media_items')
+          .select('id, title, type, group_id, created_at, image_url, external_id')
+          .in('group_id', groupIds)
+          .order('created_at', { ascending: false })
+          .limit(RECENT_POOL),
+      ])
+    : [none, none, none, none];
 
   const itemCountMap = new Map<string, number>();
   const typeCounts: Record<MediaType, number> = { movie: 0, tv_series: 0, book: 0, video_game: 0 };
@@ -66,16 +113,6 @@ export default async function DashboardPage() {
     }
   }
 
-  // Status breakdown is PERSONAL: the current user's own item_statuses rows for
-  // items in their groups. Items without a row count as 'plan_to_consume'.
-  const { data: myStatusRows } = groupIds.length
-    ? await supabase
-        .from('item_statuses')
-        .select('status, media_items!inner(group_id)')
-        .eq('user_id', user!.id)
-        .in('media_items.group_id', groupIds)
-    : { data: [] as Array<{ status: ItemStatus }> };
-
   const statusCounts: Record<ItemStatus, number> = {
     plan_to_consume: 0,
     consuming: 0,
@@ -87,62 +124,10 @@ export default async function DashboardPage() {
     if (status in statusCounts) statusCounts[status] += 1;
   }
 
-  // Fetch member counts per group
-  const { data: memberCountRows } = groupIds.length
-    ? await supabase
-        .from('group_members')
-        .select('group_id')
-        .in('group_id', groupIds)
-    : { data: [] as Array<{ group_id: string }> };
-
   const memberCountMap = new Map<string, number>();
   for (const row of memberCountRows ?? []) {
     memberCountMap.set(row.group_id, (memberCountMap.get(row.group_id) ?? 0) + 1);
   }
-
-  // Fetch the user's subscription plan + personal stats + recent additions (parallel)
-  const [
-    { data: subscription },
-    { count: consumedCount },
-    { count: addedCount },
-    { data: recentRows },
-    { data: pendingRows },
-  ] =
-    await Promise.all([
-      supabase.from('subscriptions').select('plan, status').eq('user_id', user!.id).single(),
-      supabase.from('consumption_records').select('id', { count: 'exact', head: true }).eq('user_id', user!.id),
-      supabase.from('media_items').select('id', { count: 'exact', head: true }).eq('added_by', user!.id),
-      groupIds.length
-        ? supabase
-            .from('media_items')
-            .select('id, title, type, group_id, created_at, image_url, external_id')
-            .in('group_id', groupIds)
-            .order('created_at', { ascending: false })
-            .limit(RECENT_POOL)
-        : Promise.resolve({
-            data: [] as Array<{
-              id: string;
-              title: string;
-              type: MediaType;
-              group_id: string;
-              created_at: string;
-              image_url: string | null;
-              external_id: string | null;
-            }>,
-          }),
-      // Groups you have asked to join and are still waiting on. Group METADATA
-      // is readable by any signed-in user — that is what makes a private link
-      // resolve to a page with a name and a request button — so this join
-      // reaches the name and visibility of a group you are not in yet. Its
-      // CONTENTS stay shut, which is why these rows carry no counts and no
-      // covers: there is nothing honest to put there until you are let in.
-      supabase
-        .from('group_join_requests')
-        .select('id, created_at, groups ( id, name, description, visibility )')
-        .eq('user_id', user!.id)
-        .eq('status', 'pending')
-        .order('created_at', { ascending: false }),
-    ]);
 
   type GroupRow = Group & {
     role: GroupRole;
@@ -221,19 +206,23 @@ export default async function DashboardPage() {
     .filter((row): row is NonNullable<typeof row> => row !== null);
 
   return (
-    <DashboardContent
-      groups={groups}
-      pendingGroups={pendingGroups}
-      ownedCount={ownedCount}
-      atLimit={atLimit}
-      plan={plan}
-      maxOwned={Number.isFinite(maxOwned) ? maxOwned : null}
-      totalItems={totalItems}
-      consumedCount={consumedCount ?? 0}
-      addedCount={addedCount ?? 0}
-      typeCounts={typeCounts}
-      statusCounts={statusCounts}
-      recentItems={recentItems}
-    />
+    <>
+      {/* Offline here too: the installed app opens on this page. */}
+      <OfflineBadge />
+      <DashboardContent
+        groups={groups}
+        pendingGroups={pendingGroups}
+        ownedCount={ownedCount}
+        atLimit={atLimit}
+        plan={plan}
+        maxOwned={Number.isFinite(maxOwned) ? maxOwned : null}
+        totalItems={totalItems}
+        consumedCount={consumedCount ?? 0}
+        addedCount={addedCount ?? 0}
+        typeCounts={typeCounts}
+        statusCounts={statusCounts}
+        recentItems={recentItems}
+      />
+    </>
   );
 }

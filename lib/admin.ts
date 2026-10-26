@@ -7,7 +7,7 @@
 // people who can already read the service role key.
 // ============================================
 
-import { createClient } from '@/lib/supabase/server';
+import { getUser } from '@/lib/supabase/server';
 
 /** Lower-cased ADMIN_EMAILS, comma-separated. Empty means nobody. */
 function adminEmails(): string[] {
@@ -29,10 +29,7 @@ export async function requireAdmin(): Promise<string | null> {
   const allowed = adminEmails();
   if (allowed.length === 0) return null;
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getUser();
 
   const email = user?.email?.toLowerCase();
   if (!email || !allowed.includes(email)) return null;

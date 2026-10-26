@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Download, RefreshCw, WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -25,22 +26,41 @@ import {
 const isStandalone = () =>
   typeof window !== 'undefined' && window.matchMedia('(display-mode: standalone)').matches;
 
+const REFRESH_KEY = 'fa-refreshed-at';
+
 /**
- * What makes a group page installable as its own app. React hoists these into
- * <head>, so both the archive and its settings page can carry them.
+ * Lives in the signed-in layout, once per app open.
+ *
+ * Installed, the worker is what makes the app open fast: it hands back the
+ * last copy of the page at once (public/sw.js). This is the other half — a
+ * page older than a few seconds was that copy, so it asks the server for the
+ * live data and swaps it in without a reload.
+ *
+ * `renderedAt` is stamped by the server; the layout is not re-rendered on
+ * in-app navigation, so this runs on a real open, not on every click.
  */
-export function GroupAppLinks({ groupId, groupName }: { groupId: string; groupName: string }) {
-  return (
-    <>
-      <link
-        rel="manifest"
-        href={`/groups/${groupId}/manifest.webmanifest?name=${encodeURIComponent(groupName)}`}
-      />
-      <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-      <meta name="apple-mobile-web-app-capable" content="yes" />
-      <meta name="apple-mobile-web-app-title" content={groupName} />
-    </>
-  );
+export function InstalledApp({ renderedAt }: { renderedAt: number }) {
+  const router = useRouter();
+
+  useEffect(() => {
+    if (isStandalone()) void registerWorker();
+    if (isOffline() || Date.now() - renderedAt < 10_000) return;
+    // A refresh that cannot reach the server makes Next reload the page — which
+    // the worker answers with the same copy. Once a half minute, so a weak
+    // signal cannot turn that into a loop.
+    try {
+      const last = Number(sessionStorage.getItem(REFRESH_KEY) ?? 0);
+      if (Date.now() - last < 30_000) return;
+      sessionStorage.setItem(REFRESH_KEY, String(Date.now()));
+    } catch {
+      // no storage: refresh anyway, the worst case is one extra round trip
+    }
+    router.refresh();
+    // Once per open: renderedAt from the refresh is fresh by definition.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return null;
 }
 
 /**
@@ -105,7 +125,7 @@ export function OfflineAppSetting({ groupId }: { groupId: string }) {
         ) : (
           <p className="text-[12.5px] text-stone-500">
             {ios
-              ? 'To put it on your home screen: open this group in Safari, tap Share, then Add to Home Screen.'
+              ? 'To put it on your home screen: open the archive in Safari, tap Share, then Add to Home Screen.'
               : "To put it on your home screen, use your browser's menu: Install app or Add to Home screen."}
           </p>
         )
@@ -120,13 +140,16 @@ export function OfflineAppSetting({ groupId }: { groupId: string }) {
  * Fixed at the top of the screen so it can never be scrolled away: while it is
  * up, what you see is a saved copy and anything you change is waiting on this
  * device. Online with changes still waiting, it says so until they land.
+ *
+ * Without a group it is the dashboard's: same badge, same sync, and the copy's
+ * age kept under its own key.
  */
 export function OfflineBadge({
   groupId,
   onSynced,
 }: {
-  groupId: string;
-  onSynced: (updated: SyncReport['updated']) => void;
+  groupId?: string;
+  onSynced?: (updated: SyncReport['updated']) => void;
 }) {
   const { toast } = useToast();
   const offline = useOffline();
@@ -137,9 +160,10 @@ export function OfflineBadge({
   // on iOS has its own storage, separate from Safari's, so the switch flipped
   // in Safari is not visible here: being installed IS the switch.
   useEffect(() => {
-    setSeen(lastSeenOnline(groupId));
+    setSeen(lastSeenOnline(groupId ?? 'dashboard'));
     if (isOffline()) return;
-    markSeenOnline(groupId);
+    markSeenOnline(groupId ?? 'dashboard');
+    if (!groupId) return; // the worker itself is InstalledApp's job
     if (isOfflineGroup(groupId)) void registerWorker();
     else if (isStandalone()) void setOfflineGroup(groupId, true).catch(() => null);
   }, [groupId]);
@@ -155,7 +179,7 @@ export function OfflineBadge({
       if (isOffline()) return;
       const report = await flush(notify);
       if (!alive) return;
-      if (report.updated.length > 0) onSynced(report.updated);
+      if (report.updated.length > 0) onSynced?.(report.updated);
       if (report.processed > 0) {
         toast({
           tone: 'success',
